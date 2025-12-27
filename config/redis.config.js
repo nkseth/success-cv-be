@@ -21,7 +21,7 @@ const baseConfig = {
     password: REDIS_PASSWORD || undefined,
     lazyConnect: true,
     showFriendlyErrorStack: NODE_ENV === 'development',
-    enableOfflineQueue: false,
+    enableOfflineQueue: true,
     maxRetriesPerRequest: REDIS_MAX_RETRIES,
     ...(REDIS_TLS && {
         tls: {
@@ -67,7 +67,7 @@ const clusterConfig = {
     },
     lazyConnect: true,
     showFriendlyErrorStack: NODE_ENV === 'development',
-    enableOfflineQueue: false,
+    enableOfflineQueue: true,
     maxRetriesPerRequest: REDIS_MAX_RETRIES,
     retryStrategy: (times) => {
         if (times > REDIS_MAX_RETRIES) {
@@ -299,7 +299,7 @@ export const bullMQConnection = REDIS_CLUSTER_MODE ? {
                 })
             },
             maxRetriesPerRequest: null,
-            enableOfflineQueue: false
+            enableOfflineQueue: true
         }
     },
     prefix: 'bull' // Prefix for queue keys to separate from cache
@@ -312,7 +312,7 @@ export const bullMQConnection = REDIS_CLUSTER_MODE ? {
     db: REDIS_DB_QUEUE,
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
-    enableOfflineQueue: false,
+    enableOfflineQueue: true,
     prefix: 'bull', // Prefix for queue keys to separate from cache
     ...(REDIS_TLS && {
         tls: {

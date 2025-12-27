@@ -4,7 +4,7 @@ import { sendSuccess } from "../../utils/apiHelpers.js";
 import { authenticateUser } from "../../middleware/authenticate-routes.js";
 import { getUserByIdController, getUserProfileByUserID } from "../../controllers/user.controller.js";
 import { createOrgByUserIDController, getOrgsByUserIDController } from "../../controllers/organisation.controller.js";
-import { createResumeController } from "../../controllers/analysis-resume-rewrite.controller.js";
+import { createResumeController } from "../../controllers/resume-analysis.controller.js";
 
 const router = Router();
 

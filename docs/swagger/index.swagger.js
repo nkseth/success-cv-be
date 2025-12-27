@@ -13,6 +13,8 @@
  *     description: Invitation management and acceptance endpoints
  *   - name: Resume Analysis
  *     description: Resume analysis management and data retrieval endpoints
+ *   - name: Resumes
+ *     description: Unified resume content, editing, rewrites, and theming
  *   - name: SSE (Server-Sent Events)
  *     description: Real-time updates via Server-Sent Events
  *   - name: Health

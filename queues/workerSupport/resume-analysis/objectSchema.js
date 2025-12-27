@@ -16,6 +16,7 @@ export const candidateSchemaSimplified = z.object({
   experiences: z.array(z.object({
     company: z.string().describe("Company name. If not present, use empty string."),
     position: z.string().describe("Position. If not present, use empty string."),
+    location: z.string().describe("Location. If not present, use empty string."),
     website: z.string().describe("Website. If not present, use empty string."),
     start_date: z.string().describe("Start date. If not present, use empty string."),
     end_date: z.string().describe("End date. If not present, use empty string."),
@@ -27,9 +28,12 @@ export const candidateSchemaSimplified = z.object({
     institution: z.string().describe("Institution. If not present, use empty string."),
     area: z.string().describe("Field of study. If not present, use empty string."),
     study_type: z.string().describe("Degree type. If not present, use empty string."),
+    location: z.string().describe("Location. If not present, use empty string."),
     start_date: z.string().describe("Start date. If not present, use empty string."),
     end_date: z.string().describe("End date. If not present, use empty string."),
-    gpa: z.string().describe("GPA. If not present, use empty string.")
+    gpa: z.string().describe("GPA. If not present, use empty string."),
+    honors: z.array(z.string()).describe("Honors and awards. If none, use empty array."),
+    achievements: z.array(z.string()).describe("Achievements. If none, use empty array.")
   })).describe("Education. If no education, use empty array."),
 
   social: z.array(z.object({
@@ -72,6 +76,38 @@ export const candidateSchemaSimplified = z.object({
     description: z.string().describe("Description. If not present, use empty string."),
     tags: z.array(z.string()).describe("Tags. If none, use empty array.")
   })).describe("Skills. If none, use empty array."),
+
+  projects: z.array(z.object({
+    name: z.string().describe("Project name. If not present, use empty string."),
+    description: z.string().describe("Description. If not present, use empty string."),
+    technologies: z.array(z.string()).describe("Technologies used. If none, use empty array."),
+    link: z.string().describe("Project link/URL. If not present, use empty string."),
+    highlights: z.array(z.string()).describe("Key highlights. If none, use empty array.")
+  })).describe("Projects. If none, use empty array."),
+
+  awards: z.array(z.object({
+    title: z.string().describe("Award title. If not present, use empty string."),
+    date: z.string().describe("Date received. If not present, use empty string."),
+    issuer: z.string().describe("Issuing organization. If not present, use empty string."),
+    description: z.string().describe("Description. If not present, use empty string.")
+  })).describe("Awards. If none, use empty array."),
+
+  publications: z.array(z.object({
+    title: z.string().describe("Publication title. If not present, use empty string."),
+    publisher: z.string().describe("Publisher. If not present, use empty string."),
+    date: z.string().describe("Publication date. If not present, use empty string."),
+    link: z.string().describe("Link to publication. If not present, use empty string."),
+    description: z.string().describe("Description. If not present, use empty string.")
+  })).describe("Publications. If none, use empty array."),
+
+  volunteers: z.array(z.object({
+    organization: z.string().describe("Organization name. If not present, use empty string."),
+    role: z.string().describe("Role/position. If not present, use empty string."),
+    start_date: z.string().describe("Start date. If not present, use empty string."),
+    end_date: z.string().describe("End date. If not present, use empty string."),
+    description: z.string().describe("Description. If not present, use empty string."),
+    highlights: z.array(z.string()).describe("Key highlights. If none, use empty array.")
+  })).describe("Volunteer experience. If none, use empty array."),
 
   // Simplified personality assessment
   personality_job_fit: z.object({

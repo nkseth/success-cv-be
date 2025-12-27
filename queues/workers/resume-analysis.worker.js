@@ -96,6 +96,7 @@ import { generateAiResponseObject } from '../../services/aiService/index.js';
 import { candidateSchemaSimplified } from '../workerSupport/resume-analysis/objectSchema.js';
 import { getResumeAnalysisPrompt } from '../workerSupport/resume-analysis/prompt.js';
 import { getFileAccessUrl } from '../../services/Integraion/uploadImage.js';
+import resumeService from '../../services/resume.service.js';
 
 /**
  * Process resume analysis job
@@ -285,6 +286,53 @@ async function processResumeAnalysis(job) {
             logger.info('[RESUME_ANALYSIS] ✅ Results saved to database', {
                 processedDataID: processedDataRecord.id
             });
+
+            // Create unified resume content from analysis data
+            try {
+                logger.info('[RESUME_ANALYSIS] Creating resume content from analysis data');
+                logger.debug('[RESUME_ANALYSIS] Analysis data structure:', {
+                    hasPersonalInfo: !!resumeData.personal_info,
+                    hasExperiences: !!resumeData.experiences,
+                    experienceCount: resumeData.experiences?.length || 0,
+                    hasEducation: !!resumeData.education,
+                    educationCount: resumeData.education?.length || 0,
+                    hasProjects: !!resumeData.projects,
+                    projectsCount: resumeData.projects?.length || 0,
+                    hasAwards: !!resumeData.awards,
+                    awardsCount: resumeData.awards?.length || 0,
+                    hasPublications: !!resumeData.publications,
+                    publicationsCount: resumeData.publications?.length || 0,
+                    hasVolunteers: !!resumeData.volunteers,
+                    volunteersCount: resumeData.volunteers?.length || 0,
+                    hasCertificates: !!resumeData.certificates,
+                    certificatesCount: resumeData.certificates?.length || 0,
+                    hasAchievements: !!resumeData.achievements,
+                    achievementsCount: resumeData.achievements?.length || 0,
+                    hasInterests: !!resumeData.interests,
+                    interestsCount: resumeData.interests?.length || 0,
+                    hasHobbies: !!resumeData.hobbies,
+                    hobbiesCount: resumeData.hobbies?.length || 0,
+                    hasOtherSkills: !!resumeData.other_skills,
+                    otherSkillsCount: resumeData.other_skills?.length || 0,
+                    hasLanguages: !!resumeData.languages,
+                    languagesCount: resumeData.languages?.length || 0
+                });
+                
+                const resumeContent = await resumeService.createResumeFromAnalysis(
+                    userID,
+                    analysisID,
+                    resumeData
+                );
+                logger.info('[RESUME_ANALYSIS] ✅ Resume content created', {
+                    resumeContentID: resumeContent.id
+                });
+            } catch (resumeError) {
+                // Log but don't fail the job - resume content can be created later
+                logger.error('[RESUME_ANALYSIS] Failed to create resume content', {
+                    error: resumeError.message,
+                    stack: resumeError.stack
+                });
+            }
         });
 
         // Step 8: Complete

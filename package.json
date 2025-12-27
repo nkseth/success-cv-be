@@ -11,7 +11,9 @@
     "dev": "nodemon server.js",
     "start": "node server.js",
     "worker": "node queues/workers/resume-analysis.worker.js",
-    "worker:dev": "nodemon queues/workers/resume-analysis.worker.js"
+    "worker:dev": "nodemon queues/workers/resume-analysis.worker.js",
+    "worker:rewrite": "node queues/workers/resume-rewrite.worker.js",
+    "worker:rewrite:dev": "nodemon queues/workers/resume-rewrite.worker.js"
   },
   "keywords": [],
   "author": "",

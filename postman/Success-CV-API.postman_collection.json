@@ -1,0 +1,1336 @@
+{
+	"info": {
+		"_postman_id": "success-cv-api-collection",
+		"name": "Success-CV API",
+		"description": "Complete API collection for Success-CV Backend with all endpoints",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Root & Health",
+			"item": [
+				{
+					"name": "Root",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/",
+							"host": ["{{BASE_URL}}"],
+							"path": [""]
+						}
+					}
+				},
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/health-check",
+							"host": ["{{BASE_URL}}"],
+							"path": ["health-check"]
+						}
+					}
+				},
+				{
+					"name": "API V1 Health",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/health",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "health"]
+						}
+					}
+				},
+				{
+					"name": "Redis Health",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/health/redis",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "health", "redis"]
+						}
+					}
+				},
+				{
+					"name": "Queue Stats",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/health/queue",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "health", "queue"]
+						}
+					}
+				},
+				{
+					"name": "Cache Stats",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/health/cache",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "health", "cache"]
+						}
+					}
+				},
+				{
+					"name": "Full Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/health/full",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "health", "full"]
+						}
+					}
+				},
+				{
+					"name": "Email Service Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/health/email-check",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "health", "email-check"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Auth",
+			"item": [
+				{
+					"name": "Auth Health",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/auth/health",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "auth", "health"]
+						}
+					}
+				},
+				{
+					"name": "Register",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200 || pm.response.code === 201) {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.data && jsonData.data.token) {",
+									"        pm.environment.set('AUTH_TOKEN', jsonData.data.token);",
+									"        console.log('Auth token saved to environment');",
+									"    }",
+									"    if (jsonData.data && jsonData.data.userId) {",
+									"        pm.environment.set('USER_ID', jsonData.data.userId);",
+									"        console.log('User ID saved to environment');",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"password123\",\n  \"name\": \"John Doe\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/auth/register",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "auth", "register"]
+						}
+					}
+				},
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.data && jsonData.data.token) {",
+									"        pm.environment.set('AUTH_TOKEN', jsonData.data.token);",
+									"        console.log('Auth token saved to environment');",
+									"    }",
+									"    if (jsonData.data && jsonData.data.userId) {",
+									"        pm.environment.set('USER_ID', jsonData.data.userId);",
+									"        console.log('User ID saved to environment');",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/auth/login",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "auth", "login"]
+						}
+					}
+				},
+				{
+					"name": "Refresh Token",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{AUTH_TOKEN}}"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/auth/refresh-token",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "auth", "refresh-token"]
+						}
+					}
+				},
+				{
+					"name": "Send Verification Code",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"user@example.com\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/auth/verify/send",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "auth", "verify", "send"]
+						}
+					}
+				},
+				{
+					"name": "Confirm Verification Code",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/auth/verify/:token",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "auth", "verify", ":token"],
+							"variable": [
+								{
+									"key": "token",
+									"value": "verification-token-here"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Forgot Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"user@example.com\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/auth/forgot-password",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "auth", "forgot-password"]
+						}
+					}
+				},
+				{
+					"name": "Reset Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"password\": \"newpassword123\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/auth/forgot-password/:token",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "auth", "forgot-password", ":token"],
+							"variable": [
+								{
+									"key": "token",
+									"value": "reset-token-here"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Candidate Auth",
+			"item": [
+				{
+					"name": "Candidate Auth Health",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/auth/candidate/health",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "auth", "candidate", "health"]
+						}
+					}
+				},
+				{
+					"name": "Bulk Candidate Registration",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"candidates\": [\n    {\n      \"email\": \"candidate1@example.com\",\n      \"name\": \"Candidate One\"\n    },\n    {\n      \"email\": \"candidate2@example.com\",\n      \"name\": \"Candidate Two\"\n    }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/auth/candidate/register/bulk",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "auth", "candidate", "register", "bulk"]
+						}
+					}
+				},
+				{
+					"name": "Candidate Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.data && jsonData.data.token) {",
+									"        pm.environment.set('CANDIDATE_TOKEN', jsonData.data.token);",
+									"        pm.environment.set('AUTH_TOKEN', jsonData.data.token);",
+									"        console.log('Candidate token saved to environment');",
+									"    }",
+									"    if (jsonData.data && jsonData.data.userId) {",
+									"        pm.environment.set('USER_ID', jsonData.data.userId);",
+									"        console.log('User ID saved to environment');",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"candidate@example.com\",\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/auth/candidate/login",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "auth", "candidate", "login"]
+						}
+					}
+				},
+				{
+					"name": "Candidate Send Verification",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/auth/candidate/verify/send",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "auth", "candidate", "verify", "send"]
+						}
+					}
+				},
+				{
+					"name": "Candidate Confirm Verification",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/auth/candidate/verify/:token",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "auth", "candidate", "verify", ":token"],
+							"variable": [
+								{
+									"key": "token",
+									"value": "verification-token-here"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Candidate Forgot Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"candidate@example.com\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/auth/candidate/forgot-password",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "auth", "candidate", "forgot-password"]
+						}
+					}
+				},
+				{
+					"name": "Candidate Reset Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"password\": \"newpassword123\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/auth/candidate/forgot-password/:token",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "auth", "candidate", "forgot-password", ":token"],
+							"variable": [
+								{
+									"key": "token",
+									"value": "reset-token-here"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "User",
+			"item": [
+				{
+					"name": "User Health",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/user/health",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "user", "health"]
+						}
+					}
+				},
+				{
+					"name": "Create User",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"newuser@example.com\",\n  \"name\": \"New User\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/user",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "user"]
+						}
+					}
+				},
+				{
+					"name": "Get User by ID",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/user/:id",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "user", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{USER_ID}}"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Update User",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Updated Name\",\n  \"email\": \"updated@example.com\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/user/:id",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "user", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{USER_ID}}"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get User Organisations",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/user/:id/organisations",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "user", ":id", "organisations"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{USER_ID}}"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Create User Organisation",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"My Organisation\",\n  \"description\": \"Organisation description\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/user/:id/organisations",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "user", ":id", "organisations"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{USER_ID}}"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get User Profile",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/user/:id/profile",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "user", ":id", "profile"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{USER_ID}}"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Create Resume",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"resumeData\": {}\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/user/:id/resumes",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "user", ":id", "resumes"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{USER_ID}}"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Organisation",
+			"item": [
+				{
+					"name": "Organisation Health",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/organisations",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "organisations"]
+						}
+					}
+				},
+				{
+					"name": "Create Organisation",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"New Organisation\",\n  \"description\": \"Organisation description\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/organisations",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "organisations"]
+						}
+					}
+				},
+				{
+					"name": "Get Organisation by ID",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/organisations/:id",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "organisations", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{ORG_ID}}"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Organisation Invites",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/organisations/:id/invites",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "organisations", ":id", "invites"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{ORG_ID}}"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Send Organisation Invite",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"newmember@example.com\",\n  \"role\": \"member\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/organisations/:id/invites",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "organisations", ":id", "invites"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{ORG_ID}}"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Organisation Members",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/organisations/:id/members",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "organisations", ":id", "members"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{ORG_ID}}"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Add Member to Organisation",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"userId\": \"user-id-here\",\n  \"role\": \"member\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/organisations/:id/members",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "organisations", ":id", "members"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{ORG_ID}}"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Update Member Role",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"role\": \"admin\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/organisations/:id/members/:memberId/role",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "organisations", ":id", "members", ":memberId", "role"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{ORG_ID}}"
+								},
+								{
+									"key": "memberId",
+									"value": "member-id-here"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Organisation Candidates",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/organisations/:id/candidates",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "organisations", ":id", "candidates"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{ORG_ID}}"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Invites",
+			"item": [
+				{
+					"name": "Accept Invite",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/invites/:inviteID/accept",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "invites", ":inviteID", "accept"],
+							"variable": [
+								{
+									"key": "inviteID",
+									"value": "invite-id-here"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Resend Invite",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/invites/:inviteID/resend",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "invites", ":inviteID", "resend"],
+							"variable": [
+								{
+									"key": "inviteID",
+									"value": "invite-id-here"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Upload",
+			"item": [
+				{
+					"name": "Upload Health",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/upload/health",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "upload", "health"]
+						}
+					}
+				},
+				{
+					"name": "Generate Presigned URL",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"fileName\": \"resume.pdf\",\n  \"fileType\": \"application/pdf\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/upload/presigned",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "upload", "presigned"]
+						}
+					}
+				},
+				{
+					"name": "Get Access URL",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"fileName\": \"resume.pdf\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/upload/access",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "upload", "access"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Resume Analysis",
+			"item": [
+				{
+					"name": "Resume Analysis Health",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/resume-analysis/health",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "resume-analysis", "health"]
+						}
+					}
+				},
+				{
+					"name": "Get All Resume Analyses",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/resume-analysis",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "resume-analysis"]
+						}
+					}
+				},
+				{
+					"name": "Get Resume Analysis by ID",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/resume-analysis/:analysisId",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "resume-analysis", ":analysisId"],
+							"variable": [
+								{
+									"key": "analysisId",
+									"value": "analysis-id-here"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Update Resume Analysis",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AUTH_TOKEN}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"processedData\": {}\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/resume-analysis/:analysisId",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "resume-analysis", ":analysisId"],
+							"variable": [
+								{
+									"key": "analysisId",
+									"value": "analysis-id-here"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "SSE (Server-Sent Events)",
+			"item": [
+				{
+					"name": "Connect to Job",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "text/event-stream"
+							},
+							{
+								"key": "Cache-Control",
+								"value": "no-cache"
+							},
+							{
+								"key": "Connection",
+								"value": "keep-alive"
+							}
+						],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/sse/job/:jobId",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "sse", "job", ":jobId"],
+							"variable": [
+								{
+									"key": "jobId",
+									"value": "job-id-here"
+								}
+							]
+						},
+						"description": "Server-Sent Events endpoint for real-time job updates"
+					}
+				},
+				{
+					"name": "Get SSE Stats",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/v1/sse/stats",
+							"host": ["{{BASE_URL}}"],
+							"path": ["api", "v1", "sse", "stats"]
+						}
+					}
+				}
+			]
+		}
+	],
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{AUTH_TOKEN}}",
+				"type": "string"
+			}
+		]
+	}
+}

@@ -3,7 +3,7 @@ import { sendSuccess } from "../utils/apiHelpers.js";
 import { validateInteger } from "../utils/validate-helper.js";
 import { db } from "../config/db.js";
 import { analysisTable, processedAndRawDataTable, userDocumentTable } from "../drizzle/schema/analytics-rewrite-schema.js";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import logger from "../middleware/logger.js";
 
 /**
@@ -225,7 +225,7 @@ export const getAllResumeAnalysesController = asyncHandler(async (req, res, next
         .from(analysisTable)
         .leftJoin(userDocumentTable, eq(analysisTable.documentID, userDocumentTable.id))
         .where(eq(analysisTable.userID, userID))
-        .orderBy(analysisTable.createdAt);
+        .orderBy(desc(analysisTable.createdAt));
 
     // Parse meta fields
     const formattedAnalyses = analyses.map(analysis => {
@@ -257,4 +257,56 @@ export const getAllResumeAnalysesController = asyncHandler(async (req, res, next
     logger.info(`Successfully fetched ${formattedAnalyses.length} analyses for userID: ${userID}`);
 
     sendSuccess(res, formattedAnalyses, "Analyses retrieved successfully", 200);
+});
+
+/**
+ * Create a new resume document and start analysis
+ * POST /api/v1/user/:id/resumes
+ */
+export const createResumeController = asyncHandler(async (req, res, next) => {
+    const { createUserDocument, createAnalysisRecord } = await import("../models/resume-and-analysis.model.js");
+    const { getUserByIDModel } = await import("../models/user.model.js");
+
+    const userID = req.userID;
+    const validatedId = validateInteger(userID, 'User ID');
+
+    const user = await getUserByIDModel(validatedId);
+    if (!user) {
+        return next(new AppError('User not found', 404));
+    }
+
+    // Check req body
+    if (!req.body || typeof req.body !== 'object') {
+        return next(new AppError('Invalid request body', 400));
+    }
+
+    const { fileURL } = req.body;
+    if (!fileURL) {
+        return next(new AppError('Missing required field: fileURL', 400));
+    }
+
+    // Create document record
+    const createdDocument = await createUserDocument(validatedId, {
+        title: 'Resume',
+        fileURL,
+        meta: {}
+    });
+
+    // Create analysis record and queue job
+    const createAnalysis = await createAnalysisRecord(validatedId, createdDocument.id, {}, {
+        title: 'Resume',
+        fileURL,
+        meta: {}
+    });
+
+    if (!createAnalysis) {
+        return next(new AppError('Analysis creation failed', 500));
+    }
+
+    logger.info(`Created new resume document and analysis for userID: ${validatedId}, analysisId: ${createAnalysis.id}`);
+
+    sendSuccess(res, { 
+        ...createAnalysis, 
+        steps: "Use the jobId to track the analysis process" 
+    }, "Document created successfully", 201);
 });

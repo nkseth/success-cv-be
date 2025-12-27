@@ -10,6 +10,7 @@ import logger from '../middleware/logger.js';
  * Progress stages with percent and messages
  */
 export const PROGRESS_STAGES = {
+    // Resume Analysis stages
     INIT: { percent: 0, message: 'Initializing resume analysis...' },
     DOWNLOADING: { percent: 10, message: 'Downloading resume file...' },
     EXTRACTING: { percent: 25, message: 'Extracting text from resume...' },
@@ -17,7 +18,11 @@ export const PROGRESS_STAGES = {
     ANALYZING: { percent: 60, message: 'Analyzing resume with AI...' },
     SCORING: { percent: 80, message: 'Calculating scores...' },
     SAVING: { percent: 90, message: 'Saving results to database...' },
-    COMPLETE: { percent: 100, message: 'Resume analysis completed!' }
+    COMPLETE: { percent: 100, message: 'Resume analysis completed!' },
+    
+    // Resume Rewrite stages
+    PREPARING: { percent: 20, message: 'Preparing analysis data for optimization...' },
+    OPTIMIZING: { percent: 60, message: 'Optimizing resume content with AI...' }
 };
 
 /**
