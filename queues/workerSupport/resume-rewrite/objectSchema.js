@@ -3,10 +3,147 @@ import { z } from 'zod';
 /**
  * Resume Rewrite Object Schemas
  * Zod schemas for AI-generated resume optimization output
+ * 
+ * SIMPLIFIED APPROACH: Instead of generating a complete resume structure,
+ * we apply targeted fixes based on analysis issues. This is more reliable
+ * and matches the existing content format.
  */
 
+// ========== SIMPLIFIED FIX-BASED SCHEMA ==========
+
 /**
- * Professional Summary Optimization Schema
+ * Section Fix Schema
+ * Represents a fix applied to a specific section
+ */
+export const sectionFixSchema = z.object({
+    section: z.string().describe('Section name that was fixed (summary, experience, skills, education)'),
+    originalText: z.string().describe('Original text that was fixed'),
+    fixedText: z.string().describe('The corrected/optimized text'),
+    reason: z.string().describe('Brief reason for the fix')
+}).describe('A single fix applied to the resume');
+
+/**
+ * Optimized Summary Schema
+ * Simple structure matching resumeContentTable.summary
+ */
+export const optimizedSummarySchema = z.object({
+    text: z.string().describe('The optimized professional summary (3-4 impactful sentences)'),
+    keywords: z.array(z.string()).describe('ATS keywords naturally included')
+}).describe('Optimized professional summary');
+
+/**
+ * Optimized Experience Entry Schema
+ * Matches the structure in resumeContentTable.experience
+ */
+export const optimizedExperienceSchema = z.object({
+    company: z.string().describe('Company name'),
+    position: z.string().describe('Job title'),
+    location: z.string().nullable().optional().describe('Job location'),
+    startDate: z.string().nullable().optional().describe('Start date'),
+    endDate: z.string().nullable().optional().describe('End date or Present'),
+    current: z.boolean().optional().describe('Is current position'),
+    description: z.string().nullable().optional().describe('Role description'),
+    achievements: z.array(z.string()).describe('Achievement bullets with STAR format and metrics')
+}).describe('Optimized work experience entry');
+
+/**
+ * Optimized Skills Schema
+ * Matches the structure in resumeContentTable.skills
+ */
+export const optimizedSkillsSchema = z.object({
+    technical: z.array(z.string()).describe('Technical skills'),
+    soft: z.array(z.string()).describe('Soft skills'),
+    tools: z.array(z.string()).optional().describe('Tools and platforms'),
+    languages: z.array(z.string()).optional().describe('Spoken languages'),
+    certifications: z.array(z.string()).optional().describe('Certifications')
+}).describe('Optimized skills section');
+
+/**
+ * Resume Optimization Result Schema
+ * This is the main schema - simpler and focused on direct content
+ */
+export const resumeOptimizationResultSchema = z.object({
+    summary: optimizedSummarySchema.describe('Optimized professional summary'),
+    experience: z.array(optimizedExperienceSchema).describe('Optimized work experiences with enhanced achievements'),
+    skills: optimizedSkillsSchema.describe('Optimized and categorized skills'),
+    estimatedAtsScore: z.number().min(0).max(100).describe('Estimated ATS score after optimization (0-100)'),
+    fixesSummary: z.string().describe('Brief summary of key improvements made')
+}).describe('Optimized resume content ready for direct application');
+
+// Export the main schema for use in the service
+export { resumeOptimizationResultSchema as resumeContentOutputSchema };
+
+// ========== LEGACY SCHEMAS (kept for backwards compatibility) ==========
+
+/**
+ * Personal Info Schema - matches resumeContentTable.personalInfo
+ */
+export const personalInfoContentSchema = z.object({
+    fullName: z.string().describe('Full name of the candidate'),
+    email: z.string().optional().describe('Email address'),
+    phone: z.string().optional().describe('Phone number'),
+    location: z.string().optional().describe('City, State or Location'),
+    linkedin: z.string().optional().describe('LinkedIn profile URL'),
+    website: z.string().optional().describe('Personal website or portfolio URL'),
+    github: z.string().optional().describe('GitHub profile URL'),
+    title: z.string().optional().describe('Professional title/headline')
+}).describe('Personal information section');
+
+/**
+ * Summary Schema - matches resumeContentTable.summary
+ */
+export const summaryContentSchema = z.object({
+    text: z.string().describe('The professional summary text (3-4 impactful sentences with ATS keywords)'),
+    keywords: z.array(z.string()).optional().describe('ATS keywords included in the summary')
+}).describe('Professional summary section');
+
+/**
+ * Experience Entry Schema - matches resumeContentTable.experience array items
+ */
+export const experienceEntrySchema = z.object({
+    id: z.string().optional().describe('Unique identifier for this experience'),
+    company: z.string().describe('Company name'),
+    position: z.string().describe('Job title'),
+    location: z.string().optional().describe('Job location'),
+    startDate: z.string().optional().describe('Start date (e.g., "Jan 2020" or "2020-01")'),
+    endDate: z.string().optional().describe('End date or "Present" for current role'),
+    current: z.boolean().optional().describe('Whether this is the current position'),
+    description: z.string().optional().describe('Brief role description'),
+    achievements: z.array(z.string()).describe('3-5 achievement bullets using STAR format with quantifiable metrics'),
+    keywords: z.array(z.string()).optional().describe('ATS keywords for this role')
+}).describe('Work experience entry');
+
+/**
+ * Education Entry Schema - matches resumeContentTable.education array items
+ */
+export const educationEntrySchema = z.object({
+    id: z.string().optional().describe('Unique identifier for this education'),
+    institution: z.string().describe('School/University name'),
+    degree: z.string().describe('Degree type (e.g., "Bachelor of Science")'),
+    field: z.string().describe('Field of study'),
+    location: z.string().optional().describe('Institution location'),
+    startDate: z.string().optional().describe('Start date'),
+    endDate: z.string().optional().describe('Graduation date'),
+    gpa: z.string().optional().describe('GPA if notable (3.5+)'),
+    honors: z.array(z.string()).optional().describe('Academic honors and distinctions'),
+    achievements: z.array(z.string()).optional().describe('Notable academic achievements')
+}).describe('Education entry');
+
+/**
+ * Skills Schema - matches resumeContentTable.skills
+ */
+export const skillsContentSchema = z.object({
+    technical: z.array(z.string()).describe('Technical skills (programming languages, frameworks, tools)'),
+    soft: z.array(z.string()).describe('Soft skills (leadership, communication, problem-solving)'),
+    tools: z.array(z.string()).optional().describe('Tools and platforms'),
+    languages: z.array(z.string()).optional().describe('Spoken languages with proficiency'),
+    certifications: z.array(z.string()).optional().describe('Professional certifications')
+}).describe('Skills organized by category');
+
+// ========== LEGACY OPTIMIZATION SCHEMAS (for backwards compatibility) ==========
+
+/**
+ * Professional Summary Optimization Schema (LEGACY)
  */
 export const professionalSummarySchema = z.object({
     optimized_summary: z.string().describe('The optimized professional summary text (3-4 sentences)'),
@@ -208,6 +345,18 @@ export const sectionOptimizationSchema = z.object({
 });
 
 export default {
+    // New content-compatible schemas (recommended for direct apply)
+    optimizedSummarySchema,
+    optimizedExperienceSchema,
+    optimizedSkillsSchema,
+    resumeOptimizationResultSchema,
+    resumeContentOutputSchema: resumeOptimizationResultSchema, // Alias for backwards compatibility
+    // Legacy schemas
+    personalInfoContentSchema,
+    summaryContentSchema,
+    experienceEntrySchema,
+    educationEntrySchema,
+    skillsContentSchema,
     professionalSummarySchema,
     workExperienceSchema,
     skillsSchema,

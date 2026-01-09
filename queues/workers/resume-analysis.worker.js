@@ -245,6 +245,20 @@ async function processResumeAnalysis(job) {
             
             const scores = resumeData._scores || {};
             
+            // Update document title with candidate name from parsed data
+            const candidateName = resumeData.personal_info?.name || 'Unknown Candidate';
+            const timestamp = new Date().toISOString().split('T')[0];
+            const updatedTitle = `${candidateName} - Resume Analysis - ${timestamp}`;
+            
+            await db.update(userDocumentTable)
+                .set({
+                    title: updatedTitle,
+                    updatedAt: new Date()
+                })
+                .where(eq(userDocumentTable.id, resumeId));
+            
+            logger.info('[RESUME_ANALYSIS] Updated document title:', updatedTitle);
+            
             // Save processed data to processedAndRawDataTable
             const [processedDataRecord] = await db.insert(processedAndRawDataTable)
                 .values({

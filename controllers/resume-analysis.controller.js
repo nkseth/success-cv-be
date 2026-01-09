@@ -3,8 +3,16 @@ import { sendSuccess } from "../utils/apiHelpers.js";
 import { validateInteger } from "../utils/validate-helper.js";
 import { db } from "../config/db.js";
 import { analysisTable, processedAndRawDataTable, userDocumentTable } from "../drizzle/schema/analytics-rewrite-schema.js";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, asc, inArray, gte, lte, or, like, ilike, count } from "drizzle-orm";
 import logger from "../middleware/logger.js";
+import { 
+    parseQueryParams, 
+    buildWhereConditions, 
+    buildSearchCondition, 
+    buildOrderBy, 
+    getPaginationMeta, 
+    formatPaginatedResponse 
+} from "../utils/pagination-filter.js";
 
 /**
  * Get resume analysis details by analysis ID
@@ -202,37 +210,120 @@ export const updateResumeAnalysisController = asyncHandler(async (req, res, next
 /**
  * Get all resume analyses for the authenticated user
  * GET /api/v1/resume-analysis
+ * Query params:
+ * - page: Page number (default: 1)
+ * - limit: Items per page (default: 10, max: 100)
+ * - q: Search in document title
+ * - status: Filter by status (completed, pending, failed) - supports multiple: ?status=completed,pending
+ * - createdAt: Date range filter ?createdAt=2025-01-01,2025-12-31
+ * - completedAt: Date range filter for completed analyses
+ * - atsScore: Filter by ATS score (stored in meta.atsScore)
+ * - sortBy: Sort field (createdAt, updatedAt, completedAt, atsScore)
+ * - sortOrder: Sort order (asc, desc)
  */
 export const getAllResumeAnalysesController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
 
-    logger.info(`Fetching all analyses for userID: ${userID}`);
+    logger.info(`Fetching all analyses for userID: ${userID}`, { query: req.query });
 
-    // Fetch all analysis records for the user
-    const analyses = await db
-        .select({
-            analysisId: analysisTable.id,
-            status: analysisTable.status,
-            jobID: analysisTable.jobID,
-            createdAt: analysisTable.createdAt,
-            updatedAt: analysisTable.updatedAt,
-            completedAt: analysisTable.completedAt,
-            analysisMeta: analysisTable.meta,
-            documentId: userDocumentTable.id,
-            documentTitle: userDocumentTable.title,
-            fileURL: userDocumentTable.fileURL,
-        })
+    // Parse query parameters
+    const { pagination, search, filters, sort } = parseQueryParams(req.query, {
+        defaultPageSize: 10,
+        maxPageSize: 100,
+        searchFields: [userDocumentTable.title],
+        filterableFields: {
+            status: 'array', // supports multiple: ?status=completed,pending
+            createdAt: 'dateRange',
+            completedAt: 'dateRange',
+        },
+        sortableFields: ['createdAt', 'updatedAt', 'completedAt', 'atsScore'],
+        defaultSort: { field: 'createdAt', order: 'desc' }
+    });
+
+    // Build base where conditions
+    const whereConditions = [eq(analysisTable.userID, userID)];
+
+    // Add filter conditions
+    const filterConditions = buildWhereConditions(
+        filters,
+        analysisTable,
+        { eq, inArray, gte, lte, or, and, like, ilike }
+    );
+    whereConditions.push(...filterConditions);
+
+    // Add search condition
+    const searchCondition = buildSearchCondition(
+        search.query,
+        [userDocumentTable.title],
+        { or, ilike }
+    );
+    if (searchCondition) {
+        whereConditions.push(searchCondition);
+    }
+
+    // Get total count for pagination
+    const [{ totalCount }] = await db
+        .select({ totalCount: count() })
         .from(analysisTable)
         .leftJoin(userDocumentTable, eq(analysisTable.documentID, userDocumentTable.id))
-        .where(eq(analysisTable.userID, userID))
-        .orderBy(desc(analysisTable.createdAt));
+        .where(and(...whereConditions));
 
-    // Parse meta fields
+    // Check if sorting by atsScore (which is in JSON meta field)
+    const sortingByAtsScore = sort.field === 'atsScore';
+    
+    let analyses;
+    if (sortingByAtsScore) {
+        // Fetch all matching records for in-memory sorting
+        analyses = await db
+            .select({
+                analysisId: analysisTable.id,
+                status: analysisTable.status,
+                jobID: analysisTable.jobID,
+                createdAt: analysisTable.createdAt,
+                updatedAt: analysisTable.updatedAt,
+                completedAt: analysisTable.completedAt,
+                analysisMeta: analysisTable.meta,
+                documentId: userDocumentTable.id,
+                documentTitle: userDocumentTable.title,
+                fileURL: userDocumentTable.fileURL,
+            })
+            .from(analysisTable)
+            .leftJoin(userDocumentTable, eq(analysisTable.documentID, userDocumentTable.id))
+            .where(and(...whereConditions));
+    } else {
+        // Build order by for SQL sorting
+        const orderByClause = buildOrderBy(sort, analysisTable, { asc, desc });
+
+        // Fetch paginated analysis records
+        analyses = await db
+            .select({
+                analysisId: analysisTable.id,
+                status: analysisTable.status,
+                jobID: analysisTable.jobID,
+                createdAt: analysisTable.createdAt,
+                updatedAt: analysisTable.updatedAt,
+                completedAt: analysisTable.completedAt,
+                analysisMeta: analysisTable.meta,
+                documentId: userDocumentTable.id,
+                documentTitle: userDocumentTable.title,
+                fileURL: userDocumentTable.fileURL,
+            })
+            .from(analysisTable)
+            .leftJoin(userDocumentTable, eq(analysisTable.documentID, userDocumentTable.id))
+            .where(and(...whereConditions))
+            .orderBy(...orderByClause)
+            .limit(pagination.limit)
+            .offset(pagination.offset);
+    }
+
+    // Parse meta fields and extract ATS score if available
     const formattedAnalyses = analyses.map(analysis => {
         let parsedMeta = null;
+        let atsScore = null;
         try {
             if (analysis.analysisMeta) {
                 parsedMeta = JSON.parse(analysis.analysisMeta);
+                atsScore = parsedMeta?.atsScore || null;
             }
         } catch (error) {
             logger.error('Error parsing analysis meta:', error);
@@ -245,6 +336,7 @@ export const getAllResumeAnalysesController = asyncHandler(async (req, res, next
             createdAt: analysis.createdAt,
             updatedAt: analysis.updatedAt,
             completedAt: analysis.completedAt,
+            atsScore, // Extracted for easy filtering on frontend
             meta: parsedMeta,
             document: {
                 id: analysis.documentId,
@@ -254,9 +346,34 @@ export const getAllResumeAnalysesController = asyncHandler(async (req, res, next
         };
     });
 
-    logger.info(`Successfully fetched ${formattedAnalyses.length} analyses for userID: ${userID}`);
+    // If sorting by atsScore, sort in memory and apply pagination
+    let paginatedAnalyses = formattedAnalyses;
+    if (sortingByAtsScore) {
+        // Sort by atsScore (handle null values by placing them at the end)
+        paginatedAnalyses.sort((a, b) => {
+            const scoreA = a.atsScore ?? -Infinity;
+            const scoreB = b.atsScore ?? -Infinity;
+            
+            if (sort.order === 'asc') {
+                return scoreA === -Infinity ? 1 : scoreB === -Infinity ? -1 : scoreA - scoreB;
+            } else {
+                return scoreB === -Infinity ? 1 : scoreA === -Infinity ? -1 : scoreB - scoreA;
+            }
+        });
 
-    sendSuccess(res, formattedAnalyses, "Analyses retrieved successfully", 200);
+        // Apply pagination after sorting
+        paginatedAnalyses = paginatedAnalyses.slice(pagination.offset, pagination.offset + pagination.limit);
+    }
+
+    // Calculate pagination metadata
+    const paginationMeta = getPaginationMeta(totalCount, pagination);
+
+    // Format response
+    const response = formatPaginatedResponse(paginatedAnalyses, paginationMeta, filters);
+
+    logger.info(`Successfully fetched ${paginatedAnalyses.length} of ${totalCount} analyses for userID: ${userID}`);
+
+    sendSuccess(res, response, "Analyses retrieved successfully", 200);
 });
 
 /**
@@ -285,16 +402,19 @@ export const createResumeController = asyncHandler(async (req, res, next) => {
         return next(new AppError('Missing required field: fileURL', 400));
     }
 
-    // Create document record
+    // Create document record with temporary title (will be updated after parsing)
+    const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    const documentTitle = `Resume Analysis (Pending) - ${timestamp}`;
+    
     const createdDocument = await createUserDocument(validatedId, {
-        title: 'Resume',
+        title: documentTitle,
         fileURL,
         meta: {}
     });
 
     // Create analysis record and queue job
     const createAnalysis = await createAnalysisRecord(validatedId, createdDocument.id, {}, {
-        title: 'Resume',
+        title: documentTitle,
         fileURL,
         meta: {}
     });

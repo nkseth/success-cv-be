@@ -5,7 +5,28 @@ import { sendSuccess } from "../utils/apiHelpers.js";
 import { userTypeConstants } from "../utils/constants.js";
 import { validateEmail, validateString } from "../utils/validate-helper.js";
 import { comparePassword } from '../utils/security-helper.js';
-import { createCandidatesBulk, forgotpasswordTokenGenerationCandidate, getCandidateByEmail, resetPasswordUsingToken } from '../models/candidate.model.js';
+import { createCandidate, createCandidatesBulk, forgotpasswordTokenGenerationCandidate, getCandidateByEmail, resetPasswordUsingToken } from '../models/candidate.model.js';
+
+export const registerSingleController = asyncHandler(async (req, res, next) => {
+    if (!req.body || typeof req.body !== 'object') {
+        return next(new AppError('Invalid request body', 400));
+    }
+
+    const { fullname, email, password, organisationID } = req.body;
+
+    if (!fullname || !email || !password || !organisationID) {
+        return next(new AppError('All fields are required: fullname, email, password, organisationID', 400));
+    }
+
+    try {
+        const candidate = await createCandidate({ fullname, email, password, organisationID });
+
+        sendSuccess(res, candidate, 'Candidate registered successfully', 201);
+    } catch (error) {
+        console.log('Single candidate registration error:', error);
+        return next(error);
+    }
+});
 
 export const registerBulkController = asyncHandler(async (req, res, next) => {
     if (!req.body || typeof req.body !== 'object') {
@@ -37,6 +58,18 @@ export const registerBulkController = asyncHandler(async (req, res, next) => {
         // Determine status code based on results
         const statusCode = results.failed === 0 ? 201 : (results.successful === 0 ? 400 : 207);
 
+        // Create a more informative message
+        let message = `Bulk registration completed: ${results.successful} successful, ${results.failed} failed`;
+        
+        // If all failed and there are duplicates, make it clear
+        if (results.successful === 0 && results.duplicateEmails.length > 0) {
+            if (results.duplicateEmails.length === candidates.length) {
+                message = 'All candidates already exist in the system';
+            } else {
+                message = `Bulk registration failed: ${results.duplicateEmails.length} candidate(s) already exist`;
+            }
+        }
+
         sendSuccess(res, {
             summary: {
                 total: candidates.length,
@@ -49,7 +82,7 @@ export const registerBulkController = asyncHandler(async (req, res, next) => {
             successfulCandidates: results.successfulCandidates,
             failures: results.failures,
             duplicateEmails: results.duplicateEmails
-        }, `Bulk registration completed: ${results.successful} successful, ${results.failed} failed`, statusCode);
+        }, message, statusCode);
 
     } catch (error) {
         console.log('Bulk registration error:', error);

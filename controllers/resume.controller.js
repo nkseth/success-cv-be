@@ -3,6 +3,11 @@ import { sendSuccess } from "../utils/apiHelpers.js";
 import { validateInteger, validateString } from "../utils/validate-helper.js";
 import logger from "../middleware/logger.js";
 import resumeService from "../services/resume.service.js";
+import { 
+    parseQueryParams, 
+    getPaginationMeta, 
+    formatPaginatedResponse 
+} from "../utils/pagination-filter.js";
 
 /**
  * Resume Controller
@@ -19,20 +24,48 @@ import resumeService from "../services/resume.service.js";
 /**
  * Get all resumes for authenticated user
  * GET /api/v1/resumes
+ * Query params:
+ * - page: Page number (default: 1)
+ * - limit: Items per page (default: 10, max: 100)
+ * - q: Search in resume content
+ * - createdAt: Date range filter ?createdAt=2025-01-01,2025-12-31
+ * - updatedAt: Date range filter
+ * - isDraft: Filter by draft status - supports multiple: ?isDraft=true,false
+ * - sortBy: Sort field (createdAt, updatedAt, version)
+ * - sortOrder: Sort order (asc, desc)
  */
 export const getAllResumesController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
-    const { limit = 50 } = req.query;
 
-    logger.info('[RESUME_CONTROLLER] Fetching all resumes', { userID });
+    logger.info('[RESUME_CONTROLLER] Fetching all resumes', { userID, query: req.query });
 
-    const resumes = await resumeService.getAllResumes(userID, {
-        limit: parseInt(limit)
+    // Parse query parameters
+    const { pagination, search, filters, sort } = parseQueryParams(req.query, {
+        defaultPageSize: 10,
+        maxPageSize: 100,
+        filterableFields: {
+            createdAt: 'dateRange',
+            updatedAt: 'dateRange',
+            isDraft: 'boolean',
+        },
+        sortableFields: ['createdAt', 'updatedAt', 'version'],
+        defaultSort: { field: 'updatedAt', order: 'desc' }
     });
 
-    sendSuccess(res, resumes, 'Resumes fetched successfully', 200, {
-        count: resumes.length
+    const { resumes, totalCount } = await resumeService.getAllResumes(userID, {
+        pagination,
+        filters,
+        search,
+        sort
     });
+
+    // Calculate pagination metadata
+    const paginationMeta = getPaginationMeta(totalCount, pagination);
+
+    // Format response
+    const response = formatPaginatedResponse(resumes, paginationMeta, filters);
+
+    sendSuccess(res, response, 'Resumes fetched successfully', 200);
 });
 
 /**
@@ -254,6 +287,15 @@ export const createRewriteByAnalysisController = asyncHandler(async (req, res, n
 /**
  * Get all rewrites for a resume
  * GET /api/v1/resumes/:id/rewrites
+ * Query params:
+ * - page: Page number (default: 1)
+ * - limit: Items per page (default: 10, max: 100)
+ * - status: Filter by status (pending, processing, completed, failed) - supports multiple
+ * - isActive: Filter by active status
+ * - createdAt: Date range filter
+ * - completedAt: Date range filter
+ * - sortBy: Sort field (createdAt, updatedAt, completedAt, versionNumber)
+ * - sortOrder: Sort order (asc, desc)
  */
 export const getRewritesController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
@@ -267,17 +309,37 @@ export const getRewritesController = asyncHandler(async (req, res, next) => {
     logger.info('[RESUME_CONTROLLER] Fetching rewrites', {
         userID,
         resumeID: validatedID,
-        analysisID: resume.content.analysisID
+        analysisID: resume.content.analysisID,
+        query: req.query
     });
 
-    const rewrites = await resumeService.getRewritesByAnalysis(
+    // Parse query parameters
+    const { pagination, filters, sort } = parseQueryParams(req.query, {
+        defaultPageSize: 10,
+        maxPageSize: 100,
+        filterableFields: {
+            status: 'array',
+            isActive: 'boolean',
+            createdAt: 'dateRange',
+            completedAt: 'dateRange',
+        },
+        sortableFields: ['createdAt', 'updatedAt', 'completedAt', 'versionNumber'],
+        defaultSort: { field: 'createdAt', order: 'desc' }
+    });
+
+    const { rewrites, totalCount } = await resumeService.getRewritesByAnalysis(
         resume.content.analysisID,
-        userID
+        userID,
+        { pagination, filters, sort }
     );
 
-    sendSuccess(res, rewrites, 'Rewrites fetched successfully', 200, {
-        count: rewrites.length
-    });
+    // Calculate pagination metadata
+    const paginationMeta = getPaginationMeta(totalCount, pagination);
+
+    // Format response
+    const response = formatPaginatedResponse(rewrites, paginationMeta, filters);
+
+    sendSuccess(res, response, 'Rewrites fetched successfully', 200);
 });
 
 /**
@@ -320,39 +382,152 @@ export const applyRewriteController = asyncHandler(async (req, res, next) => {
     sendSuccess(res, result, 'Rewrite applied successfully');
 });
 
+/**
+ * Switch to a different rewrite version
+ * Updates resume content with the selected version's content
+ * POST /api/v1/resumes/:id/rewrites/:rewriteId/switch
+ */
+export const switchRewriteVersionController = asyncHandler(async (req, res, next) => {
+    const userID = req.userID;
+    const { rewriteId } = req.params;
+
+    const validatedRewriteID = validateInteger(rewriteId, 'Rewrite ID');
+
+    logger.info('[RESUME_CONTROLLER] Switching rewrite version', {
+        userID,
+        rewriteID: validatedRewriteID
+    });
+
+    const result = await resumeService.switchRewriteVersion(validatedRewriteID, userID);
+
+    sendSuccess(res, result, result.message || 'Switched to rewrite version successfully');
+});
+
+/**
+ * Get the currently active rewrite for a resume
+ * GET /api/v1/resumes/:id/rewrites/active
+ */
+export const getActiveRewriteController = asyncHandler(async (req, res, next) => {
+    const userID = req.userID;
+    const { id } = req.params;
+
+    const validatedID = validateInteger(id, 'Resume ID');
+
+    // Get the analysis ID from resume content
+    const resume = await resumeService.getResumeByID(validatedID, userID);
+
+    logger.info('[RESUME_CONTROLLER] Fetching active rewrite', {
+        userID,
+        resumeID: validatedID,
+        analysisID: resume.content.analysisID
+    });
+
+    const activeRewrite = await resumeService.getActiveRewrite(resume.content.analysisID, userID);
+
+    if (!activeRewrite) {
+        sendSuccess(res, null, 'No active rewrite version');
+        return;
+    }
+
+    sendSuccess(res, activeRewrite, 'Active rewrite fetched successfully');
+});
+
+/**
+ * Clear active rewrite (revert to manual editing mode)
+ * DELETE /api/v1/resumes/:id/rewrites/active
+ */
+export const clearActiveRewriteController = asyncHandler(async (req, res, next) => {
+    const userID = req.userID;
+    const { id } = req.params;
+
+    const validatedID = validateInteger(id, 'Resume ID');
+
+    // Get the analysis ID from resume content
+    const resume = await resumeService.getResumeByID(validatedID, userID);
+
+    logger.info('[RESUME_CONTROLLER] Clearing active rewrite', {
+        userID,
+        resumeID: validatedID,
+        analysisID: resume.content.analysisID
+    });
+
+    const result = await resumeService.clearActiveRewrite(resume.content.analysisID, userID);
+
+    sendSuccess(res, result, 'Reverted to manual editing mode');
+});
+
+/**
+ * Compare two rewrite versions
+ * GET /api/v1/resumes/:id/rewrites/compare
+ * Query params: version1, version2 (rewrite IDs)
+ */
+export const compareRewriteVersionsController = asyncHandler(async (req, res, next) => {
+    const userID = req.userID;
+    const { version1, version2 } = req.query;
+
+    const validatedVersion1 = validateInteger(version1, 'Version 1 ID');
+    const validatedVersion2 = validateInteger(version2, 'Version 2 ID');
+
+    logger.info('[RESUME_CONTROLLER] Comparing rewrite versions', {
+        userID,
+        version1: validatedVersion1,
+        version2: validatedVersion2
+    });
+
+    const comparison = await resumeService.compareRewriteVersions(
+        validatedVersion1,
+        validatedVersion2,
+        userID
+    );
+
+    sendSuccess(res, comparison, 'Rewrite versions compared successfully');
+});
+
 // ========== THEME ENDPOINTS ==========
 
 /**
  * Get available themes
  * GET /api/v1/themes
+ * Query params:
+ * - page: Page number (default: 1)
+ * - limit: Items per page (default: 20, max: 100)
+ * - q: Search in theme name or description
+ * - category: Filter by category (professional, creative, minimal, ats-optimized, academic)
+ * - isATSOptimized: Filter by ATS optimization
+ * - isPublic: Filter by public visibility
+ * - sortBy: Sort field (usageCount, createdAt, name)
+ * - sortOrder: Sort order (asc, desc)
  */
 export const getThemesController = asyncHandler(async (req, res, next) => {
-    const { 
-        category, 
-        isATSOptimized, 
-        search, 
-        sortBy = 'usageCount',
-        limit = 50,
-        offset = 0 
-    } = req.query;
+    logger.info('[RESUME_CONTROLLER] Fetching themes', { query: req.query });
 
-    logger.info('[RESUME_CONTROLLER] Fetching themes', {
-        category,
-        isATSOptimized
+    // Parse query parameters
+    const { pagination, search, filters, sort } = parseQueryParams(req.query, {
+        defaultPageSize: 20,
+        maxPageSize: 100,
+        filterableFields: {
+            category: 'string',
+            isATSOptimized: 'boolean',
+            isPublic: 'boolean',
+        },
+        sortableFields: ['usageCount', 'createdAt', 'name'],
+        defaultSort: { field: 'usageCount', order: 'desc' }
     });
 
-    const themes = await resumeService.getThemes({
-        category: category || null,
-        isATSOptimized: isATSOptimized === 'true' ? true : (isATSOptimized === 'false' ? false : null),
-        search: search || null,
-        sortBy,
-        limit: parseInt(limit),
-        offset: parseInt(offset)
+    const { themes, totalCount } = await resumeService.getThemes({
+        pagination,
+        search,
+        filters,
+        sort
     });
 
-    sendSuccess(res, themes, 'Themes fetched successfully', 200, {
-        count: themes.length
-    });
+    // Calculate pagination metadata
+    const paginationMeta = getPaginationMeta(totalCount, pagination);
+
+    // Format response
+    const response = formatPaginatedResponse(themes, paginationMeta, filters);
+
+    sendSuccess(res, response, 'Themes fetched successfully', 200);
 });
 
 /**
@@ -477,6 +652,10 @@ export default {
     getRewritesController,
     getRewriteController,
     applyRewriteController,
+    switchRewriteVersionController,
+    getActiveRewriteController,
+    clearActiveRewriteController,
+    compareRewriteVersionsController,
     // Themes
     getThemesController,
     getThemeController,

@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, or, ilike, inArray, gte, lte, desc, asc, count } from "drizzle-orm";
 import { db } from "../config/db.js";
 import { inviteTable, orgMembersTable, usersTable } from "../drizzle/schema.js";
 import { AppError } from "../middleware/error.js";
@@ -9,6 +9,11 @@ import { sendEmail } from "../services/email/setBrevo.js";
 import { validateInteger, validateString } from "../utils/validate-helper.js";
 import { excludeFields } from "../utils/security-helper.js";
 import { memberTypeConstants } from "../utils/constants.js";
+import { 
+    buildWhereConditions, 
+    buildSearchCondition, 
+    buildOrderBy 
+} from "../utils/pagination-filter.js";
 
 
 export const inviteSingleMember = async (userId, orgID, email, role = memberType.MEMBER) => {
@@ -227,14 +232,57 @@ export const ResendInvite = async (id) => {
 
 }
 
-export const getAllMembersofOrganisation = async (orgID) => {
-
+export const getAllMembersofOrganisation = async (orgID, options = {}) => {
     const validOrgID = validateInteger(orgID, 'Organisation ID');
     const existingOrg = await getOrgByID(validOrgID);
     if (!existingOrg) {
         throw new AppError('Organisation not found', 404);
     }
+
+    const {
+        pagination = { limit: 10, offset: 0 },
+        filters = {},
+        search = { query: '', fields: [] },
+        sort = { field: 'joinedAt', order: 'desc' }
+    } = options;
+
     try {
+        // Build base where conditions
+        const whereConditions = [eq(orgMembersTable.organisationID, validOrgID)];
+
+        // Add filter conditions
+        const filterConditions = buildWhereConditions(
+            filters,
+            { ...orgMembersTable, userIsVerified: usersTable.isVerified },
+            { eq, inArray, gte, lte, or, and }
+        );
+        whereConditions.push(...filterConditions);
+
+        // Add search condition (search in user name or email)
+        const searchCondition = buildSearchCondition(
+            search.query,
+            [usersTable.fullname, usersTable.email],
+            { or, ilike }
+        );
+        if (searchCondition) {
+            whereConditions.push(searchCondition);
+        }
+
+        // Get total count
+        const [{ totalCount }] = await db
+            .select({ totalCount: count() })
+            .from(orgMembersTable)
+            .innerJoin(usersTable, eq(orgMembersTable.userID, usersTable.id))
+            .where(and(...whereConditions));
+
+        // Build order by
+        const orderByClause = buildOrderBy(
+            sort,
+            { ...orgMembersTable, userName: usersTable.fullname, userEmail: usersTable.email, userIsVerified: usersTable.isVerified },
+            { asc, desc }
+        );
+
+        // Fetch paginated members
         const members = await db.select({
             id: orgMembersTable.id,
             userID: orgMembersTable.userID,
@@ -244,30 +292,76 @@ export const getAllMembersofOrganisation = async (orgID) => {
             joinedAt: orgMembersTable.joinedAt,
             // User details from join
             userName: usersTable.fullname,
-            userEmail: usersTable.email
+            userEmail: usersTable.email,
+            userIsVerified: usersTable.isVerified
         })
             .from(orgMembersTable)
             .innerJoin(usersTable, eq(orgMembersTable.userID, usersTable.id))
-            .where(eq(orgMembersTable.organisationID, validOrgID));
+            .where(and(...whereConditions))
+            .orderBy(...orderByClause)
+            .limit(pagination.limit)
+            .offset(pagination.offset);
 
-        return members;
+        return { members, totalCount };
     } catch (error) {
         throw new AppError('Failed to retrieve organisation members', 500);
     }
 }
 
-export const getAllInvitesOfOrganisation = async (orgID) => {
+export const getAllInvitesOfOrganisation = async (orgID, options = {}) => {
     const validOrgID = validateInteger(orgID, 'Organisation ID');
     const existingOrg = await getOrgByID(validOrgID);
     if (!existingOrg) {
         throw new AppError('Organisation not found', 404);
     }
+
+    const {
+        pagination = { limit: 10, offset: 0 },
+        filters = {},
+        search = { query: '', fields: [] },
+        sort = { field: 'createdAt', order: 'desc' }
+    } = options;
+
     try {
+        // Build base where conditions
+        const whereConditions = [eq(inviteTable.organisationID, validOrgID)];
+
+        // Add filter conditions
+        const filterConditions = buildWhereConditions(
+            filters,
+            inviteTable,
+            { eq, inArray, gte, lte, or, and }
+        );
+        whereConditions.push(...filterConditions);
+
+        // Add search condition (search in email)
+        const searchCondition = buildSearchCondition(
+            search.query,
+            [inviteTable.email],
+            { or, ilike }
+        );
+        if (searchCondition) {
+            whereConditions.push(searchCondition);
+        }
+
+        // Get total count
+        const [{ totalCount }] = await db
+            .select({ totalCount: count() })
+            .from(inviteTable)
+            .where(and(...whereConditions));
+
+        // Build order by
+        const orderByClause = buildOrderBy(sort, inviteTable, { asc, desc });
+
+        // Fetch paginated invites
         const invites = await db.select()
             .from(inviteTable)
-            .where(eq(inviteTable.organisationID, validOrgID));
+            .where(and(...whereConditions))
+            .orderBy(...orderByClause)
+            .limit(pagination.limit)
+            .offset(pagination.offset);
 
-        return invites;
+        return { invites, totalCount };
     } catch (error) {
         throw new AppError('Failed to retrieve organisation invites', 500);
     }

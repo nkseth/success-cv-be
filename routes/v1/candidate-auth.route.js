@@ -1,7 +1,7 @@
 import { Router } from "express";
 import logger from "../../middleware/logger.js";
 import { sendSuccess } from "../../utils/apiHelpers.js";
-import { forgotPasswordController, LoginControllerCandidate, registerBulkController, resetPasswordControllerCandidate } from "../../controllers/candidate.auth.controller.js";
+import { forgotPasswordController, LoginControllerCandidate, registerSingleController, registerBulkController, resetPasswordControllerCandidate } from "../../controllers/candidate.auth.controller.js";
 
 const router = Router();
 
@@ -9,6 +9,11 @@ router.get('/health', (req, res, next) => {
     logger.info("API v1 AUTH health route accessed");
     sendSuccess(res, null, "Success-CV API v1 AUTH");
 });
+
+router.post('/register', (req, res, next) => {
+    logger.info("Single candidate registration endpoint hit");
+    next();
+}, registerSingleController);
 
 router.post('/register/bulk', (req, res, next) => {
     logger.info("Bulk candidate registration endpoint hit");

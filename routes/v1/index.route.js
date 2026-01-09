@@ -10,6 +10,7 @@ import sseRoutes from "./sse.route.js";
 import { uploadRoutes } from "./upload.route.js";
 import { resumeAnalysisRoutes } from "./resume-analysis.route.js";
 import { resumeRoutes } from "./resume.route.js";
+import { adminRoutes } from "./admin.route.js";
 
 const router = Router();
 
@@ -37,6 +38,7 @@ router.use('/organisations', organisationRoutes);
 router.use('/invites', invitesRoutes);
 router.use('/sse', sseRoutes);
 router.use('/upload', uploadRoutes);
+router.use('/admin', adminRoutes);
 
 // Resume routes
 router.use('/resume-analysis', resumeAnalysisRoutes);

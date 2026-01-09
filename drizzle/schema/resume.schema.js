@@ -85,6 +85,21 @@ export const resumeContentTable = pgTable("resume_content", {
     // Current ATS/Quality scores (updated after each edit/rewrite)
     currentScores: json(), // { atsScore, contentScore, formatScore, overallScore }
     
+    /**
+     * Analysis report containing issues and improvement suggestions.
+     * For initial upload: Contains issues found during analysis
+     * When rewrite is active: Contains issues resolved vs remaining
+     * Structure: {
+     *   criticalMistakes: Array<{ issue, impact, fix_suggestion }>,
+     *   majorIssues: Array<{ issue, impact, fix_suggestion }>,
+     *   minorImprovements: Array<{ area, suggestion }>,
+     *   resumeQuality: { ats_compatibility_score, content_quality_score, ... },
+     *   optimizationOpportunities: Array<string>,
+     *   version: 'initial' | 'rewrite_v1' | 'rewrite_v2' | ...
+     * }
+     */
+    analysisReport: json(),
+    
     // Version tracking
     version: integer().default(1).notNull(),
     lastEditType: varchar({ length: 20 }).default('initial'), // 'initial', 'manual', 'ai_rewrite'
@@ -103,6 +118,17 @@ export const resumeContentTable = pgTable("resume_content", {
  * Tracks AI rewrite jobs and their results.
  * Each rewrite is a version - users can have multiple rewrites.
  * When a rewrite is applied, it updates resumeContent.
+ * 
+ * VERSION SWITCHING WORKFLOW:
+ * 1. User creates rewrite → captures sourceContentSnapshot (current resume state)
+ * 2. AI generates optimized content → stored in rewrittenContent
+ * 3. User can preview rewrittenContent before applying
+ * 4. When user applies rewrite → resumeContent updated with rewrittenContent
+ * 5. User can switch to any completed rewrite version:
+ *    - Switching applies that version's rewrittenContent to resumeContent
+ *    - The isActive flag tracks which version is currently applied
+ * 6. User can edit resume after applying a rewrite
+ *    - New rewrite will be based on the current (possibly edited) content
  */
 export const resumeRewritesTable = pgTable("resume_rewrites", {
     id: integer().primaryKey().generatedAlwaysAsIdentity(),
@@ -123,19 +149,45 @@ export const resumeRewritesTable = pgTable("resume_rewrites", {
     // Optimization settings used for this rewrite
     optimizationSettings: json(), // { targetATSScore, focusAreas, optimizationLevel }
     
+    /**
+     * Snapshot of resume content at time of rewrite request.
+     * This captures what the resume looked like BEFORE AI optimization.
+     * Useful for:
+     * - Comparison with rewritten version
+     * - Understanding what content the AI was working with
+     * - Audit trail of changes
+     */
+    sourceContentSnapshot: json(), // { personalInfo, summary, experience, education, skills, additionalSections, scores }
+    
     // Rewritten content (stored separately until user applies it)
     /**
      * Same structure as resumeContent fields but stores the AI-generated version.
      * User can preview before applying to main resumeContent.
+     * This content is immutable once created - edits go to resumeContent.
      */
     rewrittenContent: json(), // Full rewritten resume object
     
     // Improvement metrics
     improvements: json(), // { before: scores, after: scores, changes: [] }
     
+    /**
+     * Post-rewrite analysis report showing what was fixed.
+     * Structure: {
+     *   resolvedIssues: Array<{ issue, howFixed }>,
+     *   remainingIssues: Array<{ issue, impact, fix_suggestion }>,
+     *   newScores: { atsScore, contentScore, ... },
+     *   improvementSummary: string,
+     *   version: 'rewrite_v1' | 'rewrite_v2' | ...
+     * }
+     */
+    analysisReport: json(),
+    
     // Whether this rewrite is currently active (applied to resumeContent)
     isActive: boolean().default(false).notNull(),
     appliedAt: timestamp(),
+    
+    // Track if content has been modified after this rewrite was applied
+    wasModifiedAfterApply: boolean().default(false),
     
     // Timestamps
     createdAt: timestamp().defaultNow().notNull(),
@@ -235,6 +287,7 @@ export const candidateResumeContentTable = pgTable("candidate_resume_content", {
     additionalSections: json(),
     
     currentScores: json(),
+    analysisReport: json(), // Same structure as user resume analysisReport
     version: integer().default(1).notNull(),
     lastEditType: varchar({ length: 20 }).default('initial'),
     lastEditedSection: varchar({ length: 50 }),
@@ -263,6 +316,7 @@ export const candidateResumeRewritesTable = pgTable("candidate_resume_rewrites",
     optimizationSettings: json(),
     rewrittenContent: json(),
     improvements: json(),
+    analysisReport: json(), // Same structure as user resume rewrite analysisReport
     
     isActive: boolean().default(false).notNull(),
     appliedAt: timestamp(),

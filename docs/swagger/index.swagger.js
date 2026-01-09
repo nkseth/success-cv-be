@@ -15,12 +15,16 @@
  *     description: Resume analysis management and data retrieval endpoints
  *   - name: Resumes
  *     description: Unified resume content, editing, rewrites, and theming
+ *   - name: Download
+ *     description: Resume PDF download and preview operations
  *   - name: SSE (Server-Sent Events)
  *     description: Real-time updates via Server-Sent Events
  *   - name: Health
  *     description: Health check and system monitoring endpoints
  *   - name: Upload
  *     description: File upload with Azure Blob Storage presigned URLs
+ *   - name: Admin
+ *     description: Admin system management, settings, templates, and user blocking
  */
 
 /**

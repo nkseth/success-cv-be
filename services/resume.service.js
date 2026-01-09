@@ -4,8 +4,8 @@ import resumeModel from "../models/resume.model.js";
 import themeModel from "../models/theme.model.js";
 import { addResumeRewriteJob } from "../queues/resume-rewrite.queue.js";
 import { validateResumeData } from "../utils/resumeSchema.js";
-import { getCompleteResumePrompt } from "../queues/workerSupport/resume-rewrite/prompt.js";
-import { completeResumeOptimizationSchema } from "../queues/workerSupport/resume-rewrite/objectSchema.js";
+import { getResumeContentRewritePrompt } from "../queues/workerSupport/resume-rewrite/prompt.js";
+import { resumeContentOutputSchema } from "../queues/workerSupport/resume-rewrite/objectSchema.js";
 
 // Lazy-load AI service to avoid circular dependencies
 const getAiService = async () => {
@@ -53,8 +53,11 @@ export const createResumeFromAnalysis = async (userID, analysisID, analysisData)
         // Extract and structure resume content
         const contentData = extractResumeContent(parsed);
 
-        // Create resume content record
-        const content = await resumeModel.createResumeContent(userID, analysisID, contentData);
+        // Extract analysis report (issues, improvements, quality scores)
+        const analysisReport = extractAnalysisReport(parsed);
+
+        // Create resume content record with embedded analysis report
+        const content = await resumeModel.createResumeContent(userID, analysisID, contentData, analysisReport);
 
         logger.info('[RESUME_SERVICE] ✅ Resume created from analysis', {
             contentID: content.id
@@ -351,33 +354,123 @@ function extractResumeContent(analysisData) {
 }
 
 /**
+ * Extract analysis report from AI analysis data
+ * This contains issues, improvements, and quality scores for the resume
+ * @param {Object} analysisData - Raw analysis data from AI
+ * @returns {Object} Structured analysis report
+ */
+function extractAnalysisReport(analysisData) {
+    logger.info('[RESUME_SERVICE] Extracting analysis report');
+    
+    const analysisReport = {
+        // Critical mistakes that must be fixed
+        criticalMistakes: (analysisData.critical_mistakes || []).map(mistake => ({
+            issue: mistake.issue || mistake.mistake || mistake,
+            impact: mistake.impact || 'High - may cause resume rejection',
+            fixSuggestion: mistake.fix_suggestion || mistake.suggestion || mistake.fix || ''
+        })),
+        
+        // Major issues that should be addressed
+        majorIssues: (analysisData.major_issues || []).map(issue => ({
+            issue: issue.issue || issue,
+            impact: issue.impact || 'Medium - reduces resume effectiveness',
+            fixSuggestion: issue.fix_suggestion || issue.suggestion || issue.fix || ''
+        })),
+        
+        // Minor improvements for polish
+        minorImprovements: (analysisData.minor_improvements || []).map(improvement => ({
+            area: improvement.area || improvement.section || 'General',
+            suggestion: improvement.suggestion || improvement.improvement || improvement
+        })),
+        
+        // Optimization opportunities
+        optimizationOpportunities: analysisData.optimization_opportunities || [],
+        
+        // Quality scores from analysis
+        resumeQuality: {
+            atsCompatibilityScore: analysisData.resume_quality?.ats_compatibility_score || 0,
+            contentQualityScore: analysisData.resume_quality?.content_quality_score || 0,
+            formattingScore: analysisData.resume_quality?.formatting_design_score || analysisData.resume_quality?.formatting_score || 0,
+            grammarScore: analysisData.resume_quality?.grammar_language_score || 0,
+            professionalBrandingScore: analysisData.resume_quality?.professional_branding_score || 0,
+            completenessScore: analysisData.resume_quality?.completeness_score || 0,
+            overallQualityScore: analysisData.resume_quality?.overall_quality_score || 0,
+            improvementPoints: analysisData.resume_quality?.improvement_points || 0
+        },
+        
+        // Relevance scores
+        relevanceScores: {
+            overallScore: analysisData.relevance?.['Overall Score'] || 0,
+            skillsRelevance: analysisData.relevance?.['Skills Relevance'] || 0,
+            workExperience: analysisData.relevance?.['Work Experience'] || 0,
+            education: analysisData.relevance?.['Education'] || 0
+        },
+        
+        // Job fit score
+        jobFitScore: analysisData.JobFitScore || 0,
+        
+        // Summary counts for quick reference
+        summary: {
+            totalCritical: (analysisData.critical_mistakes || []).length,
+            totalMajor: (analysisData.major_issues || []).length,
+            totalMinor: (analysisData.minor_improvements || []).length,
+            totalOptimizations: (analysisData.optimization_opportunities || []).length
+        },
+        
+        // Version marker to track source
+        version: 'initial',
+        extractedAt: new Date().toISOString()
+    };
+    
+    logger.info('[RESUME_SERVICE] ✅ Analysis report extracted', {
+        criticalCount: analysisReport.summary.totalCritical,
+        majorCount: analysisReport.summary.totalMajor,
+        minorCount: analysisReport.summary.totalMinor,
+        atsScore: analysisReport.resumeQuality.atsCompatibilityScore
+    });
+    
+    return analysisReport;
+}
+
+/**
  * Get resume by ID with full details
+ * Returns unified response with content, analysisReport, rewrites (each with their own analysis)
  * @param {number} contentID - Resume content ID
  * @param {number} userID - User ID
- * @returns {Promise<Object>} Resume with theme info
+ * @returns {Promise<Object>} Resume with theme info and analysis
  */
 export const getResumeByID = async (contentID, userID) => {
     try {
         logger.info('[RESUME_SERVICE] Fetching resume', { contentID, userID });
 
-        // Get resume content
+        // Get resume content (now includes analysisReport)
         const content = await resumeModel.getResumeContentByID(contentID, userID);
 
         // Get applied theme if any
         const theme = await themeModel.getUserTheme(contentID, userID);
 
-        // Get rewrites history
-        const rewrites = await resumeModel.getRewritesByAnalysisID(content.analysisID, userID);
+        // Get rewrites history (with no pagination to get all rewrites)
+        const { rewrites } = await resumeModel.getRewritesByAnalysisID(content.analysisID, userID, {
+            pagination: { limit: 100, offset: 0 } // Get all rewrites for history
+        });
 
         return {
             content,
+            // Provide analysisReport at top level for easy access
+            // (it's also in content.analysisReport for completeness)
+            analysisReport: content.analysisReport || null,
             theme: theme || null,
+            // Include analysis report in each rewrite for version switching
             rewrites: rewrites.map(r => ({
                 id: r.id,
                 versionNumber: r.versionNumber,
                 versionLabel: r.versionLabel,
                 status: r.status,
                 isActive: r.isActive,
+                // Include scores and analysis for this specific rewrite version
+                scores: r.rewrittenContent?.scores || null,
+                analysisReport: r.analysisReport || null,
+                improvements: r.improvements || null,
                 createdAt: r.createdAt,
                 completedAt: r.completedAt
             })),
@@ -419,12 +512,12 @@ export const getResumeByAnalysisID = async (analysisID, userID) => {
 /**
  * Get all resumes for a user
  * @param {number} userID - User ID
- * @param {Object} filters - Optional filters
- * @returns {Promise<Array>} List of resumes
+ * @param {Object} options - Options including pagination, filters, search, sort
+ * @returns {Promise<Object>} Object with resumes array and totalCount
  */
-export const getAllResumes = async (userID, filters = {}) => {
+export const getAllResumes = async (userID, options = {}) => {
     try {
-        return await resumeModel.getAllResumeContents(userID, filters);
+        return await resumeModel.getAllResumeContents(userID, options);
     } catch (error) {
         logger.error('[RESUME_SERVICE] Failed to fetch resumes', {
             error: error.message,
@@ -552,6 +645,7 @@ function validateSectionData(sectionName, data) {
 
 /**
  * Create a new rewrite job
+ * Creates a rewrite based on the CURRENT resume content (which may have been edited)
  * @param {number} userID - User ID
  * @param {number} analysisID - Analysis ID
  * @param {Object} options - Optimization options
@@ -565,21 +659,34 @@ export const createRewrite = async (userID, analysisID, options = {}) => {
             options
         });
 
-        // Get resume content
+        // Get current resume content - this is what AI will optimize
         const content = await resumeModel.getResumeContentByAnalysisID(analysisID, userID);
         
         if (!content) {
             throw new AppError('Resume content not found for this analysis', 404);
         }
 
-        // Get analysis data for rewrite
+        // Get analysis data (raw text) for rewrite
         const analysisData = await resumeModel.getAnalysisDataForRewrite(analysisID, userID);
 
-        // Create rewrite record
+        // Build current content object for snapshot
+        const currentContent = {
+            personalInfo: content.personalInfo,
+            summary: content.summary,
+            experience: content.experience,
+            education: content.education,
+            skills: content.skills,
+            additionalSections: content.additionalSections,
+            currentScores: content.currentScores,
+            version: content.version
+        };
+
+        // Create rewrite record with content snapshot
         const rewrite = await resumeModel.createRewrite(
             userID,
             analysisID,
             content.id,
+            currentContent, // Pass current content for snapshot
             {
                 versionLabel: options.versionLabel,
                 optimizationSettings: {
@@ -590,7 +697,7 @@ export const createRewrite = async (userID, analysisID, options = {}) => {
             }
         );
 
-        // Add job to queue
+        // Add job to queue with current content (not original analysis)
         const job = await addResumeRewriteJob({
             rewriteID: rewrite.id,
             analysisID,
@@ -598,23 +705,18 @@ export const createRewrite = async (userID, analysisID, options = {}) => {
             resumeContentID: content.id,
             analysisData: analysisData.processedData,
             rawData: analysisData.rawData,
-            currentContent: {
-                personalInfo: content.personalInfo,
-                summary: content.summary,
-                experience: content.experience,
-                education: content.education,
-                skills: content.skills,
-                additionalSections: content.additionalSections
-            },
+            currentContent, // AI will optimize from current state
             optimizationOptions: rewrite.optimizationSettings
         });
 
         // Update rewrite with job ID
         await resumeModel.updateRewrite(rewrite.id, { jobID: job.id });
 
-        logger.info('[RESUME_SERVICE] ✅ Rewrite job created', {
+        logger.info('[RESUME_SERVICE] ✅ Rewrite job created with content snapshot', {
             rewriteID: rewrite.id,
-            jobID: job.id
+            jobID: job.id,
+            contentVersion: content.version,
+            versionNumber: rewrite.versionNumber
         });
 
         return {
@@ -623,6 +725,7 @@ export const createRewrite = async (userID, analysisID, options = {}) => {
             versionNumber: rewrite.versionNumber,
             versionLabel: rewrite.versionLabel,
             status: 'pending',
+            basedOnVersion: content.version,
             message: 'Rewrite job created and queued'
         };
     } catch (error) {
@@ -636,7 +739,7 @@ export const createRewrite = async (userID, analysisID, options = {}) => {
 };
 
 /**
- * Get rewrite details
+ * Get rewrite details with source snapshot
  * @param {number} rewriteID - Rewrite ID
  * @param {number} userID - User ID
  * @returns {Promise<Object>} Rewrite details
@@ -651,9 +754,12 @@ export const getRewrite = async (rewriteID, userID) => {
             versionNumber: rewrite.versionNumber,
             versionLabel: rewrite.versionLabel,
             isActive: rewrite.isActive,
+            wasModifiedAfterApply: rewrite.wasModifiedAfterApply,
             optimizationSettings: rewrite.optimizationSettings,
             improvements: rewrite.improvements,
+            analysisReport: rewrite.analysisReport,
             rewrittenContent: rewrite.status === 'completed' ? rewrite.rewrittenContent : null,
+            sourceContentSnapshot: rewrite.sourceContentSnapshot,
             createdAt: rewrite.createdAt,
             completedAt: rewrite.completedAt,
             appliedAt: rewrite.appliedAt
@@ -668,25 +774,32 @@ export const getRewrite = async (rewriteID, userID) => {
 };
 
 /**
- * Get all rewrites for an analysis
+ * Get all rewrites for an analysis with version status
  * @param {number} analysisID - Analysis ID
  * @param {number} userID - User ID
- * @returns {Promise<Array>} List of rewrites
+ * @param {Object} options - Options including pagination, filters, sort
+ * @returns {Promise<Object>} Object with rewrites array and totalCount
  */
-export const getRewritesByAnalysis = async (analysisID, userID) => {
+export const getRewritesByAnalysis = async (analysisID, userID, options = {}) => {
     try {
-        const rewrites = await resumeModel.getRewritesByAnalysisID(analysisID, userID);
+        const { rewrites, totalCount } = await resumeModel.getRewritesByAnalysisID(analysisID, userID, options);
         
-        return rewrites.map(r => ({
+        const formattedRewrites = rewrites.map(r => ({
             id: r.id,
             status: r.status,
             versionNumber: r.versionNumber,
             versionLabel: r.versionLabel,
             isActive: r.isActive,
+            wasModifiedAfterApply: r.wasModifiedAfterApply,
             improvements: r.improvements,
+            analysisReport: r.analysisReport,
+            scores: r.rewrittenContent?.scores || null,
             createdAt: r.createdAt,
-            completedAt: r.completedAt
+            completedAt: r.completedAt,
+            appliedAt: r.appliedAt
         }));
+
+        return { rewrites: formattedRewrites, totalCount };
     } catch (error) {
         logger.error('[RESUME_SERVICE] Failed to fetch rewrites', {
             error: error.message,
@@ -708,15 +821,25 @@ export const applyRewrite = async (rewriteID, userID) => {
 
         const updatedContent = await resumeModel.applyRewrite(rewriteID, userID);
 
+        // Get the rewrite details for response
+        const rewrite = await resumeModel.getRewriteByID(rewriteID, userID);
+
         logger.info('[RESUME_SERVICE] ✅ Rewrite applied', {
             rewriteID,
             contentID: updatedContent.id,
-            newVersion: updatedContent.version
+            newVersion: updatedContent.version,
+            versionNumber: rewrite.versionNumber
         });
 
         return {
             contentID: updatedContent.id,
             version: updatedContent.version,
+            rewrite: {
+                id: rewrite.id,
+                versionNumber: rewrite.versionNumber,
+                versionLabel: rewrite.versionLabel,
+                isActive: true
+            },
             message: 'Rewrite applied successfully'
         };
     } catch (error) {
@@ -728,18 +851,175 @@ export const applyRewrite = async (rewriteID, userID) => {
     }
 };
 
+/**
+ * Switch to a different rewrite version
+ * Updates resume content with the selected version's content
+ * @param {number} rewriteID - Target rewrite ID
+ * @param {number} userID - User ID
+ * @returns {Promise<Object>} Switch result with updated content and version info
+ */
+export const switchRewriteVersion = async (rewriteID, userID) => {
+    try {
+        logger.info('[RESUME_SERVICE] Switching rewrite version', { rewriteID, userID });
+
+        const result = await resumeModel.switchRewriteVersion(rewriteID, userID);
+
+        logger.info('[RESUME_SERVICE] ✅ Rewrite version switched', {
+            rewriteID,
+            versionNumber: result.rewrite.versionNumber,
+            contentVersion: result.content.version
+        });
+
+        return {
+            content: {
+                id: result.content.id,
+                version: result.content.version,
+                personalInfo: result.content.personalInfo,
+                summary: result.content.summary,
+                experience: result.content.experience,
+                education: result.content.education,
+                skills: result.content.skills,
+                additionalSections: result.content.additionalSections,
+                currentScores: result.content.currentScores,
+                analysisReport: result.content.analysisReport
+            },
+            activeRewrite: result.rewrite,
+            message: result.message
+        };
+    } catch (error) {
+        logger.error('[RESUME_SERVICE] Failed to switch rewrite version', {
+            error: error.message,
+            rewriteID
+        });
+        throw error;
+    }
+};
+
+/**
+ * Get the currently active rewrite for a resume
+ * @param {number} analysisID - Analysis ID
+ * @param {number} userID - User ID
+ * @returns {Promise<Object|null>} Active rewrite info or null
+ */
+export const getActiveRewrite = async (analysisID, userID) => {
+    try {
+        const activeRewrite = await resumeModel.getActiveRewrite(analysisID, userID);
+        
+        if (!activeRewrite) {
+            return null;
+        }
+
+        return {
+            id: activeRewrite.id,
+            versionNumber: activeRewrite.versionNumber,
+            versionLabel: activeRewrite.versionLabel,
+            isActive: true,
+            wasModifiedAfterApply: activeRewrite.wasModifiedAfterApply,
+            appliedAt: activeRewrite.appliedAt,
+            improvements: activeRewrite.improvements,
+            analysisReport: activeRewrite.analysisReport
+        };
+    } catch (error) {
+        logger.error('[RESUME_SERVICE] Failed to get active rewrite', {
+            error: error.message,
+            analysisID
+        });
+        throw error;
+    }
+};
+
+/**
+ * Clear active rewrite (revert to manual editing mode)
+ * @param {number} analysisID - Analysis ID
+ * @param {number} userID - User ID
+ * @returns {Promise<Object>} Updated content
+ */
+export const clearActiveRewrite = async (analysisID, userID) => {
+    try {
+        logger.info('[RESUME_SERVICE] Clearing active rewrite', { analysisID, userID });
+
+        const updatedContent = await resumeModel.clearActiveRewrite(analysisID, userID);
+
+        logger.info('[RESUME_SERVICE] ✅ Active rewrite cleared', {
+            contentID: updatedContent.id,
+            newVersion: updatedContent.version
+        });
+
+        return {
+            contentID: updatedContent.id,
+            version: updatedContent.version,
+            activeRewriteID: null,
+            message: 'Reverted to manual editing mode'
+        };
+    } catch (error) {
+        logger.error('[RESUME_SERVICE] Failed to clear active rewrite', {
+            error: error.message,
+            analysisID
+        });
+        throw error;
+    }
+};
+
+/**
+ * Compare two rewrite versions
+ * @param {number} rewriteID1 - First rewrite ID
+ * @param {number} rewriteID2 - Second rewrite ID
+ * @param {number} userID - User ID
+ * @returns {Promise<Object>} Comparison data
+ */
+export const compareRewriteVersions = async (rewriteID1, rewriteID2, userID) => {
+    try {
+        const [rewrite1, rewrite2] = await Promise.all([
+            resumeModel.getRewriteByID(rewriteID1, userID),
+            resumeModel.getRewriteByID(rewriteID2, userID)
+        ]);
+
+        return {
+            version1: {
+                id: rewrite1.id,
+                versionNumber: rewrite1.versionNumber,
+                versionLabel: rewrite1.versionLabel,
+                status: rewrite1.status,
+                isActive: rewrite1.isActive,
+                content: rewrite1.rewrittenContent,
+                improvements: rewrite1.improvements,
+                analysisReport: rewrite1.analysisReport,
+                createdAt: rewrite1.createdAt
+            },
+            version2: {
+                id: rewrite2.id,
+                versionNumber: rewrite2.versionNumber,
+                versionLabel: rewrite2.versionLabel,
+                status: rewrite2.status,
+                isActive: rewrite2.isActive,
+                content: rewrite2.rewrittenContent,
+                improvements: rewrite2.improvements,
+                analysisReport: rewrite2.analysisReport,
+                createdAt: rewrite2.createdAt
+            }
+        };
+    } catch (error) {
+        logger.error('[RESUME_SERVICE] Failed to compare rewrites', {
+            error: error.message,
+            rewriteID1,
+            rewriteID2
+        });
+        throw error;
+    }
+};
+
 // ========== THEME OPERATIONS ==========
 
 /**
  * Get available themes
- * @param {Object} filters - Filter options
- * @returns {Promise<Array>} List of themes
+ * @param {Object} options - Options including pagination, filters, search, sort
+ * @returns {Promise<Object>} Object with themes array and totalCount
  */
-export const getThemes = async (filters = {}) => {
+export const getThemes = async (options = {}) => {
     try {
-        const themes = await themeModel.getAllThemes(filters);
+        const { themes, totalCount } = await themeModel.getAllThemes(options);
         
-        return themes.map(t => ({
+        const formattedThemes = themes.map(t => ({
             id: t.id,
             name: t.name,
             slug: t.slug,
@@ -748,8 +1028,11 @@ export const getThemes = async (filters = {}) => {
             thumbnailURL: t.thumbnailURL,
             previewURL: t.previewURL,
             isATSOptimized: t.isATSOptimized,
-            usageCount: t.usageCount
+            usageCount: t.usageCount,
+            config: t.config
         }));
+
+        return { themes: formattedThemes, totalCount };
     } catch (error) {
         logger.error('[RESUME_SERVICE] Failed to fetch themes', {
             error: error.message
@@ -794,7 +1077,7 @@ export const applyTheme = async (resumeContentID, userID, themeID, customOverrid
             customOverrides
         );
 
-        // Get full theme config
+        // Get full theme config for the NEW theme
         const theme = await themeModel.getThemeByID(themeID);
 
         logger.info('[RESUME_SERVICE] ✅ Theme applied', {
@@ -805,8 +1088,17 @@ export const applyTheme = async (resumeContentID, userID, themeID, customOverrid
             id: userTheme.id,
             themeID,
             themeName: theme.name,
+            themeSlug: theme.slug,
+            themeCategory: theme.category,
+            isATSOptimized: theme.isATSOptimized,
+            // Return the new theme's base config
+            themeConfig: theme.config,
+            // Return merged config (new theme + any provided overrides)
             config: mergeThemeConfig(theme.config, userTheme.customOverrides),
+            // Return user's customizations (will be null if theme was changed without overrides)
             customOverrides: userTheme.customOverrides,
+            sectionVisibility: userTheme.sectionVisibility,
+            sectionOrder: userTheme.sectionOrder,
             isDraft: userTheme.isDraft
         };
     } catch (error) {
@@ -969,73 +1261,87 @@ function mergeThemeConfig(baseConfig, overrides) {
 /**
  * Optimize resume content using AI
  * Called by the rewrite worker to generate optimized content
- * @param {Object} analysisData - Parsed analysis/processed data
- * @param {Object} rawData - Original raw extracted data
- * @param {Object} options - Optimization options (targetATSScore, focusSections, etc.)
- * @returns {Promise<Object>} Optimization results
+ * 
+ * SIMPLIFIED APPROACH: Uses the issues/fixes from analysis to make
+ * targeted optimizations instead of generating a complete new structure.
+ * This is more reliable and preserves the original format.
+ * 
+ * @param {Object} currentContent - Current resume content from resumeContentTable
+ * @param {Object} analysisData - Analysis data with issues and improvement plan
+ * @param {Object} options - Optimization options (targetATSScore, etc.)
+ * @returns {Promise<Object>} Optimized content ready for direct application
  */
-export const optimizeResumeContent = async (analysisData, rawData, options = {}) => {
+export const optimizeResumeContent = async (currentContent, analysisData, options = {}) => {
     try {
         logger.info('[RESUME_SERVICE] Starting resume optimization', {
+            hasCurrentContent: !!currentContent,
             hasAnalysisData: !!analysisData,
-            hasRawData: !!rawData,
+            criticalMistakes: analysisData?.critical_mistakes?.length || 0,
+            majorIssues: analysisData?.major_issues?.length || 0,
             options
         });
 
         // Get AI service
         const aiService = await getAiService();
 
-        // Build prompt for AI
-        const prompt = getCompleteResumePrompt(analysisData, rawData, options);
-        const systemPrompt = `You are an expert resume writer and ATS optimization specialist. 
-Your task is to optimize resume content for maximum ATS score and recruiter appeal.
-Focus on:
-- Strong action verbs and quantifiable achievements
-- Strategic keyword placement
-- STAR method for experience descriptions
-- Industry-standard formatting recommendations
-Target ATS Score: ${options.targetATSScore || 90}`;
+        // Build prompt - now uses issues from analysis to make targeted fixes
+        const prompt = getResumeContentRewritePrompt(currentContent, analysisData, options);
+        
+        const systemPrompt = `You are an expert ATS resume optimizer. Apply the identified fixes to optimize the resume.
 
-        // Generate optimization using AI
-        const optimizationResult = await aiService.generateAiResponseObject({
+CRITICAL RULES:
+1. Apply ALL identified fixes from the analysis
+2. Use strong action verbs: Led, Architected, Spearheaded, Engineered, Optimized
+3. Add quantifiable metrics where possible: percentages (%), dollar amounts ($), scale
+4. Format achievements using STAR method (Situation, Task, Action, Result)
+5. Preserve factual information (company names, dates, roles)
+6. Target ATS Score: ${options.targetATSScore || 85}%
+
+OUTPUT FORMAT:
+- summary: { text: "optimized summary", keywords: ["keyword1", "keyword2"] }
+- experience: array of { company, position, location, startDate, endDate, current, description, achievements: [] }
+- skills: { technical: [], soft: [], tools: [], languages: [], certifications: [] }
+- estimatedAtsScore: number (0-100)
+- fixesSummary: "Brief description of improvements made"`;
+
+        // Generate optimization using AI with the simplified schema
+        const optimizedContent = await aiService.generateAiResponseObject({
             system: systemPrompt,
             content: prompt,
-            schema: completeResumeOptimizationSchema,
+            schema: resumeContentOutputSchema,
             model: 'gpt-4o-mini',
             retries: 3
         });
 
         logger.info('[RESUME_SERVICE] Resume optimization completed', {
-            sectionsOptimized: optimizationResult?.metadata?.sections_optimized?.length || 0,
-            criticalFixes: optimizationResult?.overall_improvements?.critical_fixes || 0
+            hasSummary: !!optimizedContent?.summary,
+            experienceCount: optimizedContent?.experience?.length || 0,
+            hasSkills: !!optimizedContent?.skills,
+            estimatedAtsScore: optimizedContent?.estimatedAtsScore,
+            fixesSummary: optimizedContent?.fixesSummary
         });
 
-        // Structure the response
+        // Return content in a format ready for direct application
         return {
-            optimizations: {
-                personalInfo: optimizationResult.personal_info || null,
-                professionalSummary: optimizationResult.professional_summary || null,
-                workExperience: optimizationResult.work_experience || null,
-                education: optimizationResult.education || null,
-                skills: optimizationResult.skills || null,
-                atsKeywords: optimizationResult.ats_keywords || null,
-                formattingRecommendations: optimizationResult.formatting_recommendations || null,
-                additionalSections: null
+            content: {
+                // Personal info is preserved from original (not modified by optimization)
+                personalInfo: currentContent?.personalInfo || currentContent?.personal_info || null,
+                summary: optimizedContent.summary || null,
+                experience: optimizedContent.experience || [],
+                // Education is preserved from original (minimal changes needed)
+                education: currentContent?.education || [],
+                skills: optimizedContent.skills || null,
+                additionalSections: currentContent?.additionalSections || null
             },
-            improvements: optimizationResult.overall_improvements || {
-                critical_fixes: 0,
-                major_fixes: 0,
-                minor_fixes: 0,
-                estimated_score_improvement: {
-                    atsScore: options.targetATSScore || 90,
-                    overallScore: 85
-                }
+            scores: {
+                atsScore: optimizedContent.estimatedAtsScore || options.targetATSScore || 85,
+                contentScore: 85,
+                overallScore: optimizedContent.estimatedAtsScore || 85
             },
-            metadata: optimizationResult.metadata || {
-                optimization_level: options.level || 'comprehensive',
+            metadata: {
+                fixesSummary: optimizedContent.fixesSummary || 'Resume optimized for ATS compatibility',
                 timestamp: new Date().toISOString(),
-                sections_optimized: [],
-                target_ats_score: options.targetATSScore || 90
+                target_ats_score: options.targetATSScore || 85
             }
         };
 
@@ -1061,6 +1367,10 @@ export default {
     getRewrite,
     getRewritesByAnalysis,
     applyRewrite,
+    switchRewriteVersion,
+    getActiveRewrite,
+    clearActiveRewrite,
+    compareRewriteVersions,
     // Theme operations
     getThemes,
     getThemeDetails,

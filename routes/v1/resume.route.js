@@ -17,6 +17,10 @@ import {
     getRewritesController,
     getRewriteController,
     applyRewriteController,
+    switchRewriteVersionController,
+    getActiveRewriteController,
+    clearActiveRewriteController,
+    compareRewriteVersionsController,
     // Theme endpoints
     getThemesController,
     getThemeController,
@@ -24,6 +28,15 @@ import {
     applyThemeController,
     updateThemeController
 } from "../../controllers/resume.controller.js";
+import {
+    // Download endpoints
+    downloadResumeController,
+    downloadResumeByAnalysisController,
+    downloadRewriteController,
+    previewResumeController,
+    downloadWithCustomThemeController,
+    getDownloadInfoController
+} from "../../controllers/download.controller.js";
 
 const router = Router();
 
@@ -79,6 +92,13 @@ router.get('/', getAllResumesController);
  * @access Private
  */
 router.get('/by-analysis/:analysisId', getResumeByAnalysisController);
+
+/**
+ * @route GET /api/v1/resumes/analysis/:analysisId/download
+ * @desc Download resume by analysis ID
+ * @access Private
+ */
+router.get('/analysis/:analysisId/download', downloadResumeByAnalysisController);
 
 /**
  * @route GET /api/v1/resumes/:id
@@ -143,6 +163,30 @@ router.post('/analysis/:analysisId/rewrites', createRewriteByAnalysisController)
 router.get('/:id/rewrites', getRewritesController);
 
 /**
+ * @route GET /api/v1/resumes/:id/rewrites/active
+ * @desc Get the currently active rewrite for a resume
+ * @access Private
+ * @note This must come before /:rewriteId to avoid route conflicts
+ */
+router.get('/:id/rewrites/active', getActiveRewriteController);
+
+/**
+ * @route DELETE /api/v1/resumes/:id/rewrites/active
+ * @desc Clear active rewrite (revert to manual editing mode)
+ * @access Private
+ */
+router.delete('/:id/rewrites/active', clearActiveRewriteController);
+
+/**
+ * @route GET /api/v1/resumes/:id/rewrites/compare
+ * @desc Compare two rewrite versions
+ * @access Private
+ * @query version1, version2 (rewrite IDs)
+ * @note This must come before /:rewriteId to avoid route conflicts
+ */
+router.get('/:id/rewrites/compare', compareRewriteVersionsController);
+
+/**
  * @route GET /api/v1/resumes/:id/rewrites/:rewriteId
  * @desc Get specific rewrite details
  * @access Private
@@ -155,6 +199,13 @@ router.get('/:id/rewrites/:rewriteId', getRewriteController);
  * @access Private
  */
 router.post('/:id/rewrites/:rewriteId/apply', applyRewriteController);
+
+/**
+ * @route POST /api/v1/resumes/:id/rewrites/:rewriteId/switch
+ * @desc Switch to a different rewrite version (updates resume content)
+ * @access Private
+ */
+router.post('/:id/rewrites/:rewriteId/switch', switchRewriteVersionController);
 
 // ========== THEME APPLICATION ROUTES ==========
 
@@ -173,5 +224,46 @@ router.post('/:id/theme', applyThemeController);
  * @body { customOverrides?, sectionVisibility?, sectionOrder? }
  */
 router.patch('/:id/theme', updateThemeController);
+
+// ========== DOWNLOAD ROUTES ==========
+
+/**
+ * @route GET /api/v1/resumes/:id/download
+ * @desc Download resume as PDF
+ * @access Private
+ * @query format (pdf), showPageNumbers, includeTimestamp
+ */
+router.get('/:id/download', downloadResumeController);
+
+/**
+ * @route GET /api/v1/resumes/:id/download/info
+ * @desc Get download options and resume metadata
+ * @access Private
+ */
+router.get('/:id/download/info', getDownloadInfoController);
+
+/**
+ * @route POST /api/v1/resumes/:id/download/custom
+ * @desc Download with custom theme settings
+ * @access Private
+ * @body { themeId?, themeOverrides?, sectionVisibility?, sectionOrder?, showPageNumbers?, includeTimestamp? }
+ */
+router.post('/:id/download/custom', downloadWithCustomThemeController);
+
+/**
+ * @route GET /api/v1/resumes/:id/preview
+ * @desc Get PDF preview (inline viewing)
+ * @access Private
+ * @query format (pdf|html)
+ */
+router.get('/:id/preview', previewResumeController);
+
+/**
+ * @route GET /api/v1/resumes/:id/rewrites/:rewriteId/download
+ * @desc Download a specific rewrite version as PDF
+ * @access Private
+ * @query showPageNumbers, includeTimestamp
+ */
+router.get('/:id/rewrites/:rewriteId/download', downloadRewriteController);
 
 export const resumeRoutes = router;

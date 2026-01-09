@@ -1,8 +1,13 @@
 import { db } from "../config/db.js";
 import { AppError } from "../middleware/error.js";
-import { eq, and, desc, isNull } from "drizzle-orm";
+import { eq, and, desc, asc, isNull, inArray, gte, lte, or, ilike, count } from "drizzle-orm";
 import logger from "../middleware/logger.js";
 import { validateInteger, validateString } from "../utils/validate-helper.js";
+import { 
+    buildWhereConditions, 
+    buildSearchCondition, 
+    buildOrderBy 
+} from "../utils/pagination-filter.js";
 import {
     resumeContentTable,
     resumeRewritesTable,
@@ -19,13 +24,15 @@ import {
  * @param {number} userID - User ID
  * @param {number} analysisID - Analysis ID
  * @param {Object} contentData - Parsed resume content from analysis
+ * @param {Object} analysisReport - Analysis report with issues and improvements (optional)
  * @returns {Promise<Object>} Created resume content
  */
-export const createResumeContent = async (userID, analysisID, contentData) => {
+export const createResumeContent = async (userID, analysisID, contentData, analysisReport = null) => {
     try {
         logger.info('[RESUME_MODEL] Creating resume content from analysis', {
             userID,
-            analysisID
+            analysisID,
+            hasAnalysisReport: !!analysisReport
         });
 
         // Check if content already exists for this analysis
@@ -71,6 +78,7 @@ export const createResumeContent = async (userID, analysisID, contentData) => {
                 skills,
                 additionalSections,
                 currentScores: scores,
+                analysisReport: analysisReport, // Embed initial analysis report
                 version: 1,
                 lastEditType: 'initial',
                 createdAt: new Date(),
@@ -80,7 +88,8 @@ export const createResumeContent = async (userID, analysisID, contentData) => {
 
         logger.info('[RESUME_MODEL] ✅ Resume content created', {
             contentID: content.id,
-            analysisID
+            analysisID,
+            hasAnalysisReport: !!analysisReport
         });
 
         return content;
@@ -118,6 +127,7 @@ export const getResumeContentByID = async (contentID, userID) => {
                 skills: resumeContentTable.skills,
                 additionalSections: resumeContentTable.additionalSections,
                 currentScores: resumeContentTable.currentScores,
+                analysisReport: resumeContentTable.analysisReport,
                 version: resumeContentTable.version,
                 lastEditType: resumeContentTable.lastEditType,
                 lastEditedSection: resumeContentTable.lastEditedSection,
@@ -193,13 +203,53 @@ export const getResumeContentByAnalysisID = async (analysisID, userID) => {
 /**
  * Get all resume contents for a user
  * @param {number} userID - User ID
- * @param {Object} filters - Optional filters
- * @returns {Promise<Array>} List of resume contents
+ * @param {Object} options - Options including pagination, filters, search, sort
+ * @returns {Promise<Object>} Object with resumes array and totalCount
  */
-export const getAllResumeContents = async (userID, filters = {}) => {
+export const getAllResumeContents = async (userID, options = {}) => {
     try {
-        logger.info('[RESUME_MODEL] Fetching all resume contents for user', { userID, filters });
+        const {
+            pagination = { limit: 10, offset: 0 },
+            filters = {},
+            search = { query: '', fields: [] },
+            sort = { field: 'updatedAt', order: 'desc' }
+        } = options;
 
+        logger.info('[RESUME_MODEL] Fetching all resume contents for user', { userID, options });
+
+        // Build base where conditions
+        const whereConditions = [eq(resumeContentTable.userID, userID)];
+
+        // Add filter conditions
+        const filterConditions = buildWhereConditions(
+            filters,
+            resumeContentTable,
+            { eq, inArray, gte, lte, or, and }
+        );
+        whereConditions.push(...filterConditions);
+
+        // Add search condition (search in document title or personal info)
+        const searchCondition = buildSearchCondition(
+            search.query,
+            [userDocumentTable.title],
+            { or, ilike }
+        );
+        if (searchCondition) {
+            whereConditions.push(searchCondition);
+        }
+
+        // Get total count
+        const [{ totalCount }] = await db
+            .select({ totalCount: count() })
+            .from(resumeContentTable)
+            .innerJoin(analysisTable, eq(resumeContentTable.analysisID, analysisTable.id))
+            .innerJoin(userDocumentTable, eq(analysisTable.documentID, userDocumentTable.id))
+            .where(and(...whereConditions));
+
+        // Build order by
+        const orderByClause = buildOrderBy(sort, resumeContentTable, { asc, desc });
+
+        // Fetch paginated contents
         const contents = await db
             .select({
                 id: resumeContentTable.id,
@@ -216,12 +266,13 @@ export const getAllResumeContents = async (userID, filters = {}) => {
             .from(resumeContentTable)
             .innerJoin(analysisTable, eq(resumeContentTable.analysisID, analysisTable.id))
             .innerJoin(userDocumentTable, eq(analysisTable.documentID, userDocumentTable.id))
-            .where(eq(resumeContentTable.userID, userID))
-            .orderBy(desc(resumeContentTable.updatedAt))
-            .limit(filters.limit || 50);
+            .where(and(...whereConditions))
+            .orderBy(...orderByClause)
+            .limit(pagination.limit)
+            .offset(pagination.offset);
 
-        logger.info('[RESUME_MODEL] ✅ Fetched resume contents', { count: contents.length });
-        return contents;
+        logger.info('[RESUME_MODEL] ✅ Fetched resume contents', { count: contents.length, totalCount });
+        return { resumes: contents, totalCount };
     } catch (error) {
         logger.error('[RESUME_MODEL] Failed to fetch resume contents', {
             error: error.message,
@@ -400,19 +451,21 @@ export const updateResumeScores = async (contentID, scores) => {
 // ========== REWRITE OPERATIONS ==========
 
 /**
- * Create a new rewrite job
+ * Create a new rewrite job with source content snapshot
  * @param {number} userID - User ID
  * @param {number} analysisID - Analysis ID
  * @param {number} resumeContentID - Resume content ID
+ * @param {Object} currentContent - Current resume content to snapshot
  * @param {Object} options - Rewrite options
  * @returns {Promise<Object>} Created rewrite record
  */
-export const createRewrite = async (userID, analysisID, resumeContentID, options = {}) => {
+export const createRewrite = async (userID, analysisID, resumeContentID, currentContent = null, options = {}) => {
     try {
-        logger.info('[RESUME_MODEL] Creating rewrite', {
+        logger.info('[RESUME_MODEL] Creating rewrite with content snapshot', {
             userID,
             analysisID,
-            resumeContentID
+            resumeContentID,
+            hasContentSnapshot: !!currentContent
         });
 
         // Get current version number
@@ -432,6 +485,19 @@ export const createRewrite = async (userID, analysisID, resumeContentID, options
             ? existingRewrites[0].versionNumber + 1 
             : 1;
 
+        // Build source content snapshot (captures what AI will optimize from)
+        const sourceContentSnapshot = currentContent ? {
+            personalInfo: currentContent.personalInfo,
+            summary: currentContent.summary,
+            experience: currentContent.experience,
+            education: currentContent.education,
+            skills: currentContent.skills,
+            additionalSections: currentContent.additionalSections,
+            currentScores: currentContent.currentScores,
+            version: currentContent.version,
+            snapshotAt: new Date().toISOString()
+        } : null;
+
         const [rewrite] = await db
             .insert(resumeRewritesTable)
             .values({
@@ -442,15 +508,18 @@ export const createRewrite = async (userID, analysisID, resumeContentID, options
                 versionNumber: nextVersion,
                 versionLabel: options.versionLabel || `Rewrite v${nextVersion}`,
                 optimizationSettings: options.optimizationSettings || {},
+                sourceContentSnapshot,
                 isActive: false,
+                wasModifiedAfterApply: false,
                 createdAt: new Date(),
                 updatedAt: new Date()
             })
             .returning();
 
-        logger.info('[RESUME_MODEL] ✅ Rewrite created', {
+        logger.info('[RESUME_MODEL] ✅ Rewrite created with snapshot', {
             rewriteID: rewrite.id,
-            version: nextVersion
+            version: nextVersion,
+            hasSnapshot: !!sourceContentSnapshot
         });
 
         return rewrite;
@@ -499,25 +568,53 @@ export const getRewriteByID = async (rewriteID, userID) => {
  * Get all rewrites for an analysis
  * @param {number} analysisID - Analysis ID
  * @param {number} userID - User ID
- * @returns {Promise<Array>} List of rewrites
+ * @param {Object} options - Options including pagination, filters, sort
+ * @returns {Promise<Object>} Object with rewrites array and totalCount
  */
-export const getRewritesByAnalysisID = async (analysisID, userID) => {
+export const getRewritesByAnalysisID = async (analysisID, userID, options = {}) => {
     try {
-        logger.info('[RESUME_MODEL] Fetching rewrites for analysis', { analysisID, userID });
+        const {
+            pagination = { limit: 10, offset: 0 },
+            filters = {},
+            sort = { field: 'createdAt', order: 'desc' }
+        } = options;
 
+        logger.info('[RESUME_MODEL] Fetching rewrites for analysis', { analysisID, userID, options });
+
+        // Build base where conditions
+        const whereConditions = [
+            eq(resumeRewritesTable.analysisID, analysisID),
+            eq(resumeRewritesTable.userID, userID)
+        ];
+
+        // Add filter conditions
+        const filterConditions = buildWhereConditions(
+            filters,
+            resumeRewritesTable,
+            { eq, inArray, gte, lte, or, and }
+        );
+        whereConditions.push(...filterConditions);
+
+        // Get total count
+        const [{ totalCount }] = await db
+            .select({ totalCount: count() })
+            .from(resumeRewritesTable)
+            .where(and(...whereConditions));
+
+        // Build order by
+        const orderByClause = buildOrderBy(sort, resumeRewritesTable, { asc, desc });
+
+        // Fetch paginated rewrites
         const rewrites = await db
             .select()
             .from(resumeRewritesTable)
-            .where(
-                and(
-                    eq(resumeRewritesTable.analysisID, analysisID),
-                    eq(resumeRewritesTable.userID, userID)
-                )
-            )
-            .orderBy(desc(resumeRewritesTable.versionNumber));
+            .where(and(...whereConditions))
+            .orderBy(...orderByClause)
+            .limit(pagination.limit)
+            .offset(pagination.offset);
 
-        logger.info('[RESUME_MODEL] ✅ Fetched rewrites', { count: rewrites.length });
-        return rewrites;
+        logger.info('[RESUME_MODEL] ✅ Fetched rewrites', { count: rewrites.length, totalCount });
+        return { rewrites, totalCount };
     } catch (error) {
         logger.error('[RESUME_MODEL] Failed to fetch rewrites', {
             error: error.message,
@@ -555,7 +652,7 @@ export const updateRewrite = async (rewriteID, updates) => {
 };
 
 /**
- * Apply a rewrite to resume content
+ * Apply a rewrite to resume content (also handles version switching)
  * This marks the rewrite as active and updates the resume content with rewritten data
  * @param {number} rewriteID - Rewrite ID
  * @param {number} userID - User ID
@@ -581,6 +678,58 @@ export const applyRewrite = async (rewriteID, userID) => {
             ? JSON.parse(rewrite.rewrittenContent)
             : rewrite.rewrittenContent;
 
+        // Get current resume content
+        const currentContent = await getResumeContentByAnalysisID(rewrite.analysisID, userID);
+        
+        if (!currentContent) {
+            throw new AppError('Resume content not found', 404);
+        }
+
+        // If there was a previously active rewrite, save the current resume content 
+        // back to that rewrite's rewrittenContent to preserve user's edits
+        if (currentContent.activeRewriteID && currentContent.activeRewriteID !== rewriteID) {
+            // Check if content was modified after the previous rewrite was applied
+            const previousRewrite = await db
+                .select({ 
+                    appliedAt: resumeRewritesTable.appliedAt,
+                    rewrittenContent: resumeRewritesTable.rewrittenContent 
+                })
+                .from(resumeRewritesTable)
+                .where(eq(resumeRewritesTable.id, currentContent.activeRewriteID))
+                .limit(1);
+
+            if (previousRewrite.length > 0 && previousRewrite[0].appliedAt) {
+                // Check if content was modified after the previous rewrite was applied
+                const wasModified = currentContent.updatedAt > previousRewrite[0].appliedAt;
+                
+                // Save current resume content back to the previous rewrite's rewrittenContent
+                // This preserves any edits the user made while this version was active
+                const currentResumeSnapshot = {
+                    personalInfo: currentContent.personalInfo,
+                    summary: currentContent.summary,
+                    experience: currentContent.experience,
+                    education: currentContent.education,
+                    skills: currentContent.skills,
+                    additionalSections: currentContent.additionalSections,
+                    scores: currentContent.currentScores
+                };
+                
+                await db
+                    .update(resumeRewritesTable)
+                    .set({ 
+                        rewrittenContent: currentResumeSnapshot,
+                        wasModifiedAfterApply: wasModified, 
+                        updatedAt: new Date() 
+                    })
+                    .where(eq(resumeRewritesTable.id, currentContent.activeRewriteID));
+                
+                logger.info('[RESUME_MODEL] Saved current content to previous rewrite', {
+                    previousRewriteID: currentContent.activeRewriteID,
+                    wasModified
+                });
+            }
+        }
+
         // Deactivate all other rewrites for this analysis
         await db
             .update(resumeRewritesTable)
@@ -592,34 +741,35 @@ export const applyRewrite = async (rewriteID, userID) => {
                 )
             );
 
-        // Mark this rewrite as active
+        // Mark this rewrite as active and reset modification flag
         await db
             .update(resumeRewritesTable)
             .set({
                 isActive: true,
                 appliedAt: new Date(),
+                wasModifiedAfterApply: false,
                 updatedAt: new Date()
             })
             .where(eq(resumeRewritesTable.id, rewriteID));
 
-        // Get current resume content version
-        const currentContent = await getResumeContentByAnalysisID(rewrite.analysisID, userID);
-        
-        if (!currentContent) {
-            throw new AppError('Resume content not found', 404);
-        }
+        // Get the analysis report from the rewrite (if available)
+        const rewriteAnalysisReport = typeof rewrite.analysisReport === 'string'
+            ? JSON.parse(rewrite.analysisReport)
+            : rewrite.analysisReport;
 
-        // Update resume content with rewritten data
+        // Update resume content with rewritten data and analysis report
         const [updatedContent] = await db
             .update(resumeContentTable)
             .set({
                 personalInfo: content.personalInfo || currentContent.personalInfo,
-                summary: content.summary || currentContent.summary,
-                experience: content.experience || currentContent.experience,
+                summary: content.summary || content.professionalSummary || currentContent.summary,
+                experience: content.experience || content.workExperience || currentContent.experience,
                 education: content.education || currentContent.education,
                 skills: content.skills || currentContent.skills,
                 additionalSections: content.additionalSections || currentContent.additionalSections,
                 currentScores: content.scores || currentContent.currentScores,
+                // Update analysis report to show post-rewrite analysis
+                analysisReport: rewriteAnalysisReport || currentContent.analysisReport,
                 version: currentContent.version + 1,
                 lastEditType: 'ai_rewrite',
                 activeRewriteID: rewriteID,
@@ -631,7 +781,8 @@ export const applyRewrite = async (rewriteID, userID) => {
         logger.info('[RESUME_MODEL] ✅ Rewrite applied to content', {
             rewriteID,
             contentID: updatedContent.id,
-            newVersion: updatedContent.version
+            newVersion: updatedContent.version,
+            versionNumber: rewrite.versionNumber
         });
 
         return updatedContent;
@@ -642,6 +793,202 @@ export const applyRewrite = async (rewriteID, userID) => {
         });
         if (error instanceof AppError) throw error;
         throw new AppError(`Failed to apply rewrite: ${error.message}`, 500);
+    }
+};
+
+/**
+ * Switch to a different rewrite version
+ * Updates resume content with the selected rewrite's content
+ * @param {number} rewriteID - Target rewrite ID to switch to
+ * @param {number} userID - User ID
+ * @returns {Promise<Object>} Object with updated content and version info
+ */
+export const switchRewriteVersion = async (rewriteID, userID) => {
+    try {
+        logger.info('[RESUME_MODEL] Switching rewrite version', { rewriteID, userID });
+
+        // Get target rewrite
+        const targetRewrite = await getRewriteByID(rewriteID, userID);
+
+        if (targetRewrite.status !== 'completed') {
+            throw new AppError('Cannot switch to an incomplete rewrite version', 400);
+        }
+
+        // If already active, just return current state
+        if (targetRewrite.isActive) {
+            const currentContent = await getResumeContentByAnalysisID(targetRewrite.analysisID, userID);
+            return {
+                content: currentContent,
+                rewrite: targetRewrite,
+                message: 'This version is already active'
+            };
+        }
+
+        // Apply the rewrite (handles all the switching logic)
+        const updatedContent = await applyRewrite(rewriteID, userID);
+
+        // Get updated rewrite info
+        const updatedRewrite = await getRewriteByID(rewriteID, userID);
+
+        return {
+            content: updatedContent,
+            rewrite: {
+                id: updatedRewrite.id,
+                versionNumber: updatedRewrite.versionNumber,
+                versionLabel: updatedRewrite.versionLabel,
+                isActive: updatedRewrite.isActive,
+                appliedAt: updatedRewrite.appliedAt
+            },
+            message: `Switched to rewrite version ${updatedRewrite.versionNumber}`
+        };
+    } catch (error) {
+        logger.error('[RESUME_MODEL] Failed to switch rewrite version', {
+            error: error.message,
+            rewriteID
+        });
+        if (error instanceof AppError) throw error;
+        throw new AppError(`Failed to switch rewrite version: ${error.message}`, 500);
+    }
+};
+
+/**
+ * Get the active rewrite for a resume/analysis
+ * @param {number} analysisID - Analysis ID
+ * @param {number} userID - User ID
+ * @returns {Promise<Object|null>} Active rewrite or null
+ */
+export const getActiveRewrite = async (analysisID, userID) => {
+    try {
+        const activeRewrite = await db
+            .select()
+            .from(resumeRewritesTable)
+            .where(
+                and(
+                    eq(resumeRewritesTable.analysisID, analysisID),
+                    eq(resumeRewritesTable.userID, userID),
+                    eq(resumeRewritesTable.isActive, true)
+                )
+            )
+            .limit(1);
+
+        return activeRewrite.length > 0 ? activeRewrite[0] : null;
+    } catch (error) {
+        logger.error('[RESUME_MODEL] Failed to get active rewrite', {
+            error: error.message,
+            analysisID
+        });
+        throw new AppError(`Failed to get active rewrite: ${error.message}`, 500);
+    }
+};
+
+/**
+ * Clear active rewrite (revert to original/manual state)
+ * This deactivates all rewrites and clears activeRewriteID from content
+ * Also restores the initial analysis report
+ * @param {number} analysisID - Analysis ID
+ * @param {number} userID - User ID  
+ * @returns {Promise<Object>} Updated content
+ */
+export const clearActiveRewrite = async (analysisID, userID) => {
+    try {
+        logger.info('[RESUME_MODEL] Clearing active rewrite', { analysisID, userID });
+
+        // Get current content
+        const currentContent = await getResumeContentByAnalysisID(analysisID, userID);
+        
+        if (!currentContent) {
+            throw new AppError('Resume content not found', 404);
+        }
+
+        // Get the original analysis data to restore the initial analysis report
+        let initialAnalysisReport = null;
+        try {
+            const analysisData = await db
+                .select({
+                    processedData: processedAndRawDataTable.processedData
+                })
+                .from(processedAndRawDataTable)
+                .where(eq(processedAndRawDataTable.analysisID, analysisID))
+                .limit(1);
+
+            if (analysisData.length > 0 && analysisData[0].processedData) {
+                const parsedData = typeof analysisData[0].processedData === 'string'
+                    ? JSON.parse(analysisData[0].processedData)
+                    : analysisData[0].processedData;
+                
+                // Rebuild the initial analysis report structure
+                initialAnalysisReport = {
+                    criticalMistakes: (parsedData.critical_mistakes || []).map(m => ({
+                        issue: m.issue || m.mistake || m,
+                        impact: m.impact || 'High - may cause resume rejection',
+                        fixSuggestion: m.fix_suggestion || m.suggestion || m.fix || ''
+                    })),
+                    majorIssues: (parsedData.major_issues || []).map(i => ({
+                        issue: i.issue || i,
+                        impact: i.impact || 'Medium - reduces resume effectiveness',
+                        fixSuggestion: i.fix_suggestion || i.suggestion || i.fix || ''
+                    })),
+                    minorImprovements: (parsedData.minor_improvements || []).map(i => ({
+                        area: i.area || i.section || 'General',
+                        suggestion: i.suggestion || i.improvement || i
+                    })),
+                    resumeQuality: {
+                        atsCompatibilityScore: parsedData.resume_quality?.ats_compatibility_score || 0,
+                        contentQualityScore: parsedData.resume_quality?.content_quality_score || 0,
+                        overallQualityScore: parsedData.resume_quality?.overall_quality_score || 0
+                    },
+                    version: 'initial',
+                    restoredAt: new Date().toISOString()
+                };
+            }
+        } catch (err) {
+            logger.warn('[RESUME_MODEL] Could not restore initial analysis report', { error: err.message });
+        }
+
+        // Deactivate all rewrites for this analysis
+        await db
+            .update(resumeRewritesTable)
+            .set({ isActive: false, updatedAt: new Date() })
+            .where(
+                and(
+                    eq(resumeRewritesTable.analysisID, analysisID),
+                    eq(resumeRewritesTable.userID, userID)
+                )
+            );
+
+        // Clear activeRewriteID from content and restore initial analysis report
+        const updateData = {
+            activeRewriteID: null,
+            lastEditType: 'manual',
+            version: currentContent.version + 1,
+            updatedAt: new Date()
+        };
+        
+        // Only update analysisReport if we were able to restore it
+        if (initialAnalysisReport) {
+            updateData.analysisReport = initialAnalysisReport;
+        }
+
+        const [updatedContent] = await db
+            .update(resumeContentTable)
+            .set(updateData)
+            .where(eq(resumeContentTable.id, currentContent.id))
+            .returning();
+
+        logger.info('[RESUME_MODEL] ✅ Active rewrite cleared', {
+            contentID: updatedContent.id,
+            newVersion: updatedContent.version,
+            restoredInitialAnalysis: !!initialAnalysisReport
+        });
+
+        return updatedContent;
+    } catch (error) {
+        logger.error('[RESUME_MODEL] Failed to clear active rewrite', {
+            error: error.message,
+            analysisID
+        });
+        if (error instanceof AppError) throw error;
+        throw new AppError(`Failed to clear active rewrite: ${error.message}`, 500);
     }
 };
 
@@ -712,5 +1059,8 @@ export default {
     getRewritesByAnalysisID,
     updateRewrite,
     applyRewrite,
+    switchRewriteVersion,
+    getActiveRewrite,
+    clearActiveRewrite,
     getAnalysisDataForRewrite
 };

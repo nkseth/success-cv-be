@@ -388,7 +388,67 @@ function calculateTotalExperience(experiences) {
 }
 
 /**
- * Get complete resume optimization prompt
+ * Get resume optimization prompt based on analysis issues
+ * This approach uses the identified issues from analysis to make targeted fixes
+ * Much simpler and more reliable than generating a complete new resume structure
+ * 
+ * @param {Object} currentContent - Current resume content from resumeContentTable
+ * @param {Object} analysisData - Analysis data with issues and improvement plan
+ * @param {Object} options - Optimization options
+ * @returns {string} Optimization prompt
+ */
+export const getResumeContentRewritePrompt = (currentContent, analysisData, options = {}) => {
+    // Extract current content sections
+    const summary = currentContent?.summary?.text || currentContent?.professional_summary || currentContent?.summary || '';
+    const experiences = currentContent?.experiences || currentContent?.experience || [];
+    const skills = currentContent?.skills || [];
+    const personalInfo = currentContent?.personal_info || currentContent?.personalInfo || {};
+    
+    // Extract issues from analysis
+    const criticalMistakes = analysisData?.critical_mistakes || [];
+    const majorIssues = analysisData?.major_issues || [];
+    const minorImprovements = analysisData?.minor_improvements || [];
+    
+    // Build issues summary for the AI
+    const issuesList = [
+        ...criticalMistakes.map(m => `CRITICAL: ${m.section} - ${m.issue}. Fix: ${m.fix}`),
+        ...majorIssues.map(m => `MAJOR: ${m.section} - ${m.issue}. Fix: ${m.fix}`),
+        ...minorImprovements.slice(0, 5).map(m => `MINOR: ${m.section} - ${m.suggestion}`)
+    ].join('\n');
+    
+    return `Apply the identified fixes to optimize this resume for ATS compatibility.
+
+**CURRENT RESUME CONTENT:**
+
+Professional Summary:
+${typeof summary === 'string' ? summary : JSON.stringify(summary)}
+
+Work Experience:
+${JSON.stringify(experiences, null, 2)}
+
+Skills:
+${JSON.stringify(skills, null, 2)}
+
+**IDENTIFIED ISSUES TO FIX:**
+${issuesList || 'No specific issues identified - apply general ATS optimization'}
+
+**YOUR TASK:**
+1. Apply all the identified fixes to the resume content
+2. Enhance achievement bullets with STAR format and metrics
+3. Add strong action verbs (Led, Architected, Spearheaded, Engineered)
+4. Ensure ATS-friendly formatting and keywords
+5. Target ATS Score: ${options.targetATSScore || 85}%
+
+**OUTPUT REQUIREMENTS:**
+- Return the FIXED content in the exact schema format
+- Keep the same structure as the input (number of experiences, etc.)
+- Preserve all factual information (company names, dates, etc.)
+- Only enhance the text quality and apply fixes
+- Provide a brief summary of fixes made`;
+};
+
+/**
+ * Get complete resume optimization prompt (LEGACY)
  * Used for comprehensive rewrite of all sections
  * @param {Object} analysisData - Parsed resume analysis data
  * @param {Object} rawData - Raw extracted resume data
@@ -452,5 +512,6 @@ export default {
     getEducationPrompt,
     getATSKeywordsPrompt,
     getFormattingPrompt,
+    getResumeContentRewritePrompt,
     getCompleteResumePrompt
 };

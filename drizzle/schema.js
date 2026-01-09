@@ -39,3 +39,12 @@ export {
     candidateResumeRewritesTable,
     candidateResumeThemeTable
 } from './schema/resume.schema.js';
+
+// Admin system tables
+export {
+    adminUsersTable,
+    systemSettingsTable,
+    resumeTemplatesTable,
+    blockedUsersTable,
+    adminActivityLogTable
+} from './schema/admin.js';

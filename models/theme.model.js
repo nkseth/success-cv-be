@@ -1,7 +1,12 @@
 import { db } from "../config/db.js";
 import { AppError } from "../middleware/error.js";
-import { eq, and, desc, like, or } from "drizzle-orm";
+import { eq, and, desc, asc, like, or, ilike, count, inArray, gte, lte } from "drizzle-orm";
 import logger from "../middleware/logger.js";
+import { 
+    buildWhereConditions, 
+    buildSearchCondition, 
+    buildOrderBy 
+} from "../utils/pagination-filter.js";
 import {
     resumeThemesTable,
     userResumeThemeTable,
@@ -12,64 +17,61 @@ import {
 
 /**
  * Get all available themes with optional filters
- * @param {Object} filters - Filter options
- * @returns {Promise<Array>} List of themes
+ * @param {Object} options - Options including pagination, filters, search, sort
+ * @returns {Promise<Object>} Object with themes array and totalCount
  */
-export const getAllThemes = async (filters = {}) => {
+export const getAllThemes = async (options = {}) => {
     try {
         const {
-            category = null,
-            isATSOptimized = null,
-            search = null,
-            sortBy = 'usageCount',
-            sortOrder = 'desc',
-            limit = 50,
-            offset = 0
-        } = filters;
+            pagination = { limit: 20, offset: 0 },
+            filters = {},
+            search = { query: '', fields: [] },
+            sort = { field: 'usageCount', order: 'desc' }
+        } = options;
 
-        logger.info('[THEME_MODEL] Fetching themes', { filters });
+        logger.info('[THEME_MODEL] Fetching themes', { options });
 
-        let query = db
+        // Build base where conditions - only show public themes
+        const whereConditions = [eq(resumeThemesTable.isPublic, true)];
+
+        // Add filter conditions
+        const filterConditions = buildWhereConditions(
+            filters,
+            resumeThemesTable,
+            { eq, inArray, gte, lte, or, and }
+        );
+        whereConditions.push(...filterConditions);
+
+        // Add search condition (search in name or description)
+        const searchCondition = buildSearchCondition(
+            search.query,
+            [resumeThemesTable.name, resumeThemesTable.description],
+            { or, ilike }
+        );
+        if (searchCondition) {
+            whereConditions.push(searchCondition);
+        }
+
+        // Get total count
+        const [{ totalCount }] = await db
+            .select({ totalCount: count() })
+            .from(resumeThemesTable)
+            .where(and(...whereConditions));
+
+        // Build order by
+        const orderByClause = buildOrderBy(sort, resumeThemesTable, { asc, desc });
+
+        // Fetch paginated themes
+        const themes = await db
             .select()
             .from(resumeThemesTable)
-            .where(eq(resumeThemesTable.isPublic, true));
+            .where(and(...whereConditions))
+            .orderBy(...orderByClause)
+            .limit(pagination.limit)
+            .offset(pagination.offset);
 
-        // Build conditions
-        const conditions = [eq(resumeThemesTable.isPublic, true)];
-
-        if (category) {
-            conditions.push(eq(resumeThemesTable.category, category));
-        }
-
-        if (isATSOptimized !== null) {
-            conditions.push(eq(resumeThemesTable.isATSOptimized, isATSOptimized));
-        }
-
-        if (search) {
-            conditions.push(
-                or(
-                    like(resumeThemesTable.name, `%${search}%`),
-                    like(resumeThemesTable.description, `%${search}%`)
-                )
-            );
-        }
-
-        // Apply conditions
-        if (conditions.length > 0) {
-            query = db
-                .select()
-                .from(resumeThemesTable)
-                .where(and(...conditions));
-        }
-
-        // Apply sorting and pagination
-        const themes = await query
-            .orderBy(sortOrder === 'desc' ? desc(resumeThemesTable[sortBy] || resumeThemesTable.usageCount) : resumeThemesTable[sortBy])
-            .limit(limit)
-            .offset(offset);
-
-        logger.info('[THEME_MODEL] ✅ Fetched themes', { count: themes.length });
-        return themes;
+        logger.info('[THEME_MODEL] ✅ Fetched themes', { count: themes.length, totalCount });
+        return { themes, totalCount };
     } catch (error) {
         logger.error('[THEME_MODEL] Failed to fetch themes', {
             error: error.message
@@ -295,12 +297,20 @@ export const applyTheme = async (userID, resumeContentID, themeID, customOverrid
         let userTheme;
 
         if (existing && existing.length > 0) {
-            // Update existing
+            // Update existing - when changing themes, reset customOverrides unless explicitly provided
+            // This is important because old customOverrides may not be compatible with new theme
+            const isChangingTheme = existing[0].themeID !== themeID;
+            
             [userTheme] = await db
                 .update(userResumeThemeTable)
                 .set({
                     themeID,
-                    customOverrides: customOverrides || existing[0].customOverrides,
+                    // Reset customOverrides when changing themes (unless new overrides are provided)
+                    // Keep existing overrides only if staying on same theme and no new overrides given
+                    customOverrides: isChangingTheme ? (customOverrides || null) : (customOverrides || existing[0].customOverrides),
+                    // Also reset section settings when changing themes
+                    sectionVisibility: isChangingTheme ? null : existing[0].sectionVisibility,
+                    sectionOrder: isChangingTheme ? null : existing[0].sectionOrder,
                     updatedAt: new Date()
                 })
                 .where(eq(userResumeThemeTable.id, existing[0].id))
