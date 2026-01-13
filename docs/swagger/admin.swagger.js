@@ -66,7 +66,7 @@
  *           description: The setting value parsed according to its type
  *           example: 10
  *     
- *     ResumeTemplate:
+ *     ResumeTheme:
  *       type: object
  *       properties:
  *         id:
@@ -75,35 +75,52 @@
  *         name:
  *           type: string
  *           example: Modern Professional
+ *         slug:
+ *           type: string
+ *           example: modern-professional
  *         description:
  *           type: string
- *           example: A clean, modern resume template
- *         thumbnailUrl:
- *           type: string
- *           example: https://storage.example.com/thumbnails/modern-pro.png
- *         templateFileUrl:
- *           type: string
- *           example: https://storage.example.com/templates/modern-pro.pdf
- *         templateType:
- *           type: string
- *           enum: [pdf, docx, html]
- *           example: pdf
+ *           example: A clean, modern resume theme
  *         category:
  *           type: string
- *           example: general
- *         isActive:
+ *           enum: [professional, creative, minimal, ats-optimized, academic]
+ *           example: professional
+ *         config:
+ *           type: object
+ *           description: Theme configuration (layout, colors, typography, etc.)
+ *           properties:
+ *             layout:
+ *               type: object
+ *             colors:
+ *               type: object
+ *             typography:
+ *               type: object
+ *             sections:
+ *               type: object
+ *             style:
+ *               type: object
+ *         thumbnailURL:
+ *           type: string
+ *           example: https://storage.example.com/themes/modern-pro-thumb.png
+ *         previewURL:
+ *           type: string
+ *           example: https://storage.example.com/themes/modern-pro-preview.png
+ *         isSystemTheme:
  *           type: boolean
  *           example: true
- *         isPremium:
+ *         isATSOptimized:
  *           type: boolean
  *           example: false
- *         sortOrder:
+ *         isPublic:
+ *           type: boolean
+ *           example: true
+ *         usageCount:
  *           type: integer
  *           example: 0
- *         metadata:
- *           type: object
- *           example: { colors: ["#000", "#fff"], fonts: ["Arial"] }
  *         createdAt:
+ *           type: string
+ *           format: date-time
+ *         updatedAt:
  *           type: string
  *           format: date-time
  *     
@@ -237,30 +254,6 @@
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
- */
-
-/**
- * @swagger
- * /api/v1/admin/profile:
- *   get:
- *     summary: Get current admin profile
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Admin profile retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   $ref: '#/components/schemas/AdminUser'
- *       401:
- *         description: Unauthorized
  */
 
 /**
@@ -532,13 +525,13 @@
  *         description: Settings retrieved successfully
  */
 
-// ==================== RESUME TEMPLATE ENDPOINTS ====================
+// ==================== RESUME THEME ENDPOINTS ====================
 
 /**
  * @swagger
- * /api/v1/admin/templates:
+ * /api/v1/admin/themes:
  *   get:
- *     summary: List all resume templates
+ *     summary: List all resume themes
  *     tags: [Admin]
  *     security:
  *       - bearerAuth: []
@@ -547,18 +540,19 @@
  *         name: category
  *         schema:
  *           type: string
+ *           enum: [professional, creative, minimal, ats-optimized, academic]
  *       - in: query
- *         name: isActive
+ *         name: isATSOptimized
  *         schema:
  *           type: boolean
  *       - in: query
- *         name: isPremium
+ *         name: isPublic
  *         schema:
  *           type: boolean
  *       - in: query
- *         name: includeInactive
+ *         name: search
  *         schema:
- *           type: boolean
+ *           type: string
  *       - in: query
  *         name: page
  *         schema:
@@ -571,7 +565,7 @@
  *           default: 20
  *     responses:
  *       200:
- *         description: Templates retrieved successfully
+ *         description: Themes retrieved successfully
  *         content:
  *           application/json:
  *             schema:
@@ -585,12 +579,12 @@
  *                     data:
  *                       type: array
  *                       items:
- *                         $ref: '#/components/schemas/ResumeTemplate'
+ *                         $ref: '#/components/schemas/ResumeTheme'
  *                     pagination:
  *                       $ref: '#/components/schemas/Pagination'
  *   
  *   post:
- *     summary: Create a new resume template
+ *     summary: Create a new resume theme
  *     tags: [Admin]
  *     security:
  *       - bearerAuth: []
@@ -602,39 +596,42 @@
  *             type: object
  *             required:
  *               - name
- *               - templateFileUrl
  *             properties:
  *               name:
  *                 type: string
  *                 example: Modern Professional
+ *               slug:
+ *                 type: string
+ *                 example: modern-professional
  *               description:
  *                 type: string
- *               thumbnailUrl:
- *                 type: string
- *               templateFileUrl:
- *                 type: string
- *               templateType:
- *                 type: string
- *                 enum: [pdf, docx, html]
- *                 default: pdf
  *               category:
  *                 type: string
- *                 default: general
- *               isPremium:
+ *                 enum: [professional, creative, minimal, ats-optimized, academic]
+ *                 default: professional
+ *               config:
+ *                 type: object
+ *                 description: Theme configuration (layout, colors, typography, etc.)
+ *               thumbnailURL:
+ *                 type: string
+ *               previewURL:
+ *                 type: string
+ *               isATSOptimized:
  *                 type: boolean
  *                 default: false
- *               metadata:
- *                 type: object
+ *               isPublic:
+ *                 type: boolean
+ *                 default: true
  *     responses:
  *       201:
- *         description: Template created successfully
+ *         description: Theme created successfully
  */
 
 /**
  * @swagger
- * /api/v1/admin/templates/upload-url:
+ * /api/v1/admin/themes/upload-url:
  *   post:
- *     summary: Get presigned URL for template file upload
+ *     summary: Get presigned URL for theme asset upload (thumbnail, preview)
  *     tags: [Admin]
  *     security:
  *       - bearerAuth: []
@@ -649,7 +646,7 @@
  *             properties:
  *               fileName:
  *                 type: string
- *                 example: modern-template.pdf
+ *                 example: theme-preview.png
  *     responses:
  *       200:
  *         description: Upload URL generated successfully
@@ -674,9 +671,9 @@
 
 /**
  * @swagger
- * /api/v1/admin/templates/{id}:
+ * /api/v1/admin/themes/{id}:
  *   get:
- *     summary: Get a resume template by ID
+ *     summary: Get a resume theme by ID
  *     tags: [Admin]
  *     security:
  *       - bearerAuth: []
@@ -688,12 +685,12 @@
  *           type: integer
  *     responses:
  *       200:
- *         description: Template retrieved successfully
+ *         description: Theme retrieved successfully
  *       404:
- *         description: Template not found
+ *         description: Theme not found
  *   
  *   put:
- *     summary: Update a resume template
+ *     summary: Update a resume theme
  *     tags: [Admin]
  *     security:
  *       - bearerAuth: []
@@ -712,32 +709,30 @@
  *             properties:
  *               name:
  *                 type: string
+ *               slug:
+ *                 type: string
  *               description:
- *                 type: string
- *               thumbnailUrl:
- *                 type: string
- *               templateFileUrl:
- *                 type: string
- *               templateType:
  *                 type: string
  *               category:
  *                 type: string
- *               isActive:
- *                 type: boolean
- *               isPremium:
- *                 type: boolean
- *               sortOrder:
- *                 type: integer
- *               metadata:
+ *               config:
  *                 type: object
+ *               thumbnailURL:
+ *                 type: string
+ *               previewURL:
+ *                 type: string
+ *               isATSOptimized:
+ *                 type: boolean
+ *               isPublic:
+ *                 type: boolean
  *     responses:
  *       200:
- *         description: Template updated successfully
+ *         description: Theme updated successfully
  *       404:
- *         description: Template not found
+ *         description: Theme not found
  *   
  *   delete:
- *     summary: Delete a resume template
+ *     summary: Delete a resume theme
  *     tags: [Admin]
  *     security:
  *       - bearerAuth: []
@@ -749,9 +744,9 @@
  *           type: integer
  *     responses:
  *       200:
- *         description: Template deleted successfully
+ *         description: Theme deleted successfully
  *       404:
- *         description: Template not found
+ *         description: Theme not found
  */
 
 // ==================== USER BLOCKING ENDPOINTS ====================
@@ -929,6 +924,60 @@
  *     responses:
  *       200:
  *         description: Users retrieved successfully
+ *   
+ *   post:
+ *     summary: Create a new user
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *               - fullname
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *               password:
+ *                 type: string
+ *                 minLength: 6
+ *                 example: password123
+ *               fullname:
+ *                 type: string
+ *                 example: John Doe
+ *     responses:
+ *       201:
+ *         description: User created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                     email:
+ *                       type: string
+ *                     fullname:
+ *                       type: string
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *       400:
+ *         description: Validation error
+ *       409:
+ *         description: User with this email already exists
  */
 
 /**
@@ -966,6 +1015,68 @@
  *     responses:
  *       200:
  *         description: Candidates retrieved successfully
+ *   
+ *   post:
+ *     summary: Create a new candidate
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *               - fullname
+ *               - organisationId
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: candidate@example.com
+ *               password:
+ *                 type: string
+ *                 minLength: 8
+ *                 example: password123
+ *               fullname:
+ *                 type: string
+ *                 example: Jane Smith
+ *               organisationId:
+ *                 type: integer
+ *                 example: 1
+ *     responses:
+ *       201:
+ *         description: Candidate created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                     email:
+ *                       type: string
+ *                     fullname:
+ *                       type: string
+ *                     organisationID:
+ *                       type: integer
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *       400:
+ *         description: Validation error
+ *       404:
+ *         description: Organisation not found
+ *       409:
+ *         description: Candidate with this email already exists
  */
 
 /**
@@ -1035,6 +1146,141 @@
  *                             format: date-time
  *                     pagination:
  *                       $ref: '#/components/schemas/Pagination'
+ *   
+ *   post:
+ *     summary: Create a new organisation
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - slug
+ *               - creatorId
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: Acme Corporation
+ *               slug:
+ *                 type: string
+ *                 example: acme-corp
+ *               creatorId:
+ *                 type: integer
+ *                 description: The user ID who will be the creator/owner
+ *                 example: 1
+ *               address:
+ *                 type: string
+ *                 example: 123 Main Street
+ *               country:
+ *                 type: string
+ *                 example: United States
+ *               state:
+ *                 type: string
+ *                 example: California
+ *               city:
+ *                 type: string
+ *                 example: San Francisco
+ *     responses:
+ *       201:
+ *         description: Organisation created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                     name:
+ *                       type: string
+ *                     slug:
+ *                       type: string
+ *                     creatorID:
+ *                       type: integer
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *       400:
+ *         description: Validation error
+ *       404:
+ *         description: Creator user not found
+ *       409:
+ *         description: Organisation with this slug already exists
+ */
+
+/**
+ * @swagger
+ * /api/v1/admin/organisations/{id}/members:
+ *   post:
+ *     summary: Add a user to an organisation
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: The organisation ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *               - role
+ *             properties:
+ *               userId:
+ *                 type: integer
+ *                 description: The user ID to add
+ *                 example: 5
+ *               role:
+ *                 type: string
+ *                 description: The role for the user in the organisation
+ *                 example: member
+ *                 enum: [admin, member]
+ *     responses:
+ *       201:
+ *         description: User added to organisation successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                     userID:
+ *                       type: integer
+ *                     organisationID:
+ *                       type: integer
+ *                     role:
+ *                       type: string
+ *                     joinedAt:
+ *                       type: string
+ *                       format: date-time
+ *       400:
+ *         description: Validation error
+ *       404:
+ *         description: Organisation or user not found
+ *       409:
+ *         description: User is already a member of this organisation
  */
 
 // ==================== ACTIVITY LOG ENDPOINTS ====================

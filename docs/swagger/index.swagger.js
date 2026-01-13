@@ -5,8 +5,10 @@
  *     description: Authentication and authorization endpoints for users
  *   - name: Candidate Auth
  *     description: Candidate authentication and bulk registration endpoints
+ *   - name: Profile
+ *     description: Unified profile endpoint that works across all subdomains (admin, app, organisation)
  *   - name: User
- *     description: User management and profile endpoints
+ *     description: User management endpoints
  *   - name: Organisation
  *     description: Organisation management, members, and invitations
  *   - name: Invites

@@ -11,6 +11,7 @@ import { uploadRoutes } from "./upload.route.js";
 import { resumeAnalysisRoutes } from "./resume-analysis.route.js";
 import { resumeRoutes } from "./resume.route.js";
 import { adminRoutes } from "./admin.route.js";
+import { profileRoutes } from "./profile.route.js";
 
 const router = Router();
 
@@ -33,6 +34,7 @@ router.get('/health', (req, res) => {
 
 router.use('/health', healthRoutes);
 router.use('/auth', authRoutes);
+router.use('/profile', profileRoutes);
 router.use('/user', userRoutes);
 router.use('/organisations', organisationRoutes);
 router.use('/invites', invitesRoutes);

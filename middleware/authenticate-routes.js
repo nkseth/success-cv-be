@@ -24,6 +24,47 @@ function debugToken(token) {
     }
 }
 
+/**
+ * Validate that the token type matches the subdomain context
+ * @param {string} tokenType - The type from the decoded token
+ * @param {object} subdomainContext - The subdomain context from middleware
+ * @returns {object} - { valid: boolean, message: string }
+ */
+function validateTokenSubdomainMatch(tokenType, subdomainContext) {
+    // If no subdomain context, skip validation (subdomain middleware not applied)
+    if (!subdomainContext) {
+        return { valid: true, message: 'No subdomain context, skipping validation' };
+    }
+
+    const { userType: expectedType, isAdmin, isApp, isOrganisation } = subdomainContext;
+
+    // Admin tokens should only work on admin subdomain
+    if (tokenType === userTypeConstants.ADMIN && !isAdmin) {
+        return { 
+            valid: false, 
+            message: 'Admin tokens can only be used on admin subdomain' 
+        };
+    }
+
+    // User tokens should only work on app subdomain
+    if (tokenType === userTypeConstants.USER && !isApp) {
+        return { 
+            valid: false, 
+            message: 'User tokens can only be used on app subdomain' 
+        };
+    }
+
+    // Candidate tokens should only work on organisation subdomains
+    if (tokenType === userTypeConstants.CANDIDATE && !isOrganisation) {
+        return { 
+            valid: false, 
+            message: 'Candidate tokens can only be used on organisation subdomain' 
+        };
+    }
+
+    return { valid: true, message: 'Token type matches subdomain' };
+}
+
 export function authenticateUser(req, res, next) {
     const { token } = destructureRequest(req);
     if (!token) {
@@ -102,7 +143,23 @@ export function commonAuthenticate(req, res, next) {
         // Verify token with better error handling
         const decoded = jwt.verify(token, process.env.JWT_SECRET_ACCESS_KEY);
         
-        console.log('[AUTH SUCCESS] Token decoded successfully for user:', decoded.id);
+        // Validate token type matches subdomain (if subdomain middleware is applied)
+        if (req.subdomainContext) {
+            const subdomainValidation = validateTokenSubdomainMatch(decoded.type, req.subdomainContext);
+            if (!subdomainValidation.valid) {
+                console.log('[AUTH ERROR] Subdomain mismatch:', {
+                    tokenType: decoded.type,
+                    subdomain: req.subdomain,
+                    expectedType: req.subdomainContext.userType
+                });
+                return res.status(403).json({ 
+                    message: subdomainValidation.message,
+                    error: "SUBDOMAIN_MISMATCH"
+                });
+            }
+        }
+        
+        console.log('[AUTH SUCCESS] Token decoded successfully for user:', decoded.id, 'type:', decoded.type);
         
         req.userID = decoded.id;
         req.type = decoded.type;

@@ -26,11 +26,19 @@ export const connectToJob = async (req, res) => {
         const { queueName } = req.query;
         const connectionId = uuidv4();
         
+        // Get subdomain context for logging (users vs candidates)
+        const subdomainInfo = req.subdomainContext ? {
+            userType: req.subdomainContext.userType,
+            subdomain: req.subdomain,
+            organisationSlug: req.organisationSlug
+        } : { userType: 'unknown' };
+        
         logger.info('SSE: Job connection established', { 
             connectionId,
             jobId,
             queueName: queueName || 'none',
-            ip: req.ip 
+            ip: req.ip,
+            ...subdomainInfo
         });
 
         // Create SSE connection

@@ -44,7 +44,6 @@ export {
 export {
     adminUsersTable,
     systemSettingsTable,
-    resumeTemplatesTable,
     blockedUsersTable,
     adminActivityLogTable
 } from './schema/admin.js';

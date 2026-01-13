@@ -4,6 +4,12 @@ import { sendSuccess } from "../../utils/apiHelpers.js";
 import { candidateAuthRoutes } from "./candidate-auth.route.js";
 import { confirmVerificationCodeController, forgotPasswordController, LoginController, refreshTokenController, registerController, resetPasswordController, sendVerificationCodeController } from "../../controllers/auth.controller.js";
 
+/**
+ * Auth Routes
+ * Uses token-based context middleware for multi-tenant support
+ * Token types: 'admin', 'user', 'candidate'
+ */
+
 const router = Router();
 
 router.get('/health', (req, res, next) => {

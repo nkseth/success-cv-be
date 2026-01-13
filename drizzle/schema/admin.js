@@ -30,19 +30,34 @@ export const systemSettingsTable = pgTable("system_settings", {
     updatedAt: timestamp().defaultNow().notNull(),
 });
 
-// Resume templates table - stores admin-uploaded resume templates
+// Resume templates table - stores admin-uploaded resume templates with theme configuration
 export const resumeTemplatesTable = pgTable("resume_templates", {
     id: integer().primaryKey().generatedAlwaysAsIdentity(),
     name: varchar({ length: 255 }).notNull(),
+    slug: varchar({ length: 255 }).unique(), // URL-friendly identifier
     description: text(),
     thumbnailUrl: varchar({ length: 512 }),
+    previewUrl: varchar({ length: 512 }), // Full preview image URL
     templateFileUrl: varchar({ length: 512 }).notNull(),
     templateType: varchar({ length: 50 }).notNull().default('pdf'), // 'pdf', 'docx', 'html'
-    category: varchar({ length: 100 }).default('general'), // 'general', 'tech', 'creative', 'executive', etc.
+    category: varchar({ length: 100 }).default('general'), // 'general', 'tech', 'creative', 'executive', 'academic', 'ats-optimized', etc.
+    
+    // Theme configuration - follows theme-schema.js structure
+    // Contains: layout, colors, typography, sections, style
+    themeConfig: jsonb(), // Full theme configuration from THEME_CONFIG_SCHEMA
+    
+    // Theme flags
+    isATSOptimized: boolean().default(false).notNull(), // ATS-friendly template
     isActive: boolean().default(true).notNull(),
     isPremium: boolean().default(false).notNull(),
     sortOrder: integer().default(0),
-    metadata: jsonb(), // Additional template metadata (colors, fonts, etc.)
+    
+    // Usage tracking
+    usageCount: integer().default(0).notNull(),
+    
+    // Legacy metadata (for backwards compatibility)
+    metadata: jsonb(), // Additional template metadata
+    
     createdBy: integer("createdBy").references(() => adminUsersTable.id),
     updatedBy: integer("updatedBy").references(() => adminUsersTable.id),
     createdAt: timestamp().defaultNow().notNull(),

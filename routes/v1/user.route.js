@@ -2,13 +2,18 @@ import { Router } from "express";
 import logger from "../../middleware/logger.js";
 import { sendSuccess } from "../../utils/apiHelpers.js";
 import { authenticateUser } from "../../middleware/authenticate-routes.js";
-import { getUserByIdController, getUserProfileByUserID } from "../../controllers/user.controller.js";
+import { getUserByIdController } from "../../controllers/user.controller.js";
 import { createOrgByUserIDController, getOrgsByUserIDController } from "../../controllers/organisation.controller.js";
 import { createResumeController } from "../../controllers/resume-analysis.controller.js";
 
+/**
+ * User Routes
+ * All routes require user authentication
+ */
+
 const router = Router();
 
-router.use(authenticateUser)
+router.use(authenticateUser);
 
 router.get('/health', (req, res, next) => {
     logger.info("API v1 AUTH User health route accessed");
@@ -42,11 +47,6 @@ router.post('/:id/organisations', (req, res, next) => {
     logger.info(`API v1 AUTH User organisations route accessed for user ID: ${userId}`);
     next();
 }, createOrgByUserIDController);
-
-router.get('/:id/profile', (req, res, next) => {
-    logger.info("API v1 AUTH User profile route accessed");
-    next()
-}, getUserProfileByUserID);
 
 router.post('/:id/resumes', (req, res, next) => {
     const userId = req.params.id;

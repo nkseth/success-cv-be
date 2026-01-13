@@ -194,6 +194,23 @@ export const refreshTokenController = asyncHandler(async (req, res, next) => {
         // Verify refresh token
         const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET_REFRESH_KEY);
 
+        // Validate token type matches subdomain (if subdomain middleware is applied)
+        if (req.subdomainContext) {
+            const { userType: expectedType, isAdmin, isApp, isOrganisation } = req.subdomainContext;
+            const tokenType = decoded.type;
+
+            // Validate token type matches subdomain
+            const isValidSubdomain = (
+                (tokenType === userTypeConstants.ADMIN && isAdmin) ||
+                (tokenType === userTypeConstants.USER && isApp) ||
+                (tokenType === userTypeConstants.CANDIDATE && isOrganisation)
+            );
+
+            if (!isValidSubdomain) {
+                return next(new AppError(`Token type '${tokenType}' cannot be refreshed from '${req.subdomain}' subdomain`, 403));
+            }
+        }
+
         // Generate new tokens
         const accessToken = jwt.sign(
             { id: decoded.id, email: decoded.email, type: decoded.type },

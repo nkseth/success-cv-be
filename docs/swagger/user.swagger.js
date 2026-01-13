@@ -278,63 +278,6 @@
 
 /**
  * @swagger
- * /api/v1/user/{id}/profile:
- *   get:
- *     summary: Get user profile
- *     tags: [User]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: User ID
- *     responses:
- *       200:
- *         description: User profile retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: Profile retrieved successfully
- *                 data:
- *                   type: object
- *                   properties:
- *                     id:
- *                       type: string
- *                     userId:
- *                       type: string
- *                     bio:
- *                       type: string
- *                     avatar:
- *                       type: string
- *                     createdAt:
- *                       type: string
- *                       format: date-time
- *       404:
- *         description: Profile not found
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
-
-/**
- * @swagger
  * /api/v1/user/{id}/resumes:
  *   post:
  *     summary: Create resume for user and enqueue analysis

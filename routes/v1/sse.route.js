@@ -4,6 +4,10 @@ import {
     getStats
 } from '../../controllers/sse.controller.js';
 
+/**
+ * SSE (Server-Sent Events) Routes
+ */
+
 const router = Router();
 
 // Primary SSE route - connect and auto-subscribe to job

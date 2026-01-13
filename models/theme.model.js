@@ -1,6 +1,6 @@
 import { db } from "../config/db.js";
 import { AppError } from "../middleware/error.js";
-import { eq, and, desc, asc, like, or, ilike, count, inArray, gte, lte } from "drizzle-orm";
+import { eq, and, desc, asc, like, or, ilike, count, inArray, gte, lte, sql } from "drizzle-orm";
 import logger from "../middleware/logger.js";
 import { 
     buildWhereConditions, 
@@ -12,6 +12,8 @@ import {
     userResumeThemeTable,
     resumeContentTable
 } from "../drizzle/schema.js";
+import { validateThemeConfig, DEFAULT_THEME } from "../utils/theme-schema.js";
+import { validateString, validateInteger } from "../utils/validate-helper.js";
 
 // ========== THEME OPERATIONS ==========
 
@@ -178,11 +180,39 @@ export const createTheme = async (themeData) => {
             isPublic = true
         } = themeData;
 
+        const validatedName = validateString(name, "Theme Name", { minLength: 1, maxLength: 255 });
+        
+        // Generate slug if not provided
+        const themeSlug = slug || validatedName
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .substring(0, 100);
+
+        // Validate theme config
+        let validatedConfig = config;
+        if (config) {
+            const validation = validateThemeConfig(config);
+            if (!validation.valid) {
+                throw new AppError(`Invalid theme configuration: ${validation.errors.join(', ')}`, 400);
+            }
+            // Merge with defaults to ensure complete config
+            validatedConfig = {
+                layout: { ...DEFAULT_THEME.layout, ...config.layout },
+                colors: { ...DEFAULT_THEME.colors, ...config.colors },
+                typography: { ...DEFAULT_THEME.typography, ...config.typography },
+                sections: { ...DEFAULT_THEME.sections, ...config.sections },
+                style: { ...DEFAULT_THEME.style, ...config.style }
+            };
+        } else {
+            validatedConfig = DEFAULT_THEME;
+        }
+
         // Check if slug already exists
         const existing = await db
             .select({ id: resumeThemesTable.id })
             .from(resumeThemesTable)
-            .where(eq(resumeThemesTable.slug, slug))
+            .where(eq(resumeThemesTable.slug, themeSlug))
             .limit(1);
 
         if (existing && existing.length > 0) {
@@ -192,11 +222,11 @@ export const createTheme = async (themeData) => {
         const [theme] = await db
             .insert(resumeThemesTable)
             .values({
-                name,
-                slug,
+                name: validatedName,
+                slug: themeSlug,
                 description,
-                category,
-                config,
+                category: category || 'professional',
+                config: validatedConfig,
                 thumbnailURL,
                 previewURL,
                 isSystemTheme,
@@ -220,6 +250,194 @@ export const createTheme = async (themeData) => {
         });
         if (error instanceof AppError) throw error;
         throw new AppError(`Failed to create theme: ${error.message}`, 500);
+    }
+};
+
+/**
+ * Update a theme (admin only)
+ * @param {number} themeID - Theme ID
+ * @param {Object} updateData - Update data
+ * @returns {Promise<Object>} Updated theme
+ */
+export const updateTheme = async (themeID, updateData) => {
+    try {
+        const validId = validateInteger(themeID, "Theme ID", { min: 1 });
+
+        // Validate theme config if being updated
+        if (updateData.config) {
+            const validation = validateThemeConfig(updateData.config);
+            if (!validation.valid) {
+                throw new AppError(`Invalid theme configuration: ${validation.errors.join(', ')}`, 400);
+            }
+            // Merge with defaults to ensure complete config
+            updateData.config = {
+                layout: { ...DEFAULT_THEME.layout, ...updateData.config.layout },
+                colors: { ...DEFAULT_THEME.colors, ...updateData.config.colors },
+                typography: { ...DEFAULT_THEME.typography, ...updateData.config.typography },
+                sections: { ...DEFAULT_THEME.sections, ...updateData.config.sections },
+                style: { ...DEFAULT_THEME.style, ...updateData.config.style }
+            };
+        }
+
+        // Validate name if being updated
+        if (updateData.name) {
+            updateData.name = validateString(updateData.name, "Theme Name", { minLength: 1, maxLength: 255 });
+            // Generate slug if name is being updated and no slug provided
+            if (!updateData.slug) {
+                updateData.slug = updateData.name
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, '-')
+                    .replace(/^-+|-+$/g, '')
+                    .substring(0, 100);
+            }
+        }
+
+        // Check if slug exists for another theme
+        if (updateData.slug) {
+            const existingSlug = await db
+                .select({ id: resumeThemesTable.id })
+                .from(resumeThemesTable)
+                .where(and(
+                    eq(resumeThemesTable.slug, updateData.slug),
+                    sql`${resumeThemesTable.id} != ${validId}`
+                ))
+                .limit(1);
+
+            if (existingSlug && existingSlug.length > 0) {
+                throw new AppError('Theme slug already exists', 400);
+            }
+        }
+
+        const [updated] = await db
+            .update(resumeThemesTable)
+            .set({
+                ...updateData,
+                updatedAt: new Date()
+            })
+            .where(eq(resumeThemesTable.id, validId))
+            .returning();
+
+        if (!updated) {
+            throw new AppError('Theme not found', 404);
+        }
+
+        logger.info('[THEME_MODEL] ✅ Theme updated', {
+            themeID: updated.id,
+            name: updated.name
+        });
+
+        return updated;
+    } catch (error) {
+        logger.error('[THEME_MODEL] Failed to update theme', {
+            error: error.message,
+            themeID
+        });
+        if (error instanceof AppError) throw error;
+        throw new AppError(`Failed to update theme: ${error.message}`, 500);
+    }
+};
+
+/**
+ * Delete a theme (admin only) - hard delete
+ * Note: User themes referencing this will have themeID set to null (cascade)
+ * @param {number} themeID - Theme ID
+ * @returns {Promise<Object>} Deleted theme
+ */
+export const deleteTheme = async (themeID) => {
+    try {
+        const validId = validateInteger(themeID, "Theme ID", { min: 1 });
+
+        const [deleted] = await db
+            .delete(resumeThemesTable)
+            .where(eq(resumeThemesTable.id, validId))
+            .returning();
+
+        if (!deleted) {
+            throw new AppError('Theme not found', 404);
+        }
+
+        logger.info('[THEME_MODEL] ✅ Theme deleted', {
+            themeID: deleted.id,
+            name: deleted.name
+        });
+
+        return deleted;
+    } catch (error) {
+        logger.error('[THEME_MODEL] Failed to delete theme', {
+            error: error.message,
+            themeID
+        });
+        if (error instanceof AppError) throw error;
+        throw new AppError(`Failed to delete theme: ${error.message}`, 500);
+    }
+};
+
+/**
+ * List all themes for admin (including non-public)
+ * @param {Object} options - Options including pagination, filters, search
+ * @returns {Promise<Object>} Object with themes array and pagination info
+ */
+export const listAllThemesAdmin = async (options = {}) => {
+    try {
+        const { 
+            category, 
+            isATSOptimized, 
+            isPublic,
+            search, 
+            page = 1, 
+            limit = 20 
+        } = options;
+        const offset = (page - 1) * limit;
+
+        const conditions = [];
+
+        if (category) {
+            conditions.push(eq(resumeThemesTable.category, category));
+        }
+        if (typeof isATSOptimized === 'boolean') {
+            conditions.push(eq(resumeThemesTable.isATSOptimized, isATSOptimized));
+        }
+        if (typeof isPublic === 'boolean') {
+            conditions.push(eq(resumeThemesTable.isPublic, isPublic));
+        }
+        if (search) {
+            conditions.push(or(
+                ilike(resumeThemesTable.name, `%${search}%`),
+                ilike(resumeThemesTable.description, `%${search}%`)
+            ));
+        }
+
+        const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+        const themes = await db
+            .select()
+            .from(resumeThemesTable)
+            .where(whereClause)
+            .orderBy(desc(resumeThemesTable.usageCount), desc(resumeThemesTable.createdAt))
+            .limit(limit)
+            .offset(offset);
+
+        const [{ total }] = await db
+            .select({ total: count() })
+            .from(resumeThemesTable)
+            .where(whereClause);
+
+        logger.info('[THEME_MODEL] ✅ Admin fetched themes', { count: themes.length, total });
+
+        return {
+            data: themes,
+            pagination: {
+                page,
+                limit,
+                total: Number(total),
+                totalPages: Math.ceil(Number(total) / limit)
+            }
+        };
+    } catch (error) {
+        logger.error('[THEME_MODEL] Failed to list themes for admin', {
+            error: error.message
+        });
+        throw new AppError(`Failed to list themes: ${error.message}`, 500);
     }
 };
 
@@ -497,13 +715,17 @@ export const publishResume = async (resumeContentID, userID) => {
 };
 
 export default {
-    // Theme operations
+    // Theme operations (public)
     getAllThemes,
     getThemeByID,
     getThemeBySlug,
     getThemesByCategory,
-    createTheme,
     incrementThemeUsage,
+    // Admin theme operations
+    createTheme,
+    updateTheme,
+    deleteTheme,
+    listAllThemesAdmin,
     // User theme operations
     applyTheme,
     getUserTheme,

@@ -6,7 +6,7 @@ The Admin System provides administrative capabilities for managing the Success-C
 
 - **Admin User Management**: Create and manage admin accounts with role-based access control
 - **System Settings**: Configure application-wide settings dynamically
-- **Resume Templates**: Upload and manage resume templates for users
+- **Resume Themes**: Create and manage resume themes for users
 - **User Blocking**: Block/unblock users and candidates
 - **Activity Logging**: Track all admin actions for audit purposes
 
@@ -62,16 +62,16 @@ Default credentials (change immediately after first login):
 | PUT | `/api/v1/admin/settings` | Create/update setting |
 | DELETE | `/api/v1/admin/settings/:key` | Delete setting (Super Admin) |
 
-### Resume Templates
+### Resume Themes
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/v1/admin/templates` | List all templates |
-| GET | `/api/v1/admin/templates/:id` | Get template by ID |
-| POST | `/api/v1/admin/templates/upload-url` | Get presigned upload URL |
-| POST | `/api/v1/admin/templates` | Create template |
-| PUT | `/api/v1/admin/templates/:id` | Update template |
-| DELETE | `/api/v1/admin/templates/:id` | Delete template |
+| GET | `/api/v1/admin/themes` | List all themes |
+| GET | `/api/v1/admin/themes/:id` | Get theme by ID |
+| POST | `/api/v1/admin/themes/upload-url` | Get presigned upload URL for assets |
+| POST | `/api/v1/admin/themes` | Create theme |
+| PUT | `/api/v1/admin/themes/:id` | Update theme |
+| DELETE | `/api/v1/admin/themes/:id` | Delete theme |
 
 ### User Blocking
 

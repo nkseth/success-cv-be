@@ -13,12 +13,12 @@ import {
     getSettingsByCategoryService,
     getAllSettingsService,
     deleteSettingService,
-    getTemplateUploadUrlService,
-    createResumeTemplateService,
-    getResumeTemplateService,
-    listResumeTemplatesService,
-    updateResumeTemplateService,
-    deleteResumeTemplateService,
+    getThemeUploadUrlService,
+    createResumeThemeService,
+    getResumeThemeService,
+    listResumeThemesService,
+    updateResumeThemeService,
+    deleteResumeThemeService,
     blockUserService,
     unblockUserService,
     checkUserBlockedService,
@@ -26,7 +26,11 @@ import {
     listAllUsersService,
     listAllCandidatesService,
     listAllOrganisationsService,
-    getActivityLogsService
+    getActivityLogsService,
+    createUserService,
+    createCandidateService,
+    createOrganisationService,
+    addUserToOrganisationService
 } from "../services/admin.service.js";
 
 // Helper to get request metadata
@@ -54,7 +58,7 @@ export const adminLoginController = asyncHandler(async (req, res, next) => {
     const admin = await authenticateAdminService(validatedEmail, validatedPassword, ipAddress, userAgent);
 
     // Generate JWT token
-    const token = jwt.sign(
+    const accessToken = jwt.sign(
         { 
             id: admin.id, 
             type: userTypeConstants.ADMIN,
@@ -76,7 +80,7 @@ export const adminLoginController = asyncHandler(async (req, res, next) => {
 
     sendSuccess(res, {
         admin,
-        token,
+        accessToken,
         refreshToken,
         expiresIn: '8h'
     }, 'Admin login successful');
@@ -232,80 +236,100 @@ export const deleteSettingController = asyncHandler(async (req, res, next) => {
     sendSuccess(res, null, 'Setting deleted successfully');
 });
 
-// ==================== RESUME TEMPLATE CONTROLLERS ====================
+// ==================== RESUME THEME CONTROLLERS ====================
 
 /**
- * Get presigned URL for template upload
+ * Get presigned URL for theme asset upload
  */
-export const getTemplateUploadUrlController = asyncHandler(async (req, res, next) => {
+export const getThemeUploadUrlController = asyncHandler(async (req, res, next) => {
     const { fileName } = req.body;
 
     if (!fileName) {
         return next(new AppError('fileName is required', 400));
     }
 
-    const result = await getTemplateUploadUrlService(fileName);
+    const result = await getThemeUploadUrlService(fileName);
     sendSuccess(res, result, 'Upload URL generated successfully');
 });
 
 /**
- * Create resume template
+ * Create resume theme
  */
-export const createResumeTemplateController = asyncHandler(async (req, res, next) => {
-    const { name, description, thumbnailUrl, templateFileUrl, templateType, category, isPremium, metadata } = req.body;
+export const createResumeThemeController = asyncHandler(async (req, res, next) => {
+    const { 
+        name, 
+        slug,
+        description, 
+        thumbnailURL, 
+        previewURL,
+        category, 
+        config,
+        isATSOptimized,
+        isPublic
+    } = req.body;
 
-    if (!name || !templateFileUrl) {
-        return next(new AppError('Name and templateFileUrl are required', 400));
+    if (!name) {
+        return next(new AppError('Name is required', 400));
     }
 
     const { ipAddress, userAgent } = getRequestMeta(req);
-    const template = await createResumeTemplateService(
-        { name, description, thumbnailUrl, templateFileUrl, templateType, category, isPremium, metadata },
+    const theme = await createResumeThemeService(
+        { 
+            name, 
+            slug,
+            description, 
+            thumbnailURL, 
+            previewURL,
+            category, 
+            config,
+            isATSOptimized,
+            isPublic
+        },
         req.adminID,
         ipAddress,
         userAgent
     );
 
-    sendSuccess(res, template, 'Resume template created successfully', 201);
+    sendSuccess(res, theme, 'Resume theme created successfully', 201);
 });
 
 /**
- * Get resume template by ID
+ * Get resume theme by ID
  */
-export const getResumeTemplateController = asyncHandler(async (req, res, next) => {
+export const getResumeThemeController = asyncHandler(async (req, res, next) => {
     const { id } = req.params;
 
-    const template = await getResumeTemplateService(parseInt(id));
+    const theme = await getResumeThemeService(parseInt(id));
 
-    if (!template) {
-        return next(new AppError('Template not found', 404));
+    if (!theme) {
+        return next(new AppError('Theme not found', 404));
     }
 
-    sendSuccess(res, template, 'Template retrieved successfully');
+    sendSuccess(res, theme, 'Theme retrieved successfully');
 });
 
 /**
- * List resume templates
+ * List resume themes
  */
-export const listResumeTemplatesController = asyncHandler(async (req, res, next) => {
-    const { category, isActive, isPremium, page = 1, limit = 20, includeInactive } = req.query;
+export const listResumeThemesController = asyncHandler(async (req, res, next) => {
+    const { category, isATSOptimized, isPublic, search, page = 1, limit = 20 } = req.query;
 
-    const result = await listResumeTemplatesService({
+    const result = await listResumeThemesService({
         category,
-        isActive: isActive === 'true' ? true : isActive === 'false' ? false : undefined,
-        isPremium: isPremium === 'true' ? true : isPremium === 'false' ? false : undefined,
+        isATSOptimized: isATSOptimized === 'true' ? true : isATSOptimized === 'false' ? false : undefined,
+        isPublic: isPublic === 'true' ? true : isPublic === 'false' ? false : undefined,
+        search,
         page: parseInt(page),
-        limit: parseInt(limit),
-        includeInactive: includeInactive === 'true'
+        limit: parseInt(limit)
     });
 
-    sendSuccess(res, result, 'Templates retrieved successfully');
+    sendSuccess(res, result, 'Themes retrieved successfully');
 });
 
 /**
- * Update resume template
+ * Update resume theme
  */
-export const updateResumeTemplateController = asyncHandler(async (req, res, next) => {
+export const updateResumeThemeController = asyncHandler(async (req, res, next) => {
     const { id } = req.params;
     const updateData = req.body;
 
@@ -314,7 +338,7 @@ export const updateResumeTemplateController = asyncHandler(async (req, res, next
     }
 
     const { ipAddress, userAgent } = getRequestMeta(req);
-    const template = await updateResumeTemplateService(
+    const theme = await updateResumeThemeService(
         parseInt(id),
         updateData,
         req.adminID,
@@ -322,21 +346,21 @@ export const updateResumeTemplateController = asyncHandler(async (req, res, next
         userAgent
     );
 
-    if (!template) {
-        return next(new AppError('Template not found', 404));
+    if (!theme) {
+        return next(new AppError('Theme not found', 404));
     }
 
-    sendSuccess(res, template, 'Template updated successfully');
+    sendSuccess(res, theme, 'Theme updated successfully');
 });
 
 /**
- * Delete resume template
+ * Delete resume theme
  */
-export const deleteResumeTemplateController = asyncHandler(async (req, res, next) => {
+export const deleteResumeThemeController = asyncHandler(async (req, res, next) => {
     const { id } = req.params;
 
     const { ipAddress, userAgent } = getRequestMeta(req);
-    const deleted = await deleteResumeTemplateService(
+    const deleted = await deleteResumeThemeService(
         parseInt(id),
         req.adminID,
         ipAddress,
@@ -344,10 +368,10 @@ export const deleteResumeTemplateController = asyncHandler(async (req, res, next
     );
 
     if (!deleted) {
-        return next(new AppError('Template not found', 404));
+        return next(new AppError('Theme not found', 404));
     }
 
-    sendSuccess(res, null, 'Template deleted successfully');
+    sendSuccess(res, null, 'Theme deleted successfully');
 });
 
 // ==================== USER BLOCKING CONTROLLERS ====================
@@ -455,7 +479,7 @@ export const listAllUsersController = asyncHandler(async (req, res, next) => {
  */
 export const listAllCandidatesController = asyncHandler(async (req, res, next) => {
     const { search, organisationId, page = 1, limit = 20, includeDeleted } = req.query;
-
+    console.log('organisationId:', req);
     const result = await listAllCandidatesService({
         search,
         organisationId: organisationId ? parseInt(organisationId) : undefined,
@@ -481,6 +505,91 @@ export const listAllOrganisationsController = asyncHandler(async (req, res, next
     });
 
     sendSuccess(res, result, 'Organisations retrieved successfully');
+});
+
+/**
+ * Create a new user (admin only)
+ */
+export const createUserController = asyncHandler(async (req, res, next) => {
+    const { email, password, fullname } = req.body;
+
+    if (!email || !password || !fullname) {
+        return next(new AppError('Email, password, and fullname are required', 400));
+    }
+
+    const { ipAddress, userAgent } = getRequestMeta(req);
+    const user = await createUserService(
+        { email, password, fullname },
+        req.adminID,
+        ipAddress,
+        userAgent
+    );
+
+    sendSuccess(res, user, 'User created successfully', 201);
+});
+
+/**
+ * Create a new candidate (admin only)
+ */
+export const createCandidateController = asyncHandler(async (req, res, next) => {
+    const { email, password, fullname, organisationId } = req.body;
+
+    if (!email || !password || !fullname || !organisationId) {
+        return next(new AppError('Email, password, fullname, and organisationId are required', 400));
+    }
+
+    const { ipAddress, userAgent } = getRequestMeta(req);
+    const candidate = await createCandidateService(
+        { email, password, fullname, organisationID: parseInt(organisationId) },
+        req.adminID,
+        ipAddress,
+        userAgent
+    );
+
+    sendSuccess(res, candidate, 'Candidate created successfully', 201);
+});
+
+/**
+ * Create a new organisation (admin only)
+ */
+export const createOrganisationController = asyncHandler(async (req, res, next) => {
+    const { name, slug, creatorId, address, country, state, city } = req.body;
+
+    if (!name || !slug || !creatorId) {
+        return next(new AppError('Name, slug, and creatorId are required', 400));
+    }
+
+    const { ipAddress, userAgent } = getRequestMeta(req);
+    const organisation = await createOrganisationService(
+        { name, slug, creatorID: parseInt(creatorId), address, country, state, city },
+        req.adminID,
+        ipAddress,
+        userAgent
+    );
+
+    sendSuccess(res, organisation, 'Organisation created successfully', 201);
+});
+
+/**
+ * Add a user to an organisation (admin only)
+ */
+export const addUserToOrganisationController = asyncHandler(async (req, res, next) => {
+    const { id } = req.params;
+    const { userId, role } = req.body;
+
+    if (!userId || !role) {
+        return next(new AppError('userId and role are required', 400));
+    }
+
+    const { ipAddress, userAgent } = getRequestMeta(req);
+    const member = await addUserToOrganisationService(
+        { organisationId: parseInt(id), userId: parseInt(userId), role },
+        req.adminID,
+        ipAddress,
+        userAgent
+    );
+
+    sendSuccess(res, member, 'User added to organisation successfully', 201);
 });
 
 // ==================== ACTIVITY LOG CONTROLLERS ====================

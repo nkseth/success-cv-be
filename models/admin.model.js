@@ -3,17 +3,18 @@ import { db } from "../config/db.js";
 import {
     adminUsersTable,
     systemSettingsTable,
-    resumeTemplatesTable,
     blockedUsersTable,
     adminActivityLogTable,
     usersTable,
     candidatesTable,
-    organisationsTable
+    organisationsTable,
+    orgMembersTable
 } from "../drizzle/schema.js";
 import { excludeFields, hashPassword, comparePassword } from "../utils/security-helper.js";
-import { validateEmail, validateInteger, validateString } from "../utils/validate-helper.js";
+import { validateEmail, validateInteger, validateString, validateSlug } from "../utils/validate-helper.js";
 import { AppError } from "../middleware/error.js";
 import { userTypeConstants, adminRoleConstants } from "../utils/constants.js";
+import { createProfile } from "./profile.model.js";
 
 // ==================== ADMIN USER MODELS ====================
 
@@ -268,148 +269,6 @@ export const deleteSettingModel = async (key) => {
         return deleted || null;
     } catch (error) {
         throw new AppError(`Failed to delete setting: ${error.message}`, 500);
-    }
-};
-
-// ==================== RESUME TEMPLATES MODELS ====================
-
-/**
- * Create a new resume template
- */
-export const createResumeTemplateModel = async (templateData, adminId) => {
-    try {
-        const { name, description, thumbnailUrl, templateFileUrl, templateType = 'pdf', category = 'general', isPremium = false, metadata } = templateData;
-
-        const validatedName = validateString(name, "Template Name", { minLength: 1, maxLength: 255 });
-
-        const [created] = await db.insert(resumeTemplatesTable).values({
-            name: validatedName,
-            description,
-            thumbnailUrl,
-            templateFileUrl,
-            templateType,
-            category,
-            isPremium,
-            metadata,
-            createdBy: adminId,
-            updatedBy: adminId,
-            createdAt: new Date(),
-            updatedAt: new Date()
-        }).returning();
-
-        return created;
-    } catch (error) {
-        if (error instanceof AppError) throw error;
-        throw new AppError(`Failed to create resume template: ${error.message}`, 500);
-    }
-};
-
-/**
- * Get resume template by ID
- */
-export const getResumeTemplateByIdModel = async (id) => {
-    try {
-        const validId = validateInteger(id, "Template ID", { min: 1 });
-        const [template] = await db.select()
-            .from(resumeTemplatesTable)
-            .where(and(
-                eq(resumeTemplatesTable.id, validId),
-                isNull(resumeTemplatesTable.deletedAt)
-            ));
-        return template || null;
-    } catch (error) {
-        throw new AppError(`Failed to get resume template: ${error.message}`, 500);
-    }
-};
-
-/**
- * List all resume templates with filtering
- */
-export const listResumeTemplatesModel = async (options = {}) => {
-    try {
-        const { category, isActive, isPremium, page = 1, limit = 20, includeInactive = false } = options;
-        const offset = (page - 1) * limit;
-
-        const conditions = [isNull(resumeTemplatesTable.deletedAt)];
-
-        if (!includeInactive) {
-            conditions.push(eq(resumeTemplatesTable.isActive, true));
-        }
-        if (category) {
-            conditions.push(eq(resumeTemplatesTable.category, category));
-        }
-        if (typeof isActive === 'boolean') {
-            conditions.push(eq(resumeTemplatesTable.isActive, isActive));
-        }
-        if (typeof isPremium === 'boolean') {
-            conditions.push(eq(resumeTemplatesTable.isPremium, isPremium));
-        }
-
-        const templates = await db.select()
-            .from(resumeTemplatesTable)
-            .where(and(...conditions))
-            .orderBy(asc(resumeTemplatesTable.sortOrder), desc(resumeTemplatesTable.createdAt))
-            .limit(limit)
-            .offset(offset);
-
-        const [{ count }] = await db.select({ count: sql`count(*)` })
-            .from(resumeTemplatesTable)
-            .where(and(...conditions));
-
-        return {
-            data: templates,
-            pagination: {
-                page,
-                limit,
-                total: Number(count),
-                totalPages: Math.ceil(Number(count) / limit)
-            }
-        };
-    } catch (error) {
-        throw new AppError(`Failed to list resume templates: ${error.message}`, 500);
-    }
-};
-
-/**
- * Update resume template
- */
-export const updateResumeTemplateModel = async (id, updateData, adminId) => {
-    try {
-        const validId = validateInteger(id, "Template ID", { min: 1 });
-
-        const [updated] = await db.update(resumeTemplatesTable)
-            .set({
-                ...updateData,
-                updatedBy: adminId,
-                updatedAt: new Date()
-            })
-            .where(and(
-                eq(resumeTemplatesTable.id, validId),
-                isNull(resumeTemplatesTable.deletedAt)
-            ))
-            .returning();
-
-        return updated || null;
-    } catch (error) {
-        throw new AppError(`Failed to update resume template: ${error.message}`, 500);
-    }
-};
-
-/**
- * Soft delete resume template
- */
-export const deleteResumeTemplateModel = async (id) => {
-    try {
-        const validId = validateInteger(id, "Template ID", { min: 1 });
-
-        const [deleted] = await db.update(resumeTemplatesTable)
-            .set({ deletedAt: new Date(), updatedAt: new Date() })
-            .where(eq(resumeTemplatesTable.id, validId))
-            .returning();
-
-        return deleted || null;
-    } catch (error) {
-        throw new AppError(`Failed to delete resume template: ${error.message}`, 500);
     }
 };
 
@@ -684,19 +543,48 @@ export const listAllUsersModel = async (options = {}) => {
             ));
         }
 
-        const users = await db.select({
+        const usersData = await db.select({
             id: usersTable.id,
             fullname: usersTable.fullname,
             email: usersTable.email,
             isVerified: usersTable.isVerified,
             createdAt: usersTable.createdAt,
-            updatedAt: usersTable.updatedAt
+            updatedAt: usersTable.updatedAt,
+            // Join with blocked_users to get block info
+            blockId: blockedUsersTable.id,
+            isBlocked: blockedUsersTable.isActive,
+            blockedReason: blockedUsersTable.reason,
+            blockedAt: blockedUsersTable.blockedAt
         })
             .from(usersTable)
+            .leftJoin(
+                blockedUsersTable,
+                and(
+                    eq(blockedUsersTable.userID, usersTable.id),
+                    eq(blockedUsersTable.isActive, true),
+                    eq(blockedUsersTable.userType, userTypeConstants.USER)
+                )
+            )
             .where(conditions.length > 0 ? and(...conditions) : undefined)
             .orderBy(desc(usersTable.createdAt))
             .limit(limit)
             .offset(offset);
+
+        // Transform data to clean format
+        const users = usersData.map(user => ({
+            id: user.id,
+            fullname: user.fullname,
+            email: user.email,
+            isVerified: user.isVerified,
+            isBlocked: user.isBlocked || false,
+            blockInfo: user.isBlocked ? {
+                id: user.blockId,
+                reason: user.blockedReason,
+                blockedAt: user.blockedAt
+            } : null,
+            createdAt: user.createdAt,
+            updatedAt: user.updatedAt
+        }));
 
         const [{ count }] = await db.select({ count: sql`count(*)` })
             .from(usersTable)
@@ -739,20 +627,55 @@ export const listAllCandidatesModel = async (options = {}) => {
             conditions.push(eq(candidatesTable.organisationID, organisationId));
         }
 
-        const candidates = await db.select({
+        const candidatesData = await db.select({
             id: candidatesTable.id,
             fullname: candidatesTable.fullname,
             email: candidatesTable.email,
             organisationID: candidatesTable.organisationID,
+            organisationName: organisationsTable.name,
             isVerified: candidatesTable.isVerified,
             createdAt: candidatesTable.createdAt,
-            updatedAt: candidatesTable.updatedAt
+            updatedAt: candidatesTable.updatedAt,
+            // Join with blocked_users to get block info
+            blockId: blockedUsersTable.id,
+            isBlocked: blockedUsersTable.isActive,
+            blockedReason: blockedUsersTable.reason,
+            blockedAt: blockedUsersTable.blockedAt
         })
             .from(candidatesTable)
+            .leftJoin(organisationsTable, eq(candidatesTable.organisationID, organisationsTable.id))
+            .leftJoin(
+                blockedUsersTable,
+                and(
+                    eq(blockedUsersTable.candidateID, candidatesTable.id),
+                    eq(blockedUsersTable.isActive, true),
+                    eq(blockedUsersTable.userType, userTypeConstants.CANDIDATE)
+                )
+            )
             .where(conditions.length > 0 ? and(...conditions) : undefined)
             .orderBy(desc(candidatesTable.createdAt))
             .limit(limit)
             .offset(offset);
+
+        // Transform data to include organisation as an object
+        const candidates = candidatesData.map(candidate => ({
+            id: candidate.id,
+            fullname: candidate.fullname,
+            email: candidate.email,
+            organisation: {
+                id: candidate.organisationID,
+                name: candidate.organisationName
+            },
+            isVerified: candidate.isVerified,
+            isBlocked: candidate.isBlocked || false,
+            blockInfo: candidate.isBlocked ? {
+                id: candidate.blockId,
+                reason: candidate.blockedReason,
+                blockedAt: candidate.blockedAt
+            } : null,
+            createdAt: candidate.createdAt,
+            updatedAt: candidate.updatedAt
+        }));
 
         const [{ count }] = await db.select({ count: sql`count(*)` })
             .from(candidatesTable)
@@ -792,11 +715,13 @@ export const listAllOrganisationsModel = async (options = {}) => {
             ));
         }
 
-        const organisations = await db.select({
+        const organisationsData = await db.select({
             id: organisationsTable.id,
             name: organisationsTable.name,
             slug: organisationsTable.slug,
             creatorID: organisationsTable.creatorID,
+            creatorFullname: usersTable.fullname,
+            creatorEmail: usersTable.email,
             address: organisationsTable.address,
             country: organisationsTable.country,
             state: organisationsTable.state,
@@ -805,10 +730,29 @@ export const listAllOrganisationsModel = async (options = {}) => {
             updatedAt: organisationsTable.updatedAt
         })
             .from(organisationsTable)
+            .leftJoin(usersTable, eq(organisationsTable.creatorID, usersTable.id))
             .where(conditions.length > 0 ? and(...conditions) : undefined)
             .orderBy(desc(organisationsTable.createdAt))
             .limit(limit)
             .offset(offset);
+
+        // Transform data to include creator as an object
+        const organisations = organisationsData.map(org => ({
+            id: org.id,
+            name: org.name,
+            slug: org.slug,
+            creator: {
+                id: org.creatorID,
+                fullname: org.creatorFullname,
+                email: org.creatorEmail
+            },
+            address: org.address,
+            country: org.country,
+            state: org.state,
+            city: org.city,
+            createdAt: org.createdAt,
+            updatedAt: org.updatedAt
+        }));
 
         const [{ count }] = await db.select({ count: sql`count(*)` })
             .from(organisationsTable)
@@ -825,5 +769,209 @@ export const listAllOrganisationsModel = async (options = {}) => {
         };
     } catch (error) {
         throw new AppError(`Failed to list organisations: ${error.message}`, 500);
+    }
+};
+
+// ==================== ADMIN USER/CANDIDATE/ORG CREATION MODELS ====================
+
+/**
+ * Create a new user (admin only)
+ */
+export const adminCreateUserModel = async (userData) => {
+    try {
+        const { email, password, fullname } = userData;
+
+        const validatedEmail = validateEmail(email);
+        const validatedPassword = validateString(password, "Password", { minLength: 6 });
+        const validatedFullname = validateString(fullname, "Full Name", { minLength: 2, maxLength: 100 });
+
+        // Check if user exists
+        const [existingUser] = await db.select()
+            .from(usersTable)
+            .where(eq(usersTable.email, validatedEmail));
+        
+        if (existingUser) {
+            throw new AppError('User with this email already exists', 409);
+        }
+
+        const [createdUser] = await db.insert(usersTable).values({
+            fullname: validatedFullname,
+            email: validatedEmail,
+            passwordHash: await hashPassword(validatedPassword),
+            createdAt: new Date(),
+            updatedAt: new Date()
+        }).returning();
+
+        // Create profile for user
+        if (createdUser && createdUser.id) {
+            await createProfile({ userID: createdUser.id });
+        }
+
+        return excludeFields(createdUser, ['passwordHash', 'deletedAt']);
+    } catch (error) {
+        if (error instanceof AppError) throw error;
+        throw new AppError(`Failed to create user: ${error.message}`, 500);
+    }
+};
+
+/**
+ * Create a new candidate (admin only)
+ */
+export const adminCreateCandidateModel = async (candidateData) => {
+    try {
+        const { email, password, fullname, organisationID } = candidateData;
+
+        const validatedEmail = validateEmail(email);
+        const validatedPassword = validateString(password, "Password", { minLength: 8 });
+        const validatedFullname = validateString(fullname, "Full Name", { minLength: 2, maxLength: 255 });
+        const validatedOrgID = validateInteger(organisationID, "Organisation ID", { min: 1 });
+
+        // Check if organisation exists
+        const [org] = await db.select()
+            .from(organisationsTable)
+            .where(eq(organisationsTable.id, validatedOrgID));
+        
+        if (!org) {
+            throw new AppError('Organisation not found', 404);
+        }
+
+        // Check if candidate exists
+        const [existingCandidate] = await db.select()
+            .from(candidatesTable)
+            .where(eq(candidatesTable.email, validatedEmail));
+        
+        if (existingCandidate) {
+            throw new AppError('Candidate with this email already exists', 409);
+        }
+
+        const [createdCandidate] = await db.insert(candidatesTable).values({
+            fullname: validatedFullname,
+            email: validatedEmail,
+            passwordHash: await hashPassword(validatedPassword),
+            organisationID: validatedOrgID,
+            createdAt: new Date(),
+            updatedAt: new Date()
+        }).returning();
+
+        // Create profile for candidate
+        if (createdCandidate && createdCandidate.id) {
+            await createProfile({ candidateID: createdCandidate.id });
+        }
+
+        return excludeFields(createdCandidate, ['passwordHash', 'deletedAt']);
+    } catch (error) {
+        if (error instanceof AppError) throw error;
+        throw new AppError(`Failed to create candidate: ${error.message}`, 500);
+    }
+};
+
+/**
+ * Create a new organisation (admin only)
+ */
+export const adminCreateOrganisationModel = async (orgData) => {
+    try {
+        const { name, slug, creatorID, address, country, state, city } = orgData;
+
+        const validatedName = validateString(name, "Organisation Name", { minLength: 2, maxLength: 100 });
+        const validatedSlug = validateSlug(slug, "Organisation Slug", { minLength: 2, maxLength: 100 });
+        const validatedCreatorID = validateInteger(creatorID, "Creator ID", { min: 1 });
+
+        // Check if creator (user) exists
+        const [creator] = await db.select()
+            .from(usersTable)
+            .where(eq(usersTable.id, validatedCreatorID));
+        
+        if (!creator) {
+            throw new AppError('Creator user not found', 404);
+        }
+
+        // Check if organisation with slug exists
+        const [existingOrg] = await db.select()
+            .from(organisationsTable)
+            .where(eq(organisationsTable.slug, validatedSlug));
+        
+        if (existingOrg) {
+            throw new AppError('Organisation with this slug already exists', 409);
+        }
+
+        const [createdOrg] = await db.insert(organisationsTable).values({
+            name: validatedName,
+            slug: validatedSlug,
+            creatorID: validatedCreatorID,
+            address: address || null,
+            country: country || null,
+            state: state || null,
+            city: city || null,
+            createdAt: new Date(),
+            updatedAt: new Date()
+        }).returning();
+
+        // Add creator as admin member of the organisation
+        await db.insert(orgMembersTable).values({
+            userID: validatedCreatorID,
+            organisationID: createdOrg.id,
+            role: 'admin',
+            joinedAt: new Date()
+        });
+
+        return excludeFields(createdOrg, ['deletedAt']);
+    } catch (error) {
+        if (error instanceof AppError) throw error;
+        throw new AppError(`Failed to create organisation: ${error.message}`, 500);
+    }
+};
+
+/**
+ * Add a user to an organisation (admin only)
+ */
+export const adminAddUserToOrganisationModel = async (memberData) => {
+    try {
+        const { organisationId, userId, role } = memberData;
+
+        const validatedOrgID = validateInteger(organisationId, "Organisation ID", { min: 1 });
+        const validatedUserID = validateInteger(userId, "User ID", { min: 1 });
+        const validatedRole = validateString(role, "Role", { minLength: 2, maxLength: 50 });
+
+        // Check if organisation exists
+        const [org] = await db.select()
+            .from(organisationsTable)
+            .where(eq(organisationsTable.id, validatedOrgID));
+        
+        if (!org) {
+            throw new AppError('Organisation not found', 404);
+        }
+
+        // Check if user exists
+        const [user] = await db.select()
+            .from(usersTable)
+            .where(eq(usersTable.id, validatedUserID));
+        
+        if (!user) {
+            throw new AppError('User not found', 404);
+        }
+
+        // Check if user is already a member
+        const [existingMember] = await db.select()
+            .from(orgMembersTable)
+            .where(and(
+                eq(orgMembersTable.organisationID, validatedOrgID),
+                eq(orgMembersTable.userID, validatedUserID)
+            ));
+        
+        if (existingMember) {
+            throw new AppError('User is already a member of this organisation', 409);
+        }
+
+        const [createdMember] = await db.insert(orgMembersTable).values({
+            userID: validatedUserID,
+            organisationID: validatedOrgID,
+            role: validatedRole,
+            joinedAt: new Date()
+        }).returning();
+
+        return createdMember;
+    } catch (error) {
+        if (error instanceof AppError) throw error;
+        throw new AppError(`Failed to add user to organisation: ${error.message}`, 500);
     }
 };

@@ -4,9 +4,13 @@ import { sendSuccess } from "../../utils/apiHelpers.js";
 import { commonAuthenticate } from "../../middleware/authenticate-routes.js";
 import { generatePresignedUrlController, getAccessUrlController } from "../../controllers/upload.controller.js";
 
+/**
+ * Upload Routes
+ */
+
 const router = Router();
 
-router.use(commonAuthenticate)
+router.use(commonAuthenticate);
 
 router.get('/health', (req, res, next) => {
     logger.info("API v1 Upload health route accessed");

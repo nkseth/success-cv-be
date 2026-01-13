@@ -36,10 +36,14 @@ export const adminActionConstants = {
     UPDATE_SETTINGS: 'update_settings',
     BLOCK_USER: 'block_user',
     UNBLOCK_USER: 'unblock_user',
-    UPLOAD_TEMPLATE: 'upload_template',
-    DELETE_TEMPLATE: 'delete_template',
-    UPDATE_TEMPLATE: 'update_template',
+    CREATE_THEME: 'create_theme',
+    UPDATE_THEME: 'update_theme',
+    DELETE_THEME: 'delete_theme',
     CREATE_ADMIN: 'create_admin',
     UPDATE_ADMIN: 'update_admin',
-    DELETE_ADMIN: 'delete_admin'
+    DELETE_ADMIN: 'delete_admin',
+    CREATE_USER: 'create_user',
+    CREATE_CANDIDATE: 'create_candidate',
+    CREATE_ORGANISATION: 'create_organisation',
+    ADD_USER_TO_ORGANISATION: 'add_user_to_organisation'
 }

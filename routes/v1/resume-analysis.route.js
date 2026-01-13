@@ -8,9 +8,12 @@ import {
     getAllResumeAnalysesController
 } from "../../controllers/resume-analysis.controller.js";
 
+/**
+ * Resume Analysis Routes
+ */
+
 const router = Router();
 
-// Apply authentication middleware to all routes
 router.use(commonAuthenticate);
 
 // Health check route

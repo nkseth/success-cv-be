@@ -2,10 +2,15 @@ import { Router } from "express";
 import logger from "../../middleware/logger.js";
 import { sendSuccess } from "../../utils/apiHelpers.js";
 import { authenticateAdmin, requireSuperAdmin, requireAdminRole } from "../../middleware/admin-auth.js";
+
+/**
+ * Admin Routes
+ * Protected by token-based context middleware (admin token type required)
+ * All routes require admin authentication
+ */
 import {
     // Auth
     adminLoginController,
-    getAdminProfileController,
     createAdminController,
     listAdminsController,
     // Settings
@@ -14,13 +19,13 @@ import {
     getSettingsByCategoryController,
     getAllSettingsController,
     deleteSettingController,
-    // Templates
-    getTemplateUploadUrlController,
-    createResumeTemplateController,
-    getResumeTemplateController,
-    listResumeTemplatesController,
-    updateResumeTemplateController,
-    deleteResumeTemplateController,
+    // Themes
+    getThemeUploadUrlController,
+    createResumeThemeController,
+    getResumeThemeController,
+    listResumeThemesController,
+    updateResumeThemeController,
+    deleteResumeThemeController,
     // User blocking
     blockUserController,
     unblockUserController,
@@ -30,6 +35,10 @@ import {
     listAllUsersController,
     listAllCandidatesController,
     listAllOrganisationsController,
+    createUserController,
+    createCandidateController,
+    createOrganisationController,
+    addUserToOrganisationController,
     // Activity logs
     getActivityLogsController,
     // Dashboard
@@ -46,14 +55,11 @@ router.get('/health', (req, res) => {
     sendSuccess(res, null, "Admin API is healthy");
 });
 
-// Admin login
+// Admin login (public)
 router.post('/login', adminLoginController);
 
 // ==================== PROTECTED ROUTES (Admin Auth Required) ====================
 router.use(authenticateAdmin);
-
-// Profile
-router.get('/profile', getAdminProfileController);
 
 // Dashboard
 router.get('/dashboard', getAdminDashboardController);
@@ -69,13 +75,13 @@ router.get('/settings/:key', getSettingController);
 router.put('/settings', updateSettingController);
 router.delete('/settings/:key', requireSuperAdmin, deleteSettingController);
 
-// ==================== RESUME TEMPLATES ====================
-router.get('/templates', listResumeTemplatesController);
-router.get('/templates/:id', getResumeTemplateController);
-router.post('/templates/upload-url', getTemplateUploadUrlController);
-router.post('/templates', createResumeTemplateController);
-router.put('/templates/:id', updateResumeTemplateController);
-router.delete('/templates/:id', deleteResumeTemplateController);
+// ==================== RESUME THEMES ====================
+router.get('/themes', listResumeThemesController);
+router.get('/themes/:id', getResumeThemeController);
+router.post('/themes/upload-url', getThemeUploadUrlController);
+router.post('/themes', createResumeThemeController);
+router.put('/themes/:id', updateResumeThemeController);
+router.delete('/themes/:id', deleteResumeThemeController);
 
 // ==================== USER BLOCKING ====================
 router.get('/blocked-users', listBlockedUsersController);
@@ -85,8 +91,12 @@ router.delete('/blocked-users/:id', unblockUserController);
 
 // ==================== USER MANAGEMENT ====================
 router.get('/users', listAllUsersController);
+router.post('/users', createUserController);
 router.get('/candidates', listAllCandidatesController);
+router.post('/candidates', createCandidateController);
 router.get('/organisations', listAllOrganisationsController);
+router.post('/organisations', createOrganisationController);
+router.post('/organisations/:id/members', addUserToOrganisationController);
 
 // ==================== ACTIVITY LOGS ====================
 router.get('/activity-logs', getActivityLogsController);

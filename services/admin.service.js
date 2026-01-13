@@ -9,11 +9,6 @@ import {
     getSettingsByCategoryModel,
     getAllSettingsModel,
     deleteSettingModel,
-    createResumeTemplateModel,
-    getResumeTemplateByIdModel,
-    listResumeTemplatesModel,
-    updateResumeTemplateModel,
-    deleteResumeTemplateModel,
     blockUserModel,
     unblockUserModel,
     isUserBlockedModel,
@@ -22,8 +17,19 @@ import {
     getAdminActivityLogsModel,
     listAllUsersModel,
     listAllCandidatesModel,
-    listAllOrganisationsModel
+    listAllOrganisationsModel,
+    adminCreateUserModel,
+    adminCreateCandidateModel,
+    adminCreateOrganisationModel,
+    adminAddUserToOrganisationModel
 } from "../models/admin.model.js";
+import {
+    createTheme,
+    updateTheme,
+    deleteTheme,
+    getThemeByID,
+    listAllThemesAdmin
+} from "../models/theme.model.js";
 import { comparePassword } from "../utils/security-helper.js";
 import { AppError } from "../middleware/error.js";
 import { adminActionConstants, settingTypeConstants } from "../utils/constants.js";
@@ -204,15 +210,15 @@ export const deleteSettingService = async (key, adminId, ipAddress, userAgent) =
     return result;
 };
 
-// ==================== RESUME TEMPLATE SERVICES ====================
+// ==================== RESUME THEME SERVICES ====================
 
 /**
- * Generate presigned URL for template upload
+ * Generate presigned URL for theme asset upload (thumbnails, previews)
  */
-export const getTemplateUploadUrlService = async (fileName, fileType = 'template') => {
-    const containerName = 'resume-templates';
+export const getThemeUploadUrlService = async (fileName) => {
+    const containerName = 'resume-themes';
     const options = {
-        maxSizeInMB: 10,
+        maxSizeInMB: 5,
         expiryMinutes: 30,
         generateUniqueName: true
     };
@@ -221,49 +227,49 @@ export const getTemplateUploadUrlService = async (fileName, fileType = 'template
 };
 
 /**
- * Create a new resume template
+ * Create a new resume theme
  */
-export const createResumeTemplateService = async (templateData, adminId, ipAddress, userAgent) => {
-    const template = await createResumeTemplateModel(templateData, adminId);
+export const createResumeThemeService = async (themeData, adminId, ipAddress, userAgent) => {
+    const theme = await createTheme(themeData);
 
     await logAdminActivityModel({
         adminId,
-        action: adminActionConstants.UPLOAD_TEMPLATE,
-        resourceType: 'template',
-        resourceId: template.id,
-        details: { name: template.name, category: template.category },
+        action: adminActionConstants.CREATE_THEME,
+        resourceType: 'theme',
+        resourceId: theme.id,
+        details: { name: theme.name, category: theme.category },
         ipAddress,
         userAgent
     });
 
-    return template;
+    return theme;
 };
 
 /**
- * Get resume template by ID
+ * Get resume theme by ID
  */
-export const getResumeTemplateService = async (id) => {
-    return await getResumeTemplateByIdModel(id);
+export const getResumeThemeService = async (id) => {
+    return await getThemeByID(id);
 };
 
 /**
- * List resume templates
+ * List resume themes for admin
  */
-export const listResumeTemplatesService = async (options) => {
-    return await listResumeTemplatesModel(options);
+export const listResumeThemesService = async (options) => {
+    return await listAllThemesAdmin(options);
 };
 
 /**
- * Update resume template
+ * Update resume theme
  */
-export const updateResumeTemplateService = async (id, updateData, adminId, ipAddress, userAgent) => {
-    const template = await updateResumeTemplateModel(id, updateData, adminId);
+export const updateResumeThemeService = async (id, updateData, adminId, ipAddress, userAgent) => {
+    const theme = await updateTheme(id, updateData);
 
-    if (template) {
+    if (theme) {
         await logAdminActivityModel({
             adminId,
-            action: adminActionConstants.UPDATE_TEMPLATE,
-            resourceType: 'template',
+            action: adminActionConstants.UPDATE_THEME,
+            resourceType: 'theme',
             resourceId: id,
             details: updateData,
             ipAddress,
@@ -271,28 +277,28 @@ export const updateResumeTemplateService = async (id, updateData, adminId, ipAdd
         });
     }
 
-    return template;
+    return theme;
 };
 
 /**
- * Delete resume template
+ * Delete resume theme
  */
-export const deleteResumeTemplateService = async (id, adminId, ipAddress, userAgent) => {
-    const template = await deleteResumeTemplateModel(id);
+export const deleteResumeThemeService = async (id, adminId, ipAddress, userAgent) => {
+    const theme = await deleteTheme(id);
 
-    if (template) {
+    if (theme) {
         await logAdminActivityModel({
             adminId,
-            action: adminActionConstants.DELETE_TEMPLATE,
-            resourceType: 'template',
+            action: adminActionConstants.DELETE_THEME,
+            resourceType: 'theme',
             resourceId: id,
-            details: { name: template.name },
+            details: { name: theme.name },
             ipAddress,
             userAgent
         });
     }
 
-    return template;
+    return theme;
 };
 
 // ==================== USER BLOCKING SERVICES ====================
@@ -371,6 +377,82 @@ export const listAllCandidatesService = async (options) => {
  */
 export const listAllOrganisationsService = async (options) => {
     return await listAllOrganisationsModel(options);
+};
+
+/**
+ * Create a new user (admin only)
+ */
+export const createUserService = async (userData, adminId, ipAddress, userAgent) => {
+    const user = await adminCreateUserModel(userData);
+
+    await logAdminActivityModel({
+        adminId,
+        action: adminActionConstants.CREATE_USER,
+        resourceType: 'user',
+        resourceId: user.id,
+        details: { email: user.email, fullname: user.fullname },
+        ipAddress,
+        userAgent
+    });
+
+    return user;
+};
+
+/**
+ * Create a new candidate (admin only)
+ */
+export const createCandidateService = async (candidateData, adminId, ipAddress, userAgent) => {
+    const candidate = await adminCreateCandidateModel(candidateData);
+
+    await logAdminActivityModel({
+        adminId,
+        action: adminActionConstants.CREATE_CANDIDATE,
+        resourceType: 'candidate',
+        resourceId: candidate.id,
+        details: { email: candidate.email, fullname: candidate.fullname, organisationID: candidate.organisationID },
+        ipAddress,
+        userAgent
+    });
+
+    return candidate;
+};
+
+/**
+ * Create a new organisation (admin only)
+ */
+export const createOrganisationService = async (orgData, adminId, ipAddress, userAgent) => {
+    const organisation = await adminCreateOrganisationModel(orgData);
+
+    await logAdminActivityModel({
+        adminId,
+        action: adminActionConstants.CREATE_ORGANISATION,
+        resourceType: 'organisation',
+        resourceId: organisation.id,
+        details: { name: organisation.name, slug: organisation.slug },
+        ipAddress,
+        userAgent
+    });
+
+    return organisation;
+};
+
+/**
+ * Add a user to an organisation (admin only)
+ */
+export const addUserToOrganisationService = async (memberData, adminId, ipAddress, userAgent) => {
+    const member = await adminAddUserToOrganisationModel(memberData);
+
+    await logAdminActivityModel({
+        adminId,
+        action: adminActionConstants.ADD_USER_TO_ORGANISATION,
+        resourceType: 'organisation_member',
+        resourceId: member.id,
+        details: { userId: memberData.userId, organisationId: memberData.organisationId, role: memberData.role },
+        ipAddress,
+        userAgent
+    });
+
+    return member;
 };
 
 // ==================== ACTIVITY LOG SERVICES ====================

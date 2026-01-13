@@ -2,10 +2,19 @@ import { Router } from "express";
 import logger from "../../middleware/logger.js";
 import { acceptInviteController, resendInviteController } from "../../controllers/organisation.controller.js";
 import { commonAuthenticate } from "../../middleware/authenticate-routes.js";
+import { subdomainMiddleware } from "../../middleware/subdomain.js";
+
+/**
+ * Invites Routes
+ * Uses token-based context for multi-tenant support
+ * Token type determines user context (user/candidate)
+ */
 
 const router = Router();
 
-router.use(commonAuthenticate)
+// Apply token-based context detection
+router.use(subdomainMiddleware);
+router.use(commonAuthenticate);
 
 
 router.get('/:inviteID/accept', (req, res, next) => {
