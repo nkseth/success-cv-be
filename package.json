@@ -24,6 +24,7 @@
     "@azure/storage-blob": "^12.27.0",
     "@getbrevo/brevo": "^3.0.1",
     "ai": "^5.0.98",
+    "axios": "^1.13.2",
     "bcrypt": "^6.0.0",
     "bullmq": "^5.63.0",
     "cors": "^2.8.5",
