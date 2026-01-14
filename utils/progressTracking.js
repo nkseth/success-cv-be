@@ -21,8 +21,24 @@ export const PROGRESS_STAGES = {
     COMPLETE: { percent: 100, message: 'Resume analysis completed!' },
     
     // Resume Rewrite stages
-    PREPARING: { percent: 20, message: 'Preparing analysis data for optimization...' },
-    OPTIMIZING: { percent: 60, message: 'Optimizing resume content with AI...' }
+    PREPARING: { percent: 15, message: 'Preparing analysis data for optimization...' },
+    OPTIMIZING: { percent: 50, message: 'Optimizing resume content with AI...' },
+    APPLYING: { percent: 85, message: 'Applying rewrite to resume...' }
+};
+
+/**
+ * Rewrite-specific progress stages with more granular messages
+ */
+export const REWRITE_PROGRESS_STAGES = {
+    INIT: { percent: 0, message: 'Initializing resume rewrite...' },
+    PREPARING: { percent: 15, message: 'Preparing current content for optimization...' },
+    ANALYZING_ISSUES: { percent: 25, message: 'Analyzing issues from original analysis...' },
+    OPTIMIZING: { percent: 40, message: 'AI is optimizing your resume content...' },
+    ENHANCING_SECTIONS: { percent: 55, message: 'Enhancing resume sections...' },
+    IMPROVING_ATS: { percent: 70, message: 'Improving ATS compatibility...' },
+    SAVING: { percent: 85, message: 'Saving optimized content...' },
+    APPLYING: { percent: 92, message: 'Applying rewrite to your resume...' },
+    COMPLETE: { percent: 100, message: 'Resume optimization completed!' }
 };
 
 /**
