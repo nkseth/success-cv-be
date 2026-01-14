@@ -2,13 +2,7 @@
 node_modules
 npm-debug.log
 yarn-error.log
-package-lock.json
-yarn.lock
-
-# Environment files
-.env
-.env.*
-!.env.example
+pnpm-lock.yaml
 
 # Git
 .git
@@ -42,9 +36,9 @@ docs/
 # Docker
 Dockerfile
 .dockerignore
-docker-compose*.yml
+README.*.md
+docs/
 
-# Temporary files
-tmp/
-temp/
-*.tmp
+# Docker
+Dockerfile
+.dockerignore

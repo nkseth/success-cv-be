@@ -1,0 +1,8 @@
+# Coolify Configuration
+# This file helps Coolify understand how to deploy your application
+
+# Health check endpoint
+HEALTHCHECK_URL=/health
+
+# Port (will be set by Coolify environment variables)
+PORT=4000
