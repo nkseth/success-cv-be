@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  # Backend Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: successcv-backend
+    ports:
+      - "${PORT:-4000}:4000"
+    environment:
+      # Database Configuration
+      DATABASE_URL: ${DATABASE_URL}
+      
+      # JWT Configuration
+      JWT_SECRET_ACCESS_KEY: ${JWT_SECRET_ACCESS_KEY}
+      JWT_SECRET_REFRESH_KEY: ${JWT_SECRET_REFRESH_KEY}
+      
+      # Server Configuration
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${PORT:-4000}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      FRONTEND_URL: ${FRONTEND_URL}
+      
+      # JWT Expiration
+      ACCESS_EXPIRES_IN: ${ACCESS_EXPIRES_IN}
+      REFRESH_EXPIRES_IN: ${REFRESH_EXPIRES_IN}
+      
+      # Azure Communication Services
+      AZURE_COMMUNICATION_EMAIL_CONNECTION_STRING: ${AZURE_COMMUNICATION_EMAIL_CONNECTION_STRING}
+      AZURE_COMMUNITY_KEY: ${AZURE_COMMUNITY_KEY}
+      AZURE_COMMUNICATION_EMAIL_SENDER: ${AZURE_COMMUNICATION_EMAIL_SENDER}
+      
+      # Azure AI Services
+      AZURE_API_KEY: ${AZURE_API_KEY}
+      AZURE_RESOURCE_NAME: ${AZURE_RESOURCE_NAME}
+      
+      # Azure Storage
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING}
+      AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME}
+      AZURE_STORAGE_ACCOUNT_KEY: ${AZURE_STORAGE_ACCOUNT_KEY}
+      
+      # Brevo (Email Service)
+      BREVO_API_KEY: ${BREVO_API_KEY}
+      
+      # Country API
+      COUNTRY_API_KEY: ${COUNTRY_API_KEY}
+      
+      # Redis Configuration
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_USERNAME: ${REDIS_USERNAME}
+      REDIS_DB_CACHE: ${REDIS_DB_CACHE}
+      REDIS_DB_QUEUE: ${REDIS_DB_QUEUE}
+      REDIS_CLUSTER_MODE: ${REDIS_CLUSTER_MODE}
+      REDIS_TLS: ${REDIS_TLS}
+      REDIS_MAX_RETRIES: ${REDIS_MAX_RETRIES}
+      
+      # Worker Configuration
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY}
+      
+      # Resume Parser
+      UNSTRUCTURED_API_KEY: ${UNSTRUCTURED_API_KEY}
+      RESUME_PARSER_URL: ${RESUME_PARSER_URL}
+      
+    restart: unless-stopped
+    networks:
+      - successcv-network
+
+networks:
+  successcv-network:
+    driver: bridge
