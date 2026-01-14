@@ -161,6 +161,70 @@ export const getThemesByCategory = async (category, limit = 20) => {
 };
 
 /**
+ * Get default theme for new resumes
+ * Returns the most popular ATS-optimized theme, or the most popular theme overall
+ * @returns {Promise<Object|null>} Default theme or null if no themes exist
+ */
+export const getDefaultTheme = async () => {
+    try {
+        // First, try to get the most popular ATS-optimized theme
+        let [theme] = await db
+            .select()
+            .from(resumeThemesTable)
+            .where(
+                and(
+                    eq(resumeThemesTable.isPublic, true),
+                    eq(resumeThemesTable.isATSOptimized, true)
+                )
+            )
+            .orderBy(desc(resumeThemesTable.usageCount))
+            .limit(1);
+
+        // If no ATS-optimized theme found, get the most popular professional theme
+        if (!theme) {
+            [theme] = await db
+                .select()
+                .from(resumeThemesTable)
+                .where(
+                    and(
+                        eq(resumeThemesTable.isPublic, true),
+                        eq(resumeThemesTable.category, 'professional')
+                    )
+                )
+                .orderBy(desc(resumeThemesTable.usageCount))
+                .limit(1);
+        }
+
+        // If still no theme, get any public theme
+        if (!theme) {
+            [theme] = await db
+                .select()
+                .from(resumeThemesTable)
+                .where(eq(resumeThemesTable.isPublic, true))
+                .orderBy(desc(resumeThemesTable.usageCount))
+                .limit(1);
+        }
+
+        if (theme) {
+            logger.info('[THEME_MODEL] Default theme selected', {
+                themeID: theme.id,
+                themeName: theme.name,
+                isATSOptimized: theme.isATSOptimized
+            });
+        } else {
+            logger.warn('[THEME_MODEL] No default theme available');
+        }
+
+        return theme || null;
+    } catch (error) {
+        logger.error('[THEME_MODEL] Failed to get default theme', {
+            error: error.message
+        });
+        return null; // Don't throw - default theme is optional
+    }
+};
+
+/**
  * Create a new theme (admin only)
  * @param {Object} themeData - Theme data
  * @returns {Promise<Object>} Created theme
@@ -720,6 +784,7 @@ export default {
     getThemeByID,
     getThemeBySlug,
     getThemesByCategory,
+    getDefaultTheme,
     incrementThemeUsage,
     // Admin theme operations
     createTheme,

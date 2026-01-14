@@ -141,12 +141,24 @@ function generatePostRewriteAnalysisReport(originalAnalysis, optimizationResult,
         }
     });
     
-    // Build new scores from optimization result
+    // Build new scores from optimization result - complete structure
     const newScores = {
+        // Core ATS & Quality Scores
         atsScore: optimizationResult?.scores?.atsScore || options.targetATSScore || 85,
         contentScore: optimizationResult?.scores?.contentScore || 85,
         formatScore: optimizationResult?.scores?.formatScore || 85,
-        overallScore: optimizationResult?.scores?.overallScore || optimizationResult?.scores?.atsScore || 85
+        overallScore: optimizationResult?.scores?.overallScore || optimizationResult?.scores?.atsScore || 85,
+        
+        // Job Fit & Relevance Scores (preserved from original)
+        jobFitScore: optimizationResult?.scores?.jobFitScore || originalAnalysis?.JobFitScore || 0,
+        skillsRelevanceScore: optimizationResult?.scores?.skillsRelevanceScore || originalAnalysis?.relevance?.['Skills Relevance'] || 0,
+        experienceRelevanceScore: optimizationResult?.scores?.experienceRelevanceScore || originalAnalysis?.relevance?.['Work Experience'] || 0,
+        educationRelevanceScore: optimizationResult?.scores?.educationRelevanceScore || originalAnalysis?.relevance?.['Education'] || 0,
+        
+        // Additional Quality Scores
+        grammarScore: optimizationResult?.scores?.grammarScore || 85,
+        professionalBrandingScore: optimizationResult?.scores?.professionalBrandingScore || 85,
+        completenessScore: optimizationResult?.scores?.completenessScore || originalAnalysis?.resume_quality?.completeness_score || 0
     };
     
     // Calculate improvement from original
@@ -163,16 +175,26 @@ function generatePostRewriteAnalysisReport(originalAnalysis, optimizationResult,
         // New scores after optimization
         newScores,
         
-        // Score comparison
+        // Score comparison - complete structure for before/after display
         scoreComparison: {
             before: {
                 atsScore: originalAtsScore,
                 contentScore: originalAnalysis?.resume_quality?.content_quality_score || 0,
-                overallScore: originalAnalysis?.resume_quality?.overall_quality_score || 0
+                formatScore: originalAnalysis?.resume_quality?.formatting_design_score || 0,
+                overallScore: originalAnalysis?.resume_quality?.overall_quality_score || 0,
+                jobFitScore: originalAnalysis?.JobFitScore || 0,
+                skillsRelevanceScore: originalAnalysis?.relevance?.['Skills Relevance'] || 0,
+                experienceRelevanceScore: originalAnalysis?.relevance?.['Work Experience'] || 0,
+                educationRelevanceScore: originalAnalysis?.relevance?.['Education'] || 0,
+                grammarScore: originalAnalysis?.resume_quality?.grammar_language_score || 0,
+                professionalBrandingScore: originalAnalysis?.resume_quality?.professional_branding_score || 0,
+                completenessScore: originalAnalysis?.resume_quality?.completeness_score || 0
             },
             after: newScores,
             improvement: {
                 atsScore: scoreImprovement,
+                contentScore: newScores.contentScore - (originalAnalysis?.resume_quality?.content_quality_score || 0),
+                formatScore: newScores.formatScore - (originalAnalysis?.resume_quality?.formatting_design_score || 0),
                 description: scoreImprovement > 0 
                     ? `+${scoreImprovement} point improvement in ATS score`
                     : 'ATS score maintained'

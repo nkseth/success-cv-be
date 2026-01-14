@@ -4,8 +4,8 @@ import logger from '../middleware/logger.js';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
- * SSE Controller - Optimized for Resume Analysis Job Monitoring
- * Handles Server-Sent Events endpoints for real-time job updates
+ * SSE Controller - Handles Server-Sent Events for real-time job updates
+ * Supports both Resume Analysis and Resume Rewrite job monitoring
  */
 
 /**
@@ -66,6 +66,68 @@ export const connectToJob = async (req, res) => {
             jobId: req.params.jobId 
         });
         return sendError(res, `Failed to establish job connection: ${error.message}`, 500);
+    }
+};
+
+/**
+ * Connect and subscribe to a rewrite job (One-step connection)
+ * GET /api/v1/sse/rewrite/:jobId
+ * 
+ * Specialized endpoint for monitoring resume rewrite jobs.
+ * Auto-subscribes to the resume-rewrite queue for progress updates.
+ * 
+ * Usage: 
+ * new EventSource('/api/v1/sse/rewrite/rewrite-123-1699267200000')
+ * 
+ * Events emitted:
+ * - connected: Connection established
+ * - subscribed: Subscription confirmed
+ * - job_update: Progress updates (status, progress%, message)
+ * - heartbeat: Keep-alive (every 30s)
+ */
+export const connectToRewriteJob = async (req, res) => {
+    try {
+        const { jobId } = req.params;
+        const connectionId = uuidv4();
+        
+        // Get subdomain context for logging
+        const subdomainInfo = req.subdomainContext ? {
+            userType: req.subdomainContext.userType,
+            subdomain: req.subdomain,
+            organisationSlug: req.organisationSlug
+        } : { userType: 'unknown' };
+        
+        logger.info('SSE: Rewrite job connection established', { 
+            connectionId,
+            jobId,
+            queueName: 'resume-rewrite',
+            ip: req.ip,
+            ...subdomainInfo
+        });
+
+        // Create SSE connection
+        sseService.createConnection(connectionId, res, req);
+        
+        // Automatically subscribe to the job
+        await sseService.subscribeToJob(connectionId, jobId);
+
+        // Subscribe to resume-rewrite queue updates
+        await sseService.subscribeToQueue(connectionId, 'resume-rewrite');
+
+        logger.info('SSE: Rewrite subscriptions active', {
+            connectionId,
+            subscriptions: {
+                job: jobId,
+                queue: 'resume-rewrite'
+            }
+        });
+
+    } catch (error) {
+        logger.error('SSE: Rewrite job connection failed', { 
+            error: error.message,
+            jobId: req.params.jobId 
+        });
+        return sendError(res, `Failed to establish rewrite job connection: ${error.message}`, 500);
     }
 };
 
