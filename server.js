@@ -85,7 +85,15 @@ app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
 // API routes
 app.use("/api/v1",v1Routes);
 
-// Health check route
+// Health check routes (both /health and /health-check for compatibility)
+app.get("/health", (req, res) => {
+    res.status(200).json({
+        status: "healthy",
+        environment: NODE_ENV,
+        uptime: process.uptime()
+    });
+});
+
 app.get("/health-check", (req, res) => {
     logger.info("Health check requested");
 
