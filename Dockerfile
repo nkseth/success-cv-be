@@ -10,8 +10,8 @@ WORKDIR /app
 # Copy package files
 COPY package.json pnpm-lock.yaml ./
 
-# Install dependencies
-RUN pnpm install --frozen-lockfile --prod
+# Install dependencies (including devDependencies for build tools)
+RUN pnpm install --frozen-lockfile
 
 # Production stage
 FROM node:20-alpine
