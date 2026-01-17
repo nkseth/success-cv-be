@@ -90,13 +90,38 @@ import { extractFileContent } from '../../utils/fileExtraction.js';
 import { executeWithProgress, publishJobUpdate } from '../../utils/progressTracking.js';
 import { validateResumeData, isValidResume, extractEmail } from '../../utils/resumeSchema.js';
 import { db } from '../../config/db.js';
-import { analysisTable, userDocumentTable, processedAndRawDataTable } from '../../drizzle/schema/analytics-rewrite-schema.js';
+import { 
+    analysisTable, 
+    userDocumentTable, 
+    processedAndRawDataTable,
+    candidateAnalysisTable,
+    candidateDocumentTable,
+    candidateProcessedAndRawDataTable
+} from '../../drizzle/schema/analytics-rewrite-schema.js';
 import { eq } from 'drizzle-orm';
 import { generateAiResponseObject } from '../../services/aiService/index.js';
 import { candidateSchemaSimplified } from '../workerSupport/resume-analysis/objectSchema.js';
 import { getResumeAnalysisPrompt } from '../workerSupport/resume-analysis/prompt.js';
 import { getFileAccessUrl } from '../../services/Integraion/uploadImage.js';
 import resumeService from '../../services/resume.service.js';
+import { isCandidate as checkIsCandidate } from '../../utils/dynamic-tables.js';
+import { userTypeConstants } from '../../utils/constants.js';
+
+/**
+ * Get tables for user type
+ * @param {string} userType - 'user' | 'candidate'
+ * @returns {Object} Object with table references and flags
+ */
+function getTablesForUserType(userType) {
+    const isCandidateUser = checkIsCandidate(userType);
+    return {
+        analysisTable: isCandidateUser ? candidateAnalysisTable : analysisTable,
+        documentTable: isCandidateUser ? candidateDocumentTable : userDocumentTable,
+        processedDataTable: isCandidateUser ? candidateProcessedAndRawDataTable : processedAndRawDataTable,
+        entityIDColumn: isCandidateUser ? 'candidateID' : 'userID',
+        isCandidate: isCandidateUser
+    };
+}
 
 /**
  * Process resume analysis job
@@ -104,26 +129,30 @@ import resumeService from '../../services/resume.service.js';
  * @returns {Promise<Object>} Analysis result
  */
 async function processResumeAnalysis(job) {
-    const { analysisID, userID, resumeId, documentData, meta } = job.data;
+    const { analysisID, userID, resumeId, documentData, meta, userType = userTypeConstants.USER } = job.data;
     const { title, fileURL } = documentData || {};
+    
+    // Get appropriate tables based on userType
+    const tables = getTablesForUserType(userType);
     
     logger.info('[RESUME_ANALYSIS] Starting job', { 
         jobId: job.id,
         analysisID,
         userID,
         resumeId,
-        fileURL
+        fileURL,
+        userType
     });
 
     try {
         // Step 1: Initialize and update status
         await executeWithProgress(job.id, 'INIT', async () => {
-            await db.update(analysisTable)
+            await db.update(tables.analysisTable)
                 .set({
                     status: 'processing',
                     updatedAt: new Date()
                 })
-                .where(eq(analysisTable.id, analysisID));
+                .where(eq(tables.analysisTable.id, analysisID));
                 
             logger.info('[RESUME_ANALYSIS] Analysis record updated to processing');
         });
@@ -250,17 +279,17 @@ async function processResumeAnalysis(job) {
             const timestamp = new Date().toISOString().split('T')[0];
             const updatedTitle = `${candidateName} - Resume Analysis - ${timestamp}`;
             
-            await db.update(userDocumentTable)
+            await db.update(tables.documentTable)
                 .set({
                     title: updatedTitle,
                     updatedAt: new Date()
                 })
-                .where(eq(userDocumentTable.id, resumeId));
+                .where(eq(tables.documentTable.id, resumeId));
             
             logger.info('[RESUME_ANALYSIS] Updated document title:', updatedTitle);
             
             // Save processed data to processedAndRawDataTable
-            const [processedDataRecord] = await db.insert(processedAndRawDataTable)
+            const [processedDataRecord] = await db.insert(tables.processedDataTable)
                 .values({
                     analysisID,
                     documentID: resumeId,
@@ -277,7 +306,7 @@ async function processResumeAnalysis(job) {
                 .returning();
             
             // Update analysis status to completed
-            await db.update(analysisTable)
+            await db.update(tables.analysisTable)
                 .set({
                     status: 'completed',
                     completedAt: new Date(),
@@ -295,7 +324,7 @@ async function processResumeAnalysis(job) {
                         }
                     })
                 })
-                .where(eq(analysisTable.id, analysisID));
+                .where(eq(tables.analysisTable.id, analysisID));
             
             logger.info('[RESUME_ANALYSIS] ✅ Results saved to database', {
                 processedDataID: processedDataRecord.id
@@ -335,10 +364,12 @@ async function processResumeAnalysis(job) {
                 const resumeContent = await resumeService.createResumeFromAnalysis(
                     userID,
                     analysisID,
-                    resumeData
+                    resumeData,
+                    userType
                 );
                 logger.info('[RESUME_ANALYSIS] ✅ Resume content created', {
-                    resumeContentID: resumeContent.id
+                    resumeContentID: resumeContent.id,
+                    userType
                 });
             } catch (resumeError) {
                 // Log but don't fail the job - resume content can be created later
@@ -392,12 +423,13 @@ async function processResumeAnalysis(job) {
             jobId: job.id,
             analysisID,
             error: error.message,
-            stack: error.stack
+            stack: error.stack,
+            userType
         });
 
         // Update analysis status to failed
         try {
-            await db.update(analysisTable)
+            await db.update(tables.analysisTable)
                 .set({
                     status: 'failed',
                     updatedAt: new Date(),
@@ -406,7 +438,7 @@ async function processResumeAnalysis(job) {
                         errorStack: error.stack
                     })
                 })
-                .where(eq(analysisTable.id, analysisID));
+                .where(eq(tables.analysisTable.id, analysisID));
         } catch (dbError) {
             logger.error('[RESUME_ANALYSIS] Failed to update error status', { 
                 error: dbError.message 

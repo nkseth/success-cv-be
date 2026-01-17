@@ -8,6 +8,7 @@ import {
     getPaginationMeta, 
     formatPaginatedResponse 
 } from "../utils/pagination-filter.js";
+import { userTypeConstants } from "../utils/constants.js";
 
 /**
  * Resume Controller
@@ -36,8 +37,9 @@ import {
  */
 export const getAllResumesController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
 
-    logger.info('[RESUME_CONTROLLER] Fetching all resumes', { userID, query: req.query });
+    logger.info('[RESUME_CONTROLLER] Fetching all resumes', { userID, userType, query: req.query });
 
     // Parse query parameters
     const { pagination, search, filters, sort } = parseQueryParams(req.query, {
@@ -56,7 +58,8 @@ export const getAllResumesController = asyncHandler(async (req, res, next) => {
         pagination,
         filters,
         search,
-        sort
+        sort,
+        userType
     });
 
     // Calculate pagination metadata
@@ -74,13 +77,14 @@ export const getAllResumesController = asyncHandler(async (req, res, next) => {
  */
 export const getResumeController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { id } = req.params;
 
     const validatedID = validateInteger(id, 'Resume ID');
 
-    logger.info('[RESUME_CONTROLLER] Fetching resume', { userID, resumeID: validatedID });
+    logger.info('[RESUME_CONTROLLER] Fetching resume', { userID, userType, resumeID: validatedID });
 
-    const resume = await resumeService.getResumeByID(validatedID, userID);
+    const resume = await resumeService.getResumeByID(validatedID, userID, userType);
 
     sendSuccess(res, resume, 'Resume fetched successfully');
 });
@@ -91,13 +95,14 @@ export const getResumeController = asyncHandler(async (req, res, next) => {
  */
 export const getResumeByAnalysisController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { analysisId } = req.params;
 
     const validatedID = validateInteger(analysisId, 'Analysis ID');
 
-    logger.info('[RESUME_CONTROLLER] Fetching resume by analysis', { userID, analysisID: validatedID });
+    logger.info('[RESUME_CONTROLLER] Fetching resume by analysis', { userID, userType, analysisID: validatedID });
 
-    const resume = await resumeService.getResumeByAnalysisID(validatedID, userID);
+    const resume = await resumeService.getResumeByAnalysisID(validatedID, userID, userType);
 
     if (!resume) {
         sendSuccess(res, null, 'No resume found for this analysis', 200);
@@ -113,6 +118,7 @@ export const getResumeByAnalysisController = asyncHandler(async (req, res, next)
  */
 export const updateSectionController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { id, sectionName } = req.params;
     const { data } = req.body;
 
@@ -128,6 +134,7 @@ export const updateSectionController = asyncHandler(async (req, res, next) => {
 
     logger.info('[RESUME_CONTROLLER] Updating section', {
         userID,
+        userType,
         resumeID: validatedID,
         sectionName: validatedSection
     });
@@ -136,7 +143,8 @@ export const updateSectionController = asyncHandler(async (req, res, next) => {
         validatedID,
         userID,
         validatedSection,
-        data
+        data,
+        userType
     );
 
     sendSuccess(res, result, 'Section updated successfully');
@@ -148,6 +156,7 @@ export const updateSectionController = asyncHandler(async (req, res, next) => {
  */
 export const updateSectionsController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { id } = req.params;
     const { sections } = req.body;
 
@@ -159,11 +168,12 @@ export const updateSectionsController = asyncHandler(async (req, res, next) => {
 
     logger.info('[RESUME_CONTROLLER] Updating multiple sections', {
         userID,
+        userType,
         resumeID: validatedID,
         sectionCount: Object.keys(sections).length
     });
 
-    const result = await resumeService.updateSections(validatedID, userID, sections);
+    const result = await resumeService.updateSections(validatedID, userID, sections, userType);
 
     sendSuccess(res, result, 'Sections updated successfully');
 });
@@ -174,16 +184,18 @@ export const updateSectionsController = asyncHandler(async (req, res, next) => {
  */
 export const getResumeForRenderController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { id } = req.params;
 
     const validatedID = validateInteger(id, 'Resume ID');
 
     logger.info('[RESUME_CONTROLLER] Fetching resume for render', {
         userID,
+        userType,
         resumeID: validatedID
     });
 
-    const renderData = await resumeService.getResumeForRender(validatedID, userID);
+    const renderData = await resumeService.getResumeForRender(validatedID, userID, userType);
 
     sendSuccess(res, renderData, 'Resume render data fetched successfully');
 });
@@ -194,16 +206,18 @@ export const getResumeForRenderController = asyncHandler(async (req, res, next) 
  */
 export const publishResumeController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { id } = req.params;
 
     const validatedID = validateInteger(id, 'Resume ID');
 
     logger.info('[RESUME_CONTROLLER] Publishing resume', {
         userID,
+        userType,
         resumeID: validatedID
     });
 
-    const result = await resumeService.publishResume(validatedID, userID);
+    const result = await resumeService.publishResume(validatedID, userID, userType);
 
     sendSuccess(res, result, 'Resume published successfully');
 });
@@ -216,6 +230,7 @@ export const publishResumeController = asyncHandler(async (req, res, next) => {
  */
 export const createRewriteController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { id } = req.params;
     const { 
         versionLabel,
@@ -227,10 +242,11 @@ export const createRewriteController = asyncHandler(async (req, res, next) => {
     const validatedID = validateInteger(id, 'Resume ID');
 
     // Get the analysis ID from resume content
-    const resume = await resumeService.getResumeByID(validatedID, userID);
+    const resume = await resumeService.getResumeByID(validatedID, userID, userType);
 
     logger.info('[RESUME_CONTROLLER] Creating rewrite', {
         userID,
+        userType,
         resumeID: validatedID,
         analysisID: resume.content.analysisID
     });
@@ -242,7 +258,8 @@ export const createRewriteController = asyncHandler(async (req, res, next) => {
             versionLabel,
             targetATSScore: targetATSScore ? parseInt(targetATSScore) : undefined,
             focusAreas,
-            optimizationLevel
+            optimizationLevel,
+            userType
         }
     );
 
@@ -255,6 +272,7 @@ export const createRewriteController = asyncHandler(async (req, res, next) => {
  */
 export const createRewriteByAnalysisController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { analysisId } = req.params;
     const { 
         versionLabel,
@@ -267,6 +285,7 @@ export const createRewriteByAnalysisController = asyncHandler(async (req, res, n
 
     logger.info('[RESUME_CONTROLLER] Creating rewrite by analysis', {
         userID,
+        userType,
         analysisID: validatedID
     });
 
@@ -277,7 +296,8 @@ export const createRewriteByAnalysisController = asyncHandler(async (req, res, n
             versionLabel,
             targetATSScore: targetATSScore ? parseInt(targetATSScore) : undefined,
             focusAreas,
-            optimizationLevel
+            optimizationLevel,
+            userType
         }
     );
 
@@ -299,15 +319,17 @@ export const createRewriteByAnalysisController = asyncHandler(async (req, res, n
  */
 export const getRewritesController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { id } = req.params;
 
     const validatedID = validateInteger(id, 'Resume ID');
 
     // Get the analysis ID from resume content
-    const resume = await resumeService.getResumeByID(validatedID, userID);
+    const resume = await resumeService.getResumeByID(validatedID, userID, userType);
 
     logger.info('[RESUME_CONTROLLER] Fetching rewrites', {
         userID,
+        userType,
         resumeID: validatedID,
         analysisID: resume.content.analysisID,
         query: req.query
@@ -330,7 +352,7 @@ export const getRewritesController = asyncHandler(async (req, res, next) => {
     const { rewrites, totalCount } = await resumeService.getRewritesByAnalysis(
         resume.content.analysisID,
         userID,
-        { pagination, filters, sort }
+        { pagination, filters, sort, userType }
     );
 
     // Calculate pagination metadata
@@ -348,16 +370,18 @@ export const getRewritesController = asyncHandler(async (req, res, next) => {
  */
 export const getRewriteController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { rewriteId } = req.params;
 
     const validatedRewriteID = validateInteger(rewriteId, 'Rewrite ID');
 
     logger.info('[RESUME_CONTROLLER] Fetching rewrite', {
         userID,
+        userType,
         rewriteID: validatedRewriteID
     });
 
-    const rewrite = await resumeService.getRewrite(validatedRewriteID, userID);
+    const rewrite = await resumeService.getRewrite(validatedRewriteID, userID, userType);
 
     sendSuccess(res, rewrite, 'Rewrite fetched successfully');
 });
@@ -368,16 +392,18 @@ export const getRewriteController = asyncHandler(async (req, res, next) => {
  */
 export const applyRewriteController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { rewriteId } = req.params;
 
     const validatedRewriteID = validateInteger(rewriteId, 'Rewrite ID');
 
     logger.info('[RESUME_CONTROLLER] Applying rewrite', {
         userID,
+        userType,
         rewriteID: validatedRewriteID
     });
 
-    const result = await resumeService.applyRewrite(validatedRewriteID, userID);
+    const result = await resumeService.applyRewrite(validatedRewriteID, userID, userType);
 
     sendSuccess(res, result, 'Rewrite applied successfully');
 });
@@ -389,16 +415,18 @@ export const applyRewriteController = asyncHandler(async (req, res, next) => {
  */
 export const switchRewriteVersionController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { rewriteId } = req.params;
 
     const validatedRewriteID = validateInteger(rewriteId, 'Rewrite ID');
 
     logger.info('[RESUME_CONTROLLER] Switching rewrite version', {
         userID,
+        userType,
         rewriteID: validatedRewriteID
     });
 
-    const result = await resumeService.switchRewriteVersion(validatedRewriteID, userID);
+    const result = await resumeService.switchRewriteVersion(validatedRewriteID, userID, userType);
 
     sendSuccess(res, result, result.message || 'Switched to rewrite version successfully');
 });
@@ -409,20 +437,22 @@ export const switchRewriteVersionController = asyncHandler(async (req, res, next
  */
 export const getActiveRewriteController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { id } = req.params;
 
     const validatedID = validateInteger(id, 'Resume ID');
 
     // Get the analysis ID from resume content
-    const resume = await resumeService.getResumeByID(validatedID, userID);
+    const resume = await resumeService.getResumeByID(validatedID, userID, userType);
 
     logger.info('[RESUME_CONTROLLER] Fetching active rewrite', {
         userID,
+        userType,
         resumeID: validatedID,
         analysisID: resume.content.analysisID
     });
 
-    const activeRewrite = await resumeService.getActiveRewrite(resume.content.analysisID, userID);
+    const activeRewrite = await resumeService.getActiveRewrite(resume.content.analysisID, userID, userType);
 
     if (!activeRewrite) {
         sendSuccess(res, null, 'No active rewrite version');
@@ -438,20 +468,22 @@ export const getActiveRewriteController = asyncHandler(async (req, res, next) =>
  */
 export const clearActiveRewriteController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { id } = req.params;
 
     const validatedID = validateInteger(id, 'Resume ID');
 
     // Get the analysis ID from resume content
-    const resume = await resumeService.getResumeByID(validatedID, userID);
+    const resume = await resumeService.getResumeByID(validatedID, userID, userType);
 
     logger.info('[RESUME_CONTROLLER] Clearing active rewrite', {
         userID,
+        userType,
         resumeID: validatedID,
         analysisID: resume.content.analysisID
     });
 
-    const result = await resumeService.clearActiveRewrite(resume.content.analysisID, userID);
+    const result = await resumeService.clearActiveRewrite(resume.content.analysisID, userID, userType);
 
     sendSuccess(res, result, 'Reverted to manual editing mode');
 });
@@ -463,6 +495,7 @@ export const clearActiveRewriteController = asyncHandler(async (req, res, next) 
  */
 export const compareRewriteVersionsController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { version1, version2 } = req.query;
 
     const validatedVersion1 = validateInteger(version1, 'Version 1 ID');
@@ -470,6 +503,7 @@ export const compareRewriteVersionsController = asyncHandler(async (req, res, ne
 
     logger.info('[RESUME_CONTROLLER] Comparing rewrite versions', {
         userID,
+        userType,
         version1: validatedVersion1,
         version2: validatedVersion2
     });
@@ -477,7 +511,8 @@ export const compareRewriteVersionsController = asyncHandler(async (req, res, ne
     const comparison = await resumeService.compareRewriteVersions(
         validatedVersion1,
         validatedVersion2,
-        userID
+        userID,
+        userType
     );
 
     sendSuccess(res, comparison, 'Rewrite versions compared successfully');
@@ -581,6 +616,7 @@ export const getThemesByCategoryController = asyncHandler(async (req, res, next)
  */
 export const applyThemeController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { id } = req.params;
     const { themeId, customOverrides } = req.body;
 
@@ -589,6 +625,7 @@ export const applyThemeController = asyncHandler(async (req, res, next) => {
 
     logger.info('[RESUME_CONTROLLER] Applying theme', {
         userID,
+        userType,
         resumeID: validatedResumeID,
         themeID: validatedThemeID
     });
@@ -597,7 +634,8 @@ export const applyThemeController = asyncHandler(async (req, res, next) => {
         validatedResumeID,
         userID,
         validatedThemeID,
-        customOverrides
+        customOverrides,
+        userType
     );
 
     sendSuccess(res, result, 'Theme applied successfully');
@@ -609,6 +647,7 @@ export const applyThemeController = asyncHandler(async (req, res, next) => {
  */
 export const updateThemeController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { id } = req.params;
     const { customOverrides, sectionVisibility, sectionOrder } = req.body;
 
@@ -620,6 +659,7 @@ export const updateThemeController = asyncHandler(async (req, res, next) => {
 
     logger.info('[RESUME_CONTROLLER] Updating theme', {
         userID,
+        userType,
         resumeID: validatedResumeID
     });
 
@@ -631,7 +671,8 @@ export const updateThemeController = asyncHandler(async (req, res, next) => {
     const result = await resumeService.updateThemeConfig(
         validatedResumeID,
         userID,
-        updates
+        updates,
+        userType
     );
 
     sendSuccess(res, result, 'Theme updated successfully');

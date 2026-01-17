@@ -66,7 +66,7 @@ export const candidateAnalysisTable = pgTable("candidate_analyses", {
     candidateID: integer("candidateID").references(() => candidatesTable.id).notNull(),
     documentID: integer("documentID").references(() => candidateDocumentTable.id).notNull(),
     status: varchar({ length: 50 }).default("pending").notNull(), // e.g., 'pending', 'completed', 'failed'
-    jpbID: varchar({ length: 255 }), // ID from jpb service
+    jobID: varchar({ length: 255 }), // ID from job service
     createdAt: timestamp().defaultNow().notNull(),
     updatedAt: timestamp().defaultNow().notNull(),
     meta: text(),

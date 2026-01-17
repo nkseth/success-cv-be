@@ -10,10 +10,29 @@ import {
 import {
     resumeThemesTable,
     userResumeThemeTable,
-    resumeContentTable
+    resumeContentTable,
+    candidateResumeThemeTable,
+    candidateResumeContentTable
 } from "../drizzle/schema.js";
 import { validateThemeConfig, DEFAULT_THEME } from "../utils/theme-schema.js";
 import { validateString, validateInteger } from "../utils/validate-helper.js";
+import { isCandidate as checkIsCandidate } from "../utils/dynamic-tables.js";
+import { userTypeConstants } from "../utils/constants.js";
+
+/**
+ * Get tables for user type
+ * @param {string} userType - 'user' | 'candidate'
+ * @returns {Object} Object with table references and flags
+ */
+function getTablesForUserType(userType) {
+    const isCandidateUser = checkIsCandidate(userType);
+    return {
+        userThemeTable: isCandidateUser ? candidateResumeThemeTable : userResumeThemeTable,
+        contentTable: isCandidateUser ? candidateResumeContentTable : resumeContentTable,
+        entityIDColumn: isCandidateUser ? 'candidateID' : 'userID',
+        isCandidate: isCandidateUser
+    };
+}
 
 // ========== THEME OPERATIONS ==========
 
@@ -531,28 +550,33 @@ export const incrementThemeUsage = async (themeID) => {
 
 /**
  * Apply a theme to a resume
- * @param {number} userID - User ID
+ * @param {number} userID - User ID or Candidate ID
  * @param {number} resumeContentID - Resume content ID
  * @param {number} themeID - Theme ID to apply
  * @param {Object} customOverrides - Optional custom overrides
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Created/updated user theme
  */
-export const applyTheme = async (userID, resumeContentID, themeID, customOverrides = null) => {
+export const applyTheme = async (userID, resumeContentID, themeID, customOverrides = null, userType = userTypeConstants.USER) => {
     try {
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+        
         logger.info('[THEME_MODEL] Applying theme to resume', {
             userID,
             resumeContentID,
-            themeID
+            themeID,
+            userType
         });
 
         // Verify resume content belongs to user
         const content = await db
-            .select({ id: resumeContentTable.id })
-            .from(resumeContentTable)
+            .select({ id: tables.contentTable.id })
+            .from(tables.contentTable)
             .where(
                 and(
-                    eq(resumeContentTable.id, resumeContentID),
-                    eq(resumeContentTable.userID, userID)
+                    eq(tables.contentTable.id, resumeContentID),
+                    eq(tables.contentTable[entityIDField], userID)
                 )
             )
             .limit(1);
@@ -567,11 +591,11 @@ export const applyTheme = async (userID, resumeContentID, themeID, customOverrid
         // Check if user already has a theme for this resume
         const existing = await db
             .select()
-            .from(userResumeThemeTable)
+            .from(tables.userThemeTable)
             .where(
                 and(
-                    eq(userResumeThemeTable.resumeContentID, resumeContentID),
-                    eq(userResumeThemeTable.userID, userID)
+                    eq(tables.userThemeTable.resumeContentID, resumeContentID),
+                    eq(tables.userThemeTable[entityIDField], userID)
                 )
             )
             .limit(1);
@@ -584,7 +608,7 @@ export const applyTheme = async (userID, resumeContentID, themeID, customOverrid
             const isChangingTheme = existing[0].themeID !== themeID;
             
             [userTheme] = await db
-                .update(userResumeThemeTable)
+                .update(tables.userThemeTable)
                 .set({
                     themeID,
                     // Reset customOverrides when changing themes (unless new overrides are provided)
@@ -595,21 +619,24 @@ export const applyTheme = async (userID, resumeContentID, themeID, customOverrid
                     sectionOrder: isChangingTheme ? null : existing[0].sectionOrder,
                     updatedAt: new Date()
                 })
-                .where(eq(userResumeThemeTable.id, existing[0].id))
+                .where(eq(tables.userThemeTable.id, existing[0].id))
                 .returning();
         } else {
             // Create new
+            const insertValues = {
+                resumeContentID,
+                themeID,
+                customOverrides,
+                isDraft: true,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            };
+            // Add the appropriate entity ID
+            insertValues[entityIDField] = userID;
+            
             [userTheme] = await db
-                .insert(userResumeThemeTable)
-                .values({
-                    userID,
-                    resumeContentID,
-                    themeID,
-                    customOverrides,
-                    isDraft: true,
-                    createdAt: new Date(),
-                    updatedAt: new Date()
-                })
+                .insert(tables.userThemeTable)
+                .values(insertValues)
                 .returning();
 
             // Increment theme usage
@@ -617,7 +644,8 @@ export const applyTheme = async (userID, resumeContentID, themeID, customOverrid
         }
 
         logger.info('[THEME_MODEL] ✅ Theme applied', {
-            userThemeID: userTheme.id
+            userThemeID: userTheme.id,
+            userType
         });
 
         return userTheme;
@@ -625,7 +653,8 @@ export const applyTheme = async (userID, resumeContentID, themeID, customOverrid
         logger.error('[THEME_MODEL] Failed to apply theme', {
             error: error.message,
             resumeContentID,
-            themeID
+            themeID,
+            userType
         });
         if (error instanceof AppError) throw error;
         throw new AppError(`Failed to apply theme: ${error.message}`, 500);
@@ -635,21 +664,25 @@ export const applyTheme = async (userID, resumeContentID, themeID, customOverrid
 /**
  * Get user's applied theme for a resume
  * @param {number} resumeContentID - Resume content ID
- * @param {number} userID - User ID
+ * @param {number} userID - User ID or Candidate ID
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object|null>} User theme with base theme config
  */
-export const getUserTheme = async (resumeContentID, userID) => {
+export const getUserTheme = async (resumeContentID, userID, userType = userTypeConstants.USER) => {
     try {
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+        
         const userTheme = await db
             .select({
-                id: userResumeThemeTable.id,
-                themeID: userResumeThemeTable.themeID,
-                customOverrides: userResumeThemeTable.customOverrides,
-                sectionVisibility: userResumeThemeTable.sectionVisibility,
-                sectionOrder: userResumeThemeTable.sectionOrder,
-                isDraft: userResumeThemeTable.isDraft,
-                createdAt: userResumeThemeTable.createdAt,
-                updatedAt: userResumeThemeTable.updatedAt,
+                id: tables.userThemeTable.id,
+                themeID: tables.userThemeTable.themeID,
+                customOverrides: tables.userThemeTable.customOverrides,
+                sectionVisibility: tables.userThemeTable.sectionVisibility,
+                sectionOrder: tables.userThemeTable.sectionOrder,
+                isDraft: tables.userThemeTable.isDraft,
+                createdAt: tables.userThemeTable.createdAt,
+                updatedAt: tables.userThemeTable.updatedAt,
                 // Theme fields
                 themeName: resumeThemesTable.name,
                 themeSlug: resumeThemesTable.slug,
@@ -657,12 +690,12 @@ export const getUserTheme = async (resumeContentID, userID) => {
                 themeConfig: resumeThemesTable.config,
                 isATSOptimized: resumeThemesTable.isATSOptimized
             })
-            .from(userResumeThemeTable)
-            .leftJoin(resumeThemesTable, eq(userResumeThemeTable.themeID, resumeThemesTable.id))
+            .from(tables.userThemeTable)
+            .leftJoin(resumeThemesTable, eq(tables.userThemeTable.themeID, resumeThemesTable.id))
             .where(
                 and(
-                    eq(userResumeThemeTable.resumeContentID, resumeContentID),
-                    eq(userResumeThemeTable.userID, userID)
+                    eq(tables.userThemeTable.resumeContentID, resumeContentID),
+                    eq(tables.userThemeTable[entityIDField], userID)
                 )
             )
             .limit(1);
@@ -675,7 +708,8 @@ export const getUserTheme = async (resumeContentID, userID) => {
     } catch (error) {
         logger.error('[THEME_MODEL] Failed to fetch user theme', {
             error: error.message,
-            resumeContentID
+            resumeContentID,
+            userType
         });
         throw new AppError(`Failed to fetch user theme: ${error.message}`, 500);
     }
@@ -684,24 +718,29 @@ export const getUserTheme = async (resumeContentID, userID) => {
 /**
  * Update user's theme customizations
  * @param {number} resumeContentID - Resume content ID
- * @param {number} userID - User ID
+ * @param {number} userID - User ID or Candidate ID
  * @param {Object} updates - Updates to apply
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Updated user theme
  */
-export const updateUserTheme = async (resumeContentID, userID, updates) => {
+export const updateUserTheme = async (resumeContentID, userID, updates, userType = userTypeConstants.USER) => {
     try {
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+        
         logger.info('[THEME_MODEL] Updating user theme', {
             resumeContentID,
-            updateFields: Object.keys(updates)
+            updateFields: Object.keys(updates),
+            userType
         });
 
         const existing = await db
             .select()
-            .from(userResumeThemeTable)
+            .from(tables.userThemeTable)
             .where(
                 and(
-                    eq(userResumeThemeTable.resumeContentID, resumeContentID),
-                    eq(userResumeThemeTable.userID, userID)
+                    eq(tables.userThemeTable.resumeContentID, resumeContentID),
+                    eq(tables.userThemeTable[entityIDField], userID)
                 )
             )
             .limit(1);
@@ -720,24 +759,26 @@ export const updateUserTheme = async (resumeContentID, userID, updates) => {
         }
 
         const [updated] = await db
-            .update(userResumeThemeTable)
+            .update(tables.userThemeTable)
             .set({
                 ...updates,
                 customOverrides: customOverrides || existing[0].customOverrides,
                 updatedAt: new Date()
             })
-            .where(eq(userResumeThemeTable.id, existing[0].id))
+            .where(eq(tables.userThemeTable.id, existing[0].id))
             .returning();
 
         logger.info('[THEME_MODEL] ✅ User theme updated', {
-            userThemeID: updated.id
+            userThemeID: updated.id,
+            userType
         });
 
         return updated;
     } catch (error) {
         logger.error('[THEME_MODEL] Failed to update user theme', {
             error: error.message,
-            resumeContentID
+            resumeContentID,
+            userType
         });
         if (error instanceof AppError) throw error;
         throw new AppError(`Failed to update user theme: ${error.message}`, 500);
@@ -747,33 +788,38 @@ export const updateUserTheme = async (resumeContentID, userID, updates) => {
 /**
  * Restore a full theme configuration from a snapshot (used when switching rewrite versions)
  * This updates the userResumeThemeTable only, NOT the actual theme definitions
- * @param {number} userID - User ID
+ * @param {number} userID - User ID or Candidate ID
  * @param {number} resumeContentID - Resume content ID  
  * @param {Object} themeSnapshot - Full theme snapshot with themeID, customOverrides, sectionVisibility, sectionOrder
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Updated user theme
  */
-export const restoreThemeFromSnapshot = async (userID, resumeContentID, themeSnapshot) => {
+export const restoreThemeFromSnapshot = async (userID, resumeContentID, themeSnapshot, userType = userTypeConstants.USER) => {
     try {
         if (!themeSnapshot || !themeSnapshot.themeID) {
             logger.warn('[THEME_MODEL] No theme snapshot to restore', { resumeContentID });
             return null;
         }
 
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+
         logger.info('[THEME_MODEL] Restoring theme from snapshot', {
             userID,
             resumeContentID,
             themeID: themeSnapshot.themeID,
-            themeName: themeSnapshot.themeName
+            themeName: themeSnapshot.themeName,
+            userType
         });
 
         // Check if user already has a theme for this resume
         const existing = await db
             .select()
-            .from(userResumeThemeTable)
+            .from(tables.userThemeTable)
             .where(
                 and(
-                    eq(userResumeThemeTable.resumeContentID, resumeContentID),
-                    eq(userResumeThemeTable.userID, userID)
+                    eq(tables.userThemeTable.resumeContentID, resumeContentID),
+                    eq(tables.userThemeTable[entityIDField], userID)
                 )
             )
             .limit(1);
@@ -783,7 +829,7 @@ export const restoreThemeFromSnapshot = async (userID, resumeContentID, themeSna
         if (existing && existing.length > 0) {
             // Update existing with full snapshot config
             [userTheme] = await db
-                .update(userResumeThemeTable)
+                .update(tables.userThemeTable)
                 .set({
                     themeID: themeSnapshot.themeID,
                     customOverrides: themeSnapshot.customOverrides || null,
@@ -791,36 +837,41 @@ export const restoreThemeFromSnapshot = async (userID, resumeContentID, themeSna
                     sectionOrder: themeSnapshot.sectionOrder || null,
                     updatedAt: new Date()
                 })
-                .where(eq(userResumeThemeTable.id, existing[0].id))
+                .where(eq(tables.userThemeTable.id, existing[0].id))
                 .returning();
         } else {
             // Create new with full snapshot config
+            const insertValues = {
+                resumeContentID,
+                themeID: themeSnapshot.themeID,
+                customOverrides: themeSnapshot.customOverrides || null,
+                sectionVisibility: themeSnapshot.sectionVisibility || null,
+                sectionOrder: themeSnapshot.sectionOrder || null,
+                isDraft: true,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            };
+            // Add the appropriate entity ID
+            insertValues[entityIDField] = userID;
+            
             [userTheme] = await db
-                .insert(userResumeThemeTable)
-                .values({
-                    userID,
-                    resumeContentID,
-                    themeID: themeSnapshot.themeID,
-                    customOverrides: themeSnapshot.customOverrides || null,
-                    sectionVisibility: themeSnapshot.sectionVisibility || null,
-                    sectionOrder: themeSnapshot.sectionOrder || null,
-                    isDraft: true,
-                    createdAt: new Date(),
-                    updatedAt: new Date()
-                })
+                .insert(tables.userThemeTable)
+                .values(insertValues)
                 .returning();
         }
 
         logger.info('[THEME_MODEL] ✅ Theme restored from snapshot', {
             userThemeID: userTheme.id,
-            themeID: themeSnapshot.themeID
+            themeID: themeSnapshot.themeID,
+            userType
         });
 
         return userTheme;
     } catch (error) {
         logger.error('[THEME_MODEL] Failed to restore theme from snapshot', {
             error: error.message,
-            resumeContentID
+            resumeContentID,
+            userType
         });
         // Non-critical - don't throw, just return null
         return null;
@@ -830,13 +881,17 @@ export const restoreThemeFromSnapshot = async (userID, resumeContentID, themeSna
 /**
  * Publish user's resume (mark as not draft)
  * @param {number} resumeContentID - Resume content ID
- * @param {number} userID - User ID
+ * @param {number} userID - User ID or Candidate ID
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Updated user theme
  */
-export const publishResume = async (resumeContentID, userID) => {
+export const publishResume = async (resumeContentID, userID, userType = userTypeConstants.USER) => {
     try {
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+        
         const [updated] = await db
-            .update(userResumeThemeTable)
+            .update(tables.userThemeTable)
             .set({
                 isDraft: false,
                 publishedAt: new Date(),
@@ -844,8 +899,8 @@ export const publishResume = async (resumeContentID, userID) => {
             })
             .where(
                 and(
-                    eq(userResumeThemeTable.resumeContentID, resumeContentID),
-                    eq(userResumeThemeTable.userID, userID)
+                    eq(tables.userThemeTable.resumeContentID, resumeContentID),
+                    eq(tables.userThemeTable[entityIDField], userID)
                 )
             )
             .returning();

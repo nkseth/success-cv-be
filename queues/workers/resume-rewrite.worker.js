@@ -4,10 +4,32 @@ import { dirname, join } from 'path';
 import dotenv from 'dotenv';
 import logger from '../../middleware/logger.js';
 import { db } from '../../config/db.js';
-import { resumeRewritesTable, resumeContentTable } from '../../drizzle/schema/resume.schema.js';
+import { 
+    resumeRewritesTable, 
+    resumeContentTable,
+    candidateResumeRewritesTable,
+    candidateResumeContentTable
+} from '../../drizzle/schema/resume.schema.js';
 import { eq, and } from 'drizzle-orm';
 import { optimizeResumeContent } from '../../services/resume.service.js';
 import { executeWithRewriteProgress, publishJobUpdate } from '../../utils/progressTracking.js';
+import { isCandidate as checkIsCandidate } from '../../utils/dynamic-tables.js';
+import { userTypeConstants } from '../../utils/constants.js';
+
+/**
+ * Get tables for user type
+ * @param {string} userType - 'user' | 'candidate'
+ * @returns {Object} Object with table references and flags
+ */
+function getTablesForUserType(userType) {
+    const isCandidateUser = checkIsCandidate(userType);
+    return {
+        contentTable: isCandidateUser ? candidateResumeContentTable : resumeContentTable,
+        rewritesTable: isCandidateUser ? candidateResumeRewritesTable : resumeRewritesTable,
+        entityIDColumn: isCandidateUser ? 'candidateID' : 'userID',
+        isCandidate: isCandidateUser
+    };
+}
 
 // Get the directory of this file
 const __filename = fileURLToPath(import.meta.url);
@@ -187,8 +209,13 @@ async function processResumeRewrite(job) {
         analysisData,
         rawData,
         currentContent,
-        optimizationOptions 
+        optimizationOptions,
+        userType = userTypeConstants.USER
     } = job.data;
+    
+    // Get appropriate tables based on userType
+    const tables = getTablesForUserType(userType);
+    const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
     
     logger.info('[RESUME_REWRITE] Starting job', { 
         jobId: job.id,
@@ -197,18 +224,19 @@ async function processResumeRewrite(job) {
         userID,
         resumeContentID,
         hasCurrentContent: !!currentContent,
-        currentContentVersion: currentContent?.version
+        currentContentVersion: currentContent?.version,
+        userType
     });
 
     try {
         // Step 1: Initialize and update status
         await executeWithRewriteProgress(job.id, 'INIT', async () => {
-            await db.update(resumeRewritesTable)
+            await db.update(tables.rewritesTable)
                 .set({
                     status: 'processing',
                     updatedAt: new Date()
                 })
-                .where(eq(resumeRewritesTable.id, rewriteID));
+                .where(eq(tables.rewritesTable.id, rewriteID));
                 
             logger.info('[RESUME_REWRITE] Rewrite record updated to processing');
         });
@@ -309,7 +337,7 @@ async function processResumeRewrite(job) {
                 optimizationOptions
             );
             
-            await db.update(resumeRewritesTable)
+            await db.update(tables.rewritesTable)
                 .set({
                     rewrittenContent: rewrittenContent,
                     improvements: optimizationResult.metadata,
@@ -318,7 +346,7 @@ async function processResumeRewrite(job) {
                     completedAt: new Date(),
                     updatedAt: new Date()
                 })
-                .where(eq(resumeRewritesTable.id, rewriteID));
+                .where(eq(tables.rewritesTable.id, rewriteID));
             
             logger.info('[RESUME_REWRITE] ✅ Optimized content saved with rewrite summary');
         });
@@ -330,17 +358,17 @@ async function processResumeRewrite(job) {
             // Get current resume content for this analysis
             const [currentResumeContent] = await db
                 .select()
-                .from(resumeContentTable)
+                .from(tables.contentTable)
                 .where(
                     and(
-                        eq(resumeContentTable.analysisID, analysisID),
-                        eq(resumeContentTable.userID, userID)
+                        eq(tables.contentTable.analysisID, analysisID),
+                        eq(tables.contentTable[entityIDField], userID)
                     )
                 )
                 .limit(1);
             
             if (!currentResumeContent) {
-                logger.warn('[RESUME_REWRITE] No resume content found to apply rewrite to', { analysisID, userID });
+                logger.warn('[RESUME_REWRITE] No resume content found to apply rewrite to', { analysisID, userID, userType });
                 return;
             }
             
@@ -352,9 +380,9 @@ async function processResumeRewrite(job) {
                 
                 // Get the previously active rewrite details
                 const [previousRewrite] = await db
-                    .select({ appliedAt: resumeRewritesTable.appliedAt })
-                    .from(resumeRewritesTable)
-                    .where(eq(resumeRewritesTable.id, currentResumeContent.activeRewriteID))
+                    .select({ appliedAt: tables.rewritesTable.appliedAt })
+                    .from(tables.rewritesTable)
+                    .where(eq(tables.rewritesTable.id, currentResumeContent.activeRewriteID))
                     .limit(1);
                 
                 if (previousRewrite && previousRewrite.appliedAt) {
@@ -377,14 +405,14 @@ async function processResumeRewrite(job) {
                     const currentAnalysisSummary = currentResumeContent.analysisSummary;
                     
                     await db
-                        .update(resumeRewritesTable)
+                        .update(tables.rewritesTable)
                         .set({ 
                             rewrittenContent: currentSnapshot,
                             rewriteSummary: currentAnalysisSummary,
                             wasModifiedAfterApply: wasModified,
                             updatedAt: new Date()
                         })
-                        .where(eq(resumeRewritesTable.id, currentResumeContent.activeRewriteID));
+                        .where(eq(tables.rewritesTable.id, currentResumeContent.activeRewriteID));
                     
                     logger.info('[RESUME_REWRITE] ✅ Saved current content, scores, and analysisSummary to previous rewrite', {
                         previousRewriteID: currentResumeContent.activeRewriteID,
@@ -397,38 +425,38 @@ async function processResumeRewrite(job) {
             
             // Deactivate all other rewrites for this analysis
             await db
-                .update(resumeRewritesTable)
+                .update(tables.rewritesTable)
                 .set({ isActive: false, updatedAt: new Date() })
                 .where(
                     and(
-                        eq(resumeRewritesTable.analysisID, analysisID),
-                        eq(resumeRewritesTable.userID, userID)
+                        eq(tables.rewritesTable.analysisID, analysisID),
+                        eq(tables.rewritesTable[entityIDField], userID)
                     )
                 );
             
             // Mark this rewrite as active
             await db
-                .update(resumeRewritesTable)
+                .update(tables.rewritesTable)
                 .set({
                     isActive: true,
                     appliedAt: new Date(),
                     wasModifiedAfterApply: false,
                     updatedAt: new Date()
                 })
-                .where(eq(resumeRewritesTable.id, rewriteID));
+                .where(eq(tables.rewritesTable.id, rewriteID));
             
             // Get the rewrite summary we just saved to the rewrite
             const [rewriteRecord] = await db
-                .select({ rewriteSummary: resumeRewritesTable.rewriteSummary })
-                .from(resumeRewritesTable)
-                .where(eq(resumeRewritesTable.id, rewriteID))
+                .select({ rewriteSummary: tables.rewritesTable.rewriteSummary })
+                .from(tables.rewritesTable)
+                .where(eq(tables.rewritesTable.id, rewriteID))
                 .limit(1);
             
             // Apply the rewritten content to resume content table
             // Also update the analysisSummary to show the post-rewrite summary
             const content = optimizationResult.content;
             await db
-                .update(resumeContentTable)
+                .update(tables.contentTable)
                 .set({
                     personalInfo: content?.personalInfo || currentResumeContent.personalInfo,
                     summary: content?.summary || currentResumeContent.summary,
@@ -443,11 +471,12 @@ async function processResumeRewrite(job) {
                     activeRewriteID: rewriteID,
                     updatedAt: new Date()
                 })
-                .where(eq(resumeContentTable.id, currentResumeContent.id));
+                .where(eq(tables.contentTable.id, currentResumeContent.id));
             
             logger.info('[RESUME_REWRITE] ✅ Rewrite auto-applied to resume content', {
                 contentID: currentResumeContent.id,
-                newVersion: currentResumeContent.version + 1
+                newVersion: currentResumeContent.version + 1,
+                userType
             });
         });
 
@@ -485,17 +514,18 @@ async function processResumeRewrite(job) {
             jobId: job.id,
             rewriteID,
             error: error.message,
-            stack: error.stack
+            stack: error.stack,
+            userType
         });
 
         // Update rewrite status to failed
         try {
-            await db.update(resumeRewritesTable)
+            await db.update(tables.rewritesTable)
                 .set({
                     status: 'failed',
                     updatedAt: new Date()
                 })
-                .where(eq(resumeRewritesTable.id, rewriteID));
+                .where(eq(tables.rewritesTable.id, rewriteID));
         } catch (dbError) {
             logger.error('[RESUME_REWRITE] Failed to update rewrite status', {
                 error: dbError.message

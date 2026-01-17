@@ -2,7 +2,14 @@ import { AppError, asyncHandler } from "../middleware/error.js";
 import { sendSuccess } from "../utils/apiHelpers.js";
 import { validateInteger } from "../utils/validate-helper.js";
 import { db } from "../config/db.js";
-import { analysisTable, processedAndRawDataTable, userDocumentTable } from "../drizzle/schema/analytics-rewrite-schema.js";
+import { 
+    analysisTable, 
+    processedAndRawDataTable, 
+    userDocumentTable,
+    candidateAnalysisTable,
+    candidateProcessedAndRawDataTable,
+    candidateDocumentTable
+} from "../drizzle/schema/analytics-rewrite-schema.js";
 import { eq, and, desc, asc, inArray, gte, lte, or, like, ilike, count } from "drizzle-orm";
 import logger from "../middleware/logger.js";
 import { 
@@ -13,6 +20,8 @@ import {
     getPaginationMeta, 
     formatPaginatedResponse 
 } from "../utils/pagination-filter.js";
+import { getDynamicTables, isCandidate } from "../utils/dynamic-tables.js";
+import { userTypeConstants } from "../utils/constants.js";
 
 /**
  * Get resume analysis details by analysis ID
@@ -21,40 +30,50 @@ import {
 export const getResumeAnalysisController = asyncHandler(async (req, res, next) => {
     const { analysisId } = req.params;
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
 
     // Validate analysis ID
     const validatedAnalysisId = validateInteger(analysisId, 'Analysis ID');
 
-    logger.info(`Fetching analysis details for analysisId: ${validatedAnalysisId}, userID: ${userID}`);
+    logger.info(`Fetching analysis details for analysisId: ${validatedAnalysisId}, userID: ${userID}, userType: ${userType}`);
+
+    // Get dynamic tables based on user type
+    const tables = getDynamicTables(userType);
+    const { 
+        analysisTable: dynAnalysisTable, 
+        documentTable: dynDocumentTable, 
+        processedDataTable: dynProcessedDataTable,
+        entityIDColumn 
+    } = tables;
 
     // Fetch analysis record with processed data
     const analysisRecord = await db
         .select({
             // Analysis table fields
-            analysisId: analysisTable.id,
-            status: analysisTable.status,
-            jobID: analysisTable.jobID,
-            createdAt: analysisTable.createdAt,
-            updatedAt: analysisTable.updatedAt,
-            completedAt: analysisTable.completedAt,
-            analysisMeta: analysisTable.meta,
+            analysisId: dynAnalysisTable.id,
+            status: dynAnalysisTable.status,
+            jobID: dynAnalysisTable.jobID,
+            createdAt: dynAnalysisTable.createdAt,
+            updatedAt: dynAnalysisTable.updatedAt,
+            completedAt: dynAnalysisTable.completedAt,
+            analysisMeta: dynAnalysisTable.meta,
             // Document table fields
-            documentId: userDocumentTable.id,
-            documentTitle: userDocumentTable.title,
-            fileURL: userDocumentTable.fileURL,
+            documentId: dynDocumentTable.id,
+            documentTitle: dynDocumentTable.title,
+            fileURL: dynDocumentTable.fileURL,
             // Processed data fields
-            processedDataId: processedAndRawDataTable.id,
-            rawData: processedAndRawDataTable.rawData,
-            processedData: processedAndRawDataTable.processedData,
-            processedDataMeta: processedAndRawDataTable.meta,
+            processedDataId: dynProcessedDataTable.id,
+            rawData: dynProcessedDataTable.rawData,
+            processedData: dynProcessedDataTable.processedData,
+            processedDataMeta: dynProcessedDataTable.meta,
         })
-        .from(analysisTable)
-        .leftJoin(userDocumentTable, eq(analysisTable.documentID, userDocumentTable.id))
-        .leftJoin(processedAndRawDataTable, eq(analysisTable.id, processedAndRawDataTable.analysisID))
+        .from(dynAnalysisTable)
+        .leftJoin(dynDocumentTable, eq(dynAnalysisTable.documentID, dynDocumentTable.id))
+        .leftJoin(dynProcessedDataTable, eq(dynAnalysisTable.id, dynProcessedDataTable.analysisID))
         .where(
             and(
-                eq(analysisTable.id, validatedAnalysisId),
-                eq(analysisTable.userID, userID)
+                eq(dynAnalysisTable.id, validatedAnalysisId),
+                eq(dynAnalysisTable[entityIDColumn], userID)
             )
         )
         .limit(1);
@@ -120,21 +139,30 @@ export const getResumeAnalysisController = asyncHandler(async (req, res, next) =
 export const updateResumeAnalysisController = asyncHandler(async (req, res, next) => {
     const { analysisId } = req.params;
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { processedData, meta } = req.body;
 
     // Validate analysis ID
     const validatedAnalysisId = validateInteger(analysisId, 'Analysis ID');
 
-    logger.info(`Updating analysis data for analysisId: ${validatedAnalysisId}, userID: ${userID}`);
+    logger.info(`Updating analysis data for analysisId: ${validatedAnalysisId}, userID: ${userID}, userType: ${userType}`);
+
+    // Get dynamic tables based on user type
+    const tables = getDynamicTables(userType);
+    const { 
+        analysisTable: dynAnalysisTable, 
+        processedDataTable: dynProcessedDataTable,
+        entityIDColumn 
+    } = tables;
 
     // Verify the analysis belongs to the user
     const analysisRecord = await db
         .select()
-        .from(analysisTable)
+        .from(dynAnalysisTable)
         .where(
             and(
-                eq(analysisTable.id, validatedAnalysisId),
-                eq(analysisTable.userID, userID)
+                eq(dynAnalysisTable.id, validatedAnalysisId),
+                eq(dynAnalysisTable[entityIDColumn], userID)
             )
         )
         .limit(1);
@@ -146,8 +174,8 @@ export const updateResumeAnalysisController = asyncHandler(async (req, res, next
     // Check if there's existing processed data
     const existingProcessedData = await db
         .select()
-        .from(processedAndRawDataTable)
-        .where(eq(processedAndRawDataTable.analysisID, validatedAnalysisId))
+        .from(dynProcessedDataTable)
+        .where(eq(dynProcessedDataTable.analysisID, validatedAnalysisId))
         .limit(1);
 
     if (!existingProcessedData || existingProcessedData.length === 0) {
@@ -173,9 +201,9 @@ export const updateResumeAnalysisController = asyncHandler(async (req, res, next
 
     // Update the processed data
     const [updatedRecord] = await db
-        .update(processedAndRawDataTable)
+        .update(dynProcessedDataTable)
         .set(updateData)
-        .where(eq(processedAndRawDataTable.analysisID, validatedAnalysisId))
+        .where(eq(dynProcessedDataTable.analysisID, validatedAnalysisId))
         .returning();
 
     logger.info(`Successfully updated analysis data for analysisId: ${validatedAnalysisId}`);
@@ -223,14 +251,24 @@ export const updateResumeAnalysisController = asyncHandler(async (req, res, next
  */
 export const getAllResumeAnalysesController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
 
-    logger.info(`Fetching all analyses for userID: ${userID}`, { query: req.query });
+    logger.info(`Fetching all analyses for userID: ${userID}, userType: ${userType}`, { query: req.query });
+
+    // Get dynamic tables based on user type
+    const tables = getDynamicTables(userType);
+    const { 
+        analysisTable: dynAnalysisTable, 
+        documentTable: dynDocumentTable,
+        resumeContentTable: dynResumeContentTable,
+        entityIDColumn 
+    } = tables;
 
     // Parse query parameters
     const { pagination, search, filters, sort } = parseQueryParams(req.query, {
         defaultPageSize: 10,
         maxPageSize: 100,
-        searchFields: [userDocumentTable.title],
+        searchFields: [dynDocumentTable.title],
         filterableFields: {
             status: 'array', // supports multiple: ?status=completed,pending
             createdAt: 'dateRange',
@@ -241,12 +279,12 @@ export const getAllResumeAnalysesController = asyncHandler(async (req, res, next
     });
 
     // Build base where conditions
-    const whereConditions = [eq(analysisTable.userID, userID)];
+    const whereConditions = [eq(dynAnalysisTable[entityIDColumn], userID)];
 
     // Add filter conditions
     const filterConditions = buildWhereConditions(
         filters,
-        analysisTable,
+        dynAnalysisTable,
         { eq, inArray, gte, lte, or, and, like, ilike }
     );
     whereConditions.push(...filterConditions);
@@ -254,7 +292,7 @@ export const getAllResumeAnalysesController = asyncHandler(async (req, res, next
     // Add search condition
     const searchCondition = buildSearchCondition(
         search.query,
-        [userDocumentTable.title],
+        [dynDocumentTable.title],
         { or, ilike }
     );
     if (searchCondition) {
@@ -264,8 +302,8 @@ export const getAllResumeAnalysesController = asyncHandler(async (req, res, next
     // Get total count for pagination
     const [{ totalCount }] = await db
         .select({ totalCount: count() })
-        .from(analysisTable)
-        .leftJoin(userDocumentTable, eq(analysisTable.documentID, userDocumentTable.id))
+        .from(dynAnalysisTable)
+        .leftJoin(dynDocumentTable, eq(dynAnalysisTable.documentID, dynDocumentTable.id))
         .where(and(...whereConditions));
 
     // Check if sorting by atsScore (which is in JSON meta field)
@@ -276,66 +314,83 @@ export const getAllResumeAnalysesController = asyncHandler(async (req, res, next
         // Fetch all matching records for in-memory sorting
         analyses = await db
             .select({
-                analysisId: analysisTable.id,
-                status: analysisTable.status,
-                jobID: analysisTable.jobID,
-                createdAt: analysisTable.createdAt,
-                updatedAt: analysisTable.updatedAt,
-                completedAt: analysisTable.completedAt,
-                analysisMeta: analysisTable.meta,
-                documentId: userDocumentTable.id,
-                documentTitle: userDocumentTable.title,
-                fileURL: userDocumentTable.fileURL,
+                analysisId: dynAnalysisTable.id,
+                status: dynAnalysisTable.status,
+                jobID: dynAnalysisTable.jobID,
+                createdAt: dynAnalysisTable.createdAt,
+                updatedAt: dynAnalysisTable.updatedAt,
+                completedAt: dynAnalysisTable.completedAt,
+                analysisMeta: dynAnalysisTable.meta,
+                documentId: dynDocumentTable.id,
+                documentTitle: dynDocumentTable.title,
+                fileURL: dynDocumentTable.fileURL,
+                resumeId: dynResumeContentTable.id,
+                currentScores: dynResumeContentTable.currentScores,
             })
-            .from(analysisTable)
-            .leftJoin(userDocumentTable, eq(analysisTable.documentID, userDocumentTable.id))
+            .from(dynAnalysisTable)
+            .leftJoin(dynDocumentTable, eq(dynAnalysisTable.documentID, dynDocumentTable.id))
+            .leftJoin(dynResumeContentTable, eq(dynAnalysisTable.id, dynResumeContentTable.analysisID))
             .where(and(...whereConditions));
     } else {
         // Build order by for SQL sorting
-        const orderByClause = buildOrderBy(sort, analysisTable, { asc, desc });
+        const orderByClause = buildOrderBy(sort, dynAnalysisTable, { asc, desc });
 
         // Fetch paginated analysis records
         analyses = await db
             .select({
-                analysisId: analysisTable.id,
-                status: analysisTable.status,
-                jobID: analysisTable.jobID,
-                createdAt: analysisTable.createdAt,
-                updatedAt: analysisTable.updatedAt,
-                completedAt: analysisTable.completedAt,
-                analysisMeta: analysisTable.meta,
-                documentId: userDocumentTable.id,
-                documentTitle: userDocumentTable.title,
-                fileURL: userDocumentTable.fileURL,
+                analysisId: dynAnalysisTable.id,
+                status: dynAnalysisTable.status,
+                jobID: dynAnalysisTable.jobID,
+                createdAt: dynAnalysisTable.createdAt,
+                updatedAt: dynAnalysisTable.updatedAt,
+                completedAt: dynAnalysisTable.completedAt,
+                analysisMeta: dynAnalysisTable.meta,
+                documentId: dynDocumentTable.id,
+                documentTitle: dynDocumentTable.title,
+                fileURL: dynDocumentTable.fileURL,
+                resumeId: dynResumeContentTable.id,
+                currentScores: dynResumeContentTable.currentScores,
             })
-            .from(analysisTable)
-            .leftJoin(userDocumentTable, eq(analysisTable.documentID, userDocumentTable.id))
+            .from(dynAnalysisTable)
+            .leftJoin(dynDocumentTable, eq(dynAnalysisTable.documentID, dynDocumentTable.id))
+            .leftJoin(dynResumeContentTable, eq(dynAnalysisTable.id, dynResumeContentTable.analysisID))
             .where(and(...whereConditions))
             .orderBy(...orderByClause)
             .limit(pagination.limit)
             .offset(pagination.offset);
     }
 
-    // Parse meta fields and extract ATS score if available
+    // Parse meta fields and extract scores from resume content
     const formattedAnalyses = analyses.map(analysis => {
         let parsedMeta = null;
         let atsScore = null;
+        let scores = null;
+        
         try {
             if (analysis.analysisMeta) {
                 parsedMeta = JSON.parse(analysis.analysisMeta);
-                atsScore = parsedMeta?.atsScore || null;
             }
         } catch (error) {
             logger.error('Error parsing analysis meta:', error);
         }
 
+        // Extract scores from resume content's currentScores
+        if (analysis.currentScores) {
+            scores = typeof analysis.currentScores === 'string' 
+                ? JSON.parse(analysis.currentScores) 
+                : analysis.currentScores;
+            atsScore = scores?.atsScore || null;
+        }
+
         return {
             id: analysis.analysisId,
+            resumeId: analysis.resumeId || null,
             status: analysis.status,
             jobID: analysis.jobID,
             createdAt: analysis.createdAt,
             updatedAt: analysis.updatedAt,
             completedAt: analysis.completedAt,
+            scores, // Full scores from resume content
             atsScore, // Extracted for easy filtering on frontend
             meta: parsedMeta,
             document: {
@@ -379,17 +434,29 @@ export const getAllResumeAnalysesController = asyncHandler(async (req, res, next
 /**
  * Create a new resume document and start analysis
  * POST /api/v1/user/:id/resumes
+ * Supports both regular users and candidates based on token type
  */
 export const createResumeController = asyncHandler(async (req, res, next) => {
-    const { createUserDocument, createAnalysisRecord } = await import("../models/resume-and-analysis.model.js");
+    const { createUserDocument, createAnalysisRecord, createCandidateDocument, createCandidateAnalysisRecord } = await import("../models/resume-and-analysis.model.js");
     const { getUserByIDModel } = await import("../models/user.model.js");
+    const { getCandidateById } = await import("../models/candidate.model.js");
 
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const validatedId = validateInteger(userID, 'User ID');
 
-    const user = await getUserByIDModel(validatedId);
-    if (!user) {
-        return next(new AppError('User not found', 404));
+    // Get entity based on user type
+    let entity;
+    if (isCandidate(userType)) {
+        entity = await getCandidateById(validatedId);
+        if (!entity) {
+            return next(new AppError('Candidate not found', 404));
+        }
+    } else {
+        entity = await getUserByIDModel(validatedId);
+        if (!entity) {
+            return next(new AppError('User not found', 404));
+        }
     }
 
     // Check req body
@@ -406,24 +473,42 @@ export const createResumeController = asyncHandler(async (req, res, next) => {
     const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
     const documentTitle = `Resume Analysis (Pending) - ${timestamp}`;
     
-    const createdDocument = await createUserDocument(validatedId, {
-        title: documentTitle,
-        fileURL,
-        meta: {}
-    });
+    let createdDocument;
+    let createAnalysis;
+    
+    if (isCandidate(userType)) {
+        // Use candidate-specific functions
+        createdDocument = await createCandidateDocument(validatedId, {
+            title: documentTitle,
+            fileURL,
+            meta: {}
+        });
 
-    // Create analysis record and queue job
-    const createAnalysis = await createAnalysisRecord(validatedId, createdDocument.id, {}, {
-        title: documentTitle,
-        fileURL,
-        meta: {}
-    });
+        createAnalysis = await createCandidateAnalysisRecord(validatedId, createdDocument.id, {}, {
+            title: documentTitle,
+            fileURL,
+            meta: {}
+        });
+    } else {
+        // Use user-specific functions
+        createdDocument = await createUserDocument(validatedId, {
+            title: documentTitle,
+            fileURL,
+            meta: {}
+        });
+
+        createAnalysis = await createAnalysisRecord(validatedId, createdDocument.id, {}, {
+            title: documentTitle,
+            fileURL,
+            meta: {}
+        });
+    }
 
     if (!createAnalysis) {
         return next(new AppError('Analysis creation failed', 500));
     }
 
-    logger.info(`Created new resume document and analysis for userID: ${validatedId}, analysisId: ${createAnalysis.id}`);
+    logger.info(`Created new resume document and analysis for ${userType}: ${validatedId}, analysisId: ${createAnalysis.id}`);
 
     sendSuccess(res, { 
         ...createAnalysis, 

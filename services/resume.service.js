@@ -6,6 +6,7 @@ import { addResumeRewriteJob } from "../queues/resume-rewrite.queue.js";
 import { validateResumeData } from "../utils/resumeSchema.js";
 import { getResumeContentRewritePrompt } from "../queues/workerSupport/resume-rewrite/prompt.js";
 import { resumeContentOutputSchema } from "../queues/workerSupport/resume-rewrite/objectSchema.js";
+import { userTypeConstants } from "../utils/constants.js";
 
 // Lazy-load AI service to avoid circular dependencies
 const getAiService = async () => {
@@ -20,6 +21,9 @@ const getAiService = async () => {
  * - Resume content management (CRUD, section updates)
  * - Rewrite orchestration (creating jobs, applying rewrites)
  * - Theme management (applying, customizing)
+ * 
+ * All functions accept an optional userType parameter to support both
+ * regular users and candidates (B2B flow).
  * 
  * Flow:
  * 1. Analysis completes → createResumeFromAnalysis() creates initial content
@@ -36,13 +40,15 @@ const getAiService = async () => {
  * @param {number} userID - User ID
  * @param {number} analysisID - Analysis ID
  * @param {Object} analysisData - Processed data from analysis
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Created resume content
  */
-export const createResumeFromAnalysis = async (userID, analysisID, analysisData) => {
+export const createResumeFromAnalysis = async (userID, analysisID, analysisData, userType = userTypeConstants.USER) => {
     try {
         logger.info('[RESUME_SERVICE] Creating resume from analysis', {
             userID,
-            analysisID
+            analysisID,
+            userType
         });
 
         // Parse analysis data if string
@@ -57,13 +63,13 @@ export const createResumeFromAnalysis = async (userID, analysisID, analysisData)
         const analysisSummary = extractAnalysisSummary(parsed);
 
         // Create resume content record with lightweight analysis summary
-        const content = await resumeModel.createResumeContent(userID, analysisID, contentData, analysisSummary);
+        const content = await resumeModel.createResumeContent(userID, analysisID, contentData, analysisSummary, userType);
 
         // Apply default theme automatically so user gets a properly themed resume
         try {
             const defaultTheme = await themeModel.getDefaultTheme();
             if (defaultTheme) {
-                await themeModel.applyTheme(userID, content.id, defaultTheme.id, null);
+                await themeModel.applyTheme(userID, content.id, defaultTheme.id, null, userType);
                 logger.info('[RESUME_SERVICE] ✅ Default theme applied', {
                     contentID: content.id,
                     themeID: defaultTheme.id,
@@ -81,7 +87,8 @@ export const createResumeFromAnalysis = async (userID, analysisID, analysisData)
         }
 
         logger.info('[RESUME_SERVICE] ✅ Resume created from analysis', {
-            contentID: content.id
+            contentID: content.id,
+            userType
         });
 
         return content;
@@ -89,7 +96,8 @@ export const createResumeFromAnalysis = async (userID, analysisID, analysisData)
         logger.error('[RESUME_SERVICE] Failed to create resume from analysis', {
             error: error.message,
             userID,
-            analysisID
+            analysisID,
+            userType
         });
         throw error;
     }
@@ -499,21 +507,23 @@ function extractAnalysisSummary(analysisData) {
  * Returns unified response with content, analysisSummary, rewrites (each with their own summary)
  * @param {number} contentID - Resume content ID
  * @param {number} userID - User ID
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Resume with theme info and analysis summary
  */
-export const getResumeByID = async (contentID, userID) => {
+export const getResumeByID = async (contentID, userID, userType = userTypeConstants.USER) => {
     try {
-        logger.info('[RESUME_SERVICE] Fetching resume', { contentID, userID });
+        logger.info('[RESUME_SERVICE] Fetching resume', { contentID, userID, userType });
 
         // Get resume content (now includes analysisSummary)
-        const content = await resumeModel.getResumeContentByID(contentID, userID);
+        const content = await resumeModel.getResumeContentByID(contentID, userID, userType);
 
         // Get applied theme if any
-        const theme = await themeModel.getUserTheme(contentID, userID);
+        const theme = await themeModel.getUserTheme(contentID, userID, userType);
 
         // Get rewrites history (with no pagination to get all rewrites)
         const { rewrites } = await resumeModel.getRewritesByAnalysisID(content.analysisID, userID, {
-            pagination: { limit: 100, offset: 0 } // Get all rewrites for history
+            pagination: { limit: 100, offset: 0 }, // Get all rewrites for history
+            userType
         });
 
         // Normalize scores from content.currentScores for consistent structure
@@ -578,7 +588,8 @@ export const getResumeByID = async (contentID, userID) => {
     } catch (error) {
         logger.error('[RESUME_SERVICE] Failed to fetch resume', {
             error: error.message,
-            contentID
+            contentID,
+            userType
         });
         throw error;
     }
@@ -588,21 +599,23 @@ export const getResumeByID = async (contentID, userID) => {
  * Get resume by analysis ID
  * @param {number} analysisID - Analysis ID
  * @param {number} userID - User ID
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object|null>} Resume or null
  */
-export const getResumeByAnalysisID = async (analysisID, userID) => {
+export const getResumeByAnalysisID = async (analysisID, userID, userType = userTypeConstants.USER) => {
     try {
-        const content = await resumeModel.getResumeContentByAnalysisID(analysisID, userID);
+        const content = await resumeModel.getResumeContentByAnalysisID(analysisID, userID, userType);
         
         if (!content) {
             return null;
         }
 
-        return getResumeByID(content.id, userID);
+        return getResumeByID(content.id, userID, userType);
     } catch (error) {
         logger.error('[RESUME_SERVICE] Failed to fetch resume by analysis', {
             error: error.message,
-            analysisID
+            analysisID,
+            userType
         });
         throw error;
     }
@@ -611,12 +624,13 @@ export const getResumeByAnalysisID = async (analysisID, userID) => {
 /**
  * Get all resumes for a user
  * @param {number} userID - User ID
- * @param {Object} options - Options including pagination, filters, search, sort
+ * @param {Object} options - Options including pagination, filters, search, sort, userType
  * @returns {Promise<Object>} Object with resumes array and totalCount
  */
 export const getAllResumes = async (userID, options = {}) => {
     try {
-        return await resumeModel.getAllResumeContents(userID, options);
+        const { userType = userTypeConstants.USER, ...otherOptions } = options;
+        return await resumeModel.getAllResumeContents(userID, { ...otherOptions, userType });
     } catch (error) {
         logger.error('[RESUME_SERVICE] Failed to fetch resumes', {
             error: error.message,
@@ -632,13 +646,15 @@ export const getAllResumes = async (userID, options = {}) => {
  * @param {number} userID - User ID
  * @param {string} sectionName - Section to update
  * @param {Object} sectionData - New section data
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Updated section info
  */
-export const updateSection = async (contentID, userID, sectionName, sectionData) => {
+export const updateSection = async (contentID, userID, sectionName, sectionData, userType = userTypeConstants.USER) => {
     try {
         logger.info('[RESUME_SERVICE] Updating section', {
             contentID,
-            sectionName
+            sectionName,
+            userType
         });
 
         // Validate section data if applicable
@@ -648,7 +664,8 @@ export const updateSection = async (contentID, userID, sectionName, sectionData)
             contentID,
             userID,
             sectionName,
-            validatedData
+            validatedData,
+            userType
         );
 
         logger.info('[RESUME_SERVICE] ✅ Section updated', {
@@ -667,7 +684,8 @@ export const updateSection = async (contentID, userID, sectionName, sectionData)
         logger.error('[RESUME_SERVICE] Failed to update section', {
             error: error.message,
             contentID,
-            sectionName
+            sectionName,
+            userType
         });
         throw error;
     }
@@ -678,13 +696,15 @@ export const updateSection = async (contentID, userID, sectionName, sectionData)
  * @param {number} contentID - Resume content ID
  * @param {number} userID - User ID
  * @param {Object} sectionsData - Object with section names as keys
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Updated content
  */
-export const updateSections = async (contentID, userID, sectionsData) => {
+export const updateSections = async (contentID, userID, sectionsData, userType = userTypeConstants.USER) => {
     try {
         logger.info('[RESUME_SERVICE] Updating multiple sections', {
             contentID,
-            sections: Object.keys(sectionsData)
+            sections: Object.keys(sectionsData),
+            userType
         });
 
         // Validate each section
@@ -696,12 +716,14 @@ export const updateSections = async (contentID, userID, sectionsData) => {
         const updated = await resumeModel.updateMultipleSections(
             contentID,
             userID,
-            validatedSections
+            validatedSections,
+            userType
         );
 
         logger.info('[RESUME_SERVICE] ✅ Sections updated', {
             contentID,
-            newVersion: updated.version
+            newVersion: updated.version,
+            userType
         });
 
         return {
@@ -712,7 +734,8 @@ export const updateSections = async (contentID, userID, sectionsData) => {
     } catch (error) {
         logger.error('[RESUME_SERVICE] Failed to update sections', {
             error: error.message,
-            contentID
+            contentID,
+            userType
         });
         throw error;
     }
@@ -747,26 +770,29 @@ function validateSectionData(sectionName, data) {
  * Creates a rewrite based on the CURRENT resume content (which may have been edited)
  * @param {number} userID - User ID
  * @param {number} analysisID - Analysis ID
- * @param {Object} options - Optimization options
+ * @param {Object} options - Optimization options including userType
  * @returns {Promise<Object>} Created rewrite with job info
  */
 export const createRewrite = async (userID, analysisID, options = {}) => {
     try {
+        const { userType = userTypeConstants.USER, ...otherOptions } = options;
+        
         logger.info('[RESUME_SERVICE] Creating rewrite', {
             userID,
             analysisID,
-            options
+            options,
+            userType
         });
 
         // Get current resume content - this is what AI will optimize
-        const content = await resumeModel.getResumeContentByAnalysisID(analysisID, userID);
+        const content = await resumeModel.getResumeContentByAnalysisID(analysisID, userID, userType);
         
         if (!content) {
             throw new AppError('Resume content not found for this analysis', 404);
         }
 
         // Get analysis data (raw text) for rewrite
-        const analysisData = await resumeModel.getAnalysisDataForRewrite(analysisID, userID);
+        const analysisData = await resumeModel.getAnalysisDataForRewrite(analysisID, userID, userType);
 
         // Build current content object for snapshot
         const currentContent = {
@@ -787,13 +813,14 @@ export const createRewrite = async (userID, analysisID, options = {}) => {
             content.id,
             currentContent, // Pass current content for snapshot
             {
-                versionLabel: options.versionLabel,
+                versionLabel: otherOptions.versionLabel,
                 optimizationSettings: {
-                    targetATSScore: options.targetATSScore || 90,
-                    focusAreas: options.focusAreas || ['all'],
-                    optimizationLevel: options.optimizationLevel || 'comprehensive'
+                    targetATSScore: otherOptions.targetATSScore || 90,
+                    focusAreas: otherOptions.focusAreas || ['all'],
+                    optimizationLevel: otherOptions.optimizationLevel || 'comprehensive'
                 }
-            }
+            },
+            userType
         );
 
         // Add job to queue with current content (not original analysis)
@@ -805,17 +832,19 @@ export const createRewrite = async (userID, analysisID, options = {}) => {
             analysisData: analysisData.processedData,
             rawData: analysisData.rawData,
             currentContent, // AI will optimize from current state
-            optimizationOptions: rewrite.optimizationSettings
+            optimizationOptions: rewrite.optimizationSettings,
+            userType // Pass userType to worker
         });
 
         // Update rewrite with job ID
-        await resumeModel.updateRewrite(rewrite.id, { jobID: job.id });
+        await resumeModel.updateRewrite(rewrite.id, { jobID: job.id }, userType);
 
         logger.info('[RESUME_SERVICE] ✅ Rewrite job created with content snapshot', {
             rewriteID: rewrite.id,
             jobID: job.id,
             contentVersion: content.version,
-            versionNumber: rewrite.versionNumber
+            versionNumber: rewrite.versionNumber,
+            userType
         });
 
         return {
@@ -841,11 +870,12 @@ export const createRewrite = async (userID, analysisID, options = {}) => {
  * Get rewrite details with source snapshot
  * @param {number} rewriteID - Rewrite ID
  * @param {number} userID - User ID
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Rewrite details
  */
-export const getRewrite = async (rewriteID, userID) => {
+export const getRewrite = async (rewriteID, userID, userType = userTypeConstants.USER) => {
     try {
-        const rewrite = await resumeModel.getRewriteByID(rewriteID, userID);
+        const rewrite = await resumeModel.getRewriteByID(rewriteID, userID, userType);
         
         return {
             id: rewrite.id,
@@ -866,7 +896,8 @@ export const getRewrite = async (rewriteID, userID) => {
     } catch (error) {
         logger.error('[RESUME_SERVICE] Failed to fetch rewrite', {
             error: error.message,
-            rewriteID
+            rewriteID,
+            userType
         });
         throw error;
     }
@@ -876,12 +907,13 @@ export const getRewrite = async (rewriteID, userID) => {
  * Get all rewrites for an analysis with version status
  * @param {number} analysisID - Analysis ID
  * @param {number} userID - User ID
- * @param {Object} options - Options including pagination, filters, sort
+ * @param {Object} options - Options including pagination, filters, sort, userType
  * @returns {Promise<Object>} Object with rewrites array and totalCount
  */
 export const getRewritesByAnalysis = async (analysisID, userID, options = {}) => {
     try {
-        const { rewrites, totalCount } = await resumeModel.getRewritesByAnalysisID(analysisID, userID, options);
+        const { userType = userTypeConstants.USER, ...otherOptions } = options;
+        const { rewrites, totalCount } = await resumeModel.getRewritesByAnalysisID(analysisID, userID, { ...otherOptions, userType });
         
         const formattedRewrites = rewrites.map(r => ({
             id: r.id,
@@ -914,16 +946,17 @@ export const getRewritesByAnalysis = async (analysisID, userID, options = {}) =>
  * Apply a completed rewrite to resume content
  * @param {number} rewriteID - Rewrite ID
  * @param {number} userID - User ID
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Updated resume content
  */
-export const applyRewrite = async (rewriteID, userID) => {
+export const applyRewrite = async (rewriteID, userID, userType = userTypeConstants.USER) => {
     try {
-        logger.info('[RESUME_SERVICE] Applying rewrite', { rewriteID, userID });
+        logger.info('[RESUME_SERVICE] Applying rewrite', { rewriteID, userID, userType });
 
-        const updatedContent = await resumeModel.applyRewrite(rewriteID, userID);
+        const updatedContent = await resumeModel.applyRewrite(rewriteID, userID, userType);
 
         // Get the rewrite details for response
-        const rewrite = await resumeModel.getRewriteByID(rewriteID, userID);
+        const rewrite = await resumeModel.getRewriteByID(rewriteID, userID, userType);
 
         logger.info('[RESUME_SERVICE] ✅ Rewrite applied', {
             rewriteID,
@@ -946,7 +979,8 @@ export const applyRewrite = async (rewriteID, userID) => {
     } catch (error) {
         logger.error('[RESUME_SERVICE] Failed to apply rewrite', {
             error: error.message,
-            rewriteID
+            rewriteID,
+            userType
         });
         throw error;
     }
@@ -957,13 +991,14 @@ export const applyRewrite = async (rewriteID, userID) => {
  * Updates resume content with the selected version's content
  * @param {number} rewriteID - Target rewrite ID
  * @param {number} userID - User ID
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Switch result with updated content and version info
  */
-export const switchRewriteVersion = async (rewriteID, userID) => {
+export const switchRewriteVersion = async (rewriteID, userID, userType = userTypeConstants.USER) => {
     try {
-        logger.info('[RESUME_SERVICE] Switching rewrite version', { rewriteID, userID });
+        logger.info('[RESUME_SERVICE] Switching rewrite version', { rewriteID, userID, userType });
 
-        const result = await resumeModel.switchRewriteVersion(rewriteID, userID);
+        const result = await resumeModel.switchRewriteVersion(rewriteID, userID, userType);
 
         logger.info('[RESUME_SERVICE] ✅ Rewrite version switched', {
             rewriteID,
@@ -990,7 +1025,8 @@ export const switchRewriteVersion = async (rewriteID, userID) => {
     } catch (error) {
         logger.error('[RESUME_SERVICE] Failed to switch rewrite version', {
             error: error.message,
-            rewriteID
+            rewriteID,
+            userType
         });
         throw error;
     }
@@ -1000,11 +1036,12 @@ export const switchRewriteVersion = async (rewriteID, userID) => {
  * Get the currently active rewrite for a resume
  * @param {number} analysisID - Analysis ID
  * @param {number} userID - User ID
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object|null>} Active rewrite info or null
  */
-export const getActiveRewrite = async (analysisID, userID) => {
+export const getActiveRewrite = async (analysisID, userID, userType = userTypeConstants.USER) => {
     try {
-        const activeRewrite = await resumeModel.getActiveRewrite(analysisID, userID);
+        const activeRewrite = await resumeModel.getActiveRewrite(analysisID, userID, userType);
         
         if (!activeRewrite) {
             return null;
@@ -1023,7 +1060,8 @@ export const getActiveRewrite = async (analysisID, userID) => {
     } catch (error) {
         logger.error('[RESUME_SERVICE] Failed to get active rewrite', {
             error: error.message,
-            analysisID
+            analysisID,
+            userType
         });
         throw error;
     }
@@ -1033,13 +1071,14 @@ export const getActiveRewrite = async (analysisID, userID) => {
  * Clear active rewrite (revert to manual editing mode)
  * @param {number} analysisID - Analysis ID
  * @param {number} userID - User ID
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Updated content
  */
-export const clearActiveRewrite = async (analysisID, userID) => {
+export const clearActiveRewrite = async (analysisID, userID, userType = userTypeConstants.USER) => {
     try {
-        logger.info('[RESUME_SERVICE] Clearing active rewrite', { analysisID, userID });
+        logger.info('[RESUME_SERVICE] Clearing active rewrite', { analysisID, userID, userType });
 
-        const updatedContent = await resumeModel.clearActiveRewrite(analysisID, userID);
+        const updatedContent = await resumeModel.clearActiveRewrite(analysisID, userID, userType);
 
         logger.info('[RESUME_SERVICE] ✅ Active rewrite cleared', {
             contentID: updatedContent.id,
@@ -1055,7 +1094,8 @@ export const clearActiveRewrite = async (analysisID, userID) => {
     } catch (error) {
         logger.error('[RESUME_SERVICE] Failed to clear active rewrite', {
             error: error.message,
-            analysisID
+            analysisID,
+            userType
         });
         throw error;
     }
@@ -1066,13 +1106,14 @@ export const clearActiveRewrite = async (analysisID, userID) => {
  * @param {number} rewriteID1 - First rewrite ID
  * @param {number} rewriteID2 - Second rewrite ID
  * @param {number} userID - User ID
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Comparison data
  */
-export const compareRewriteVersions = async (rewriteID1, rewriteID2, userID) => {
+export const compareRewriteVersions = async (rewriteID1, rewriteID2, userID, userType = userTypeConstants.USER) => {
     try {
         const [rewrite1, rewrite2] = await Promise.all([
-            resumeModel.getRewriteByID(rewriteID1, userID),
-            resumeModel.getRewriteByID(rewriteID2, userID)
+            resumeModel.getRewriteByID(rewriteID1, userID, userType),
+            resumeModel.getRewriteByID(rewriteID2, userID, userType)
         ]);
 
         return {
@@ -1103,7 +1144,8 @@ export const compareRewriteVersions = async (rewriteID1, rewriteID2, userID) => 
         logger.error('[RESUME_SERVICE] Failed to compare rewrites', {
             error: error.message,
             rewriteID1,
-            rewriteID2
+            rewriteID2,
+            userType
         });
         throw error;
     }
@@ -1162,20 +1204,23 @@ export const getThemeDetails = async (themeID) => {
  * @param {number} userID - User ID
  * @param {number} themeID - Theme ID
  * @param {Object} customOverrides - Optional overrides
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Applied theme info
  */
-export const applyTheme = async (resumeContentID, userID, themeID, customOverrides = null) => {
+export const applyTheme = async (resumeContentID, userID, themeID, customOverrides = null, userType = userTypeConstants.USER) => {
     try {
         logger.info('[RESUME_SERVICE] Applying theme', {
             resumeContentID,
-            themeID
+            themeID,
+            userType
         });
 
         const userTheme = await themeModel.applyTheme(
             userID,
             resumeContentID,
             themeID,
-            customOverrides
+            customOverrides,
+            userType
         );
 
         // Get full theme config for the NEW theme
@@ -1206,7 +1251,8 @@ export const applyTheme = async (resumeContentID, userID, themeID, customOverrid
         logger.error('[RESUME_SERVICE] Failed to apply theme', {
             error: error.message,
             resumeContentID,
-            themeID
+            themeID,
+            userType
         });
         throw error;
     }
@@ -1217,15 +1263,17 @@ export const applyTheme = async (resumeContentID, userID, themeID, customOverrid
  * @param {number} resumeContentID - Resume content ID
  * @param {number} userID - User ID
  * @param {Object} updates - Updates to apply
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Updated theme info
  */
-export const updateThemeConfig = async (resumeContentID, userID, updates) => {
+export const updateThemeConfig = async (resumeContentID, userID, updates, userType = userTypeConstants.USER) => {
     try {
         logger.info('[RESUME_SERVICE] Updating theme config', {
-            resumeContentID
+            resumeContentID,
+            userType
         });
 
-        const updated = await themeModel.updateUserTheme(resumeContentID, userID, updates);
+        const updated = await themeModel.updateUserTheme(resumeContentID, userID, updates, userType);
 
         // Get merged config
         let config = null;
@@ -1245,7 +1293,8 @@ export const updateThemeConfig = async (resumeContentID, userID, updates) => {
     } catch (error) {
         logger.error('[RESUME_SERVICE] Failed to update theme config', {
             error: error.message,
-            resumeContentID
+            resumeContentID,
+            userType
         });
         throw error;
     }
@@ -1255,12 +1304,13 @@ export const updateThemeConfig = async (resumeContentID, userID, updates) => {
  * Get resume with applied theme for rendering
  * @param {number} resumeContentID - Resume content ID
  * @param {number} userID - User ID
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Complete resume with theme for rendering
  */
-export const getResumeForRender = async (resumeContentID, userID) => {
+export const getResumeForRender = async (resumeContentID, userID, userType = userTypeConstants.USER) => {
     try {
-        const content = await resumeModel.getResumeContentByID(resumeContentID, userID);
-        const userTheme = await themeModel.getUserTheme(resumeContentID, userID);
+        const content = await resumeModel.getResumeContentByID(resumeContentID, userID, userType);
+        const userTheme = await themeModel.getUserTheme(resumeContentID, userID, userType);
 
         let themeConfig = null;
         if (userTheme && userTheme.themeID) {
@@ -1317,11 +1367,12 @@ export const getResumeForRender = async (resumeContentID, userID) => {
  * Publish resume (mark as not draft)
  * @param {number} resumeContentID - Resume content ID
  * @param {number} userID - User ID
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Updated status
  */
-export const publishResume = async (resumeContentID, userID) => {
+export const publishResume = async (resumeContentID, userID, userType = userTypeConstants.USER) => {
     try {
-        const updated = await themeModel.publishResume(resumeContentID, userID);
+        const updated = await themeModel.publishResume(resumeContentID, userID, userType);
         
         return {
             id: updated.id,
@@ -1399,13 +1450,14 @@ CRITICAL RULES:
 6. Target ATS Score: ${options.targetATSScore || 85}%
 
 EXPERIENCE DESCRIPTION FORMAT:
-- The description field can contain HTML content (e.g., <p>, <ul>, <li>, <strong>)
-- You can put bullet points INSIDE description using HTML: <ul><li>Achievement 1</li><li>Achievement 2</li></ul>
-- The achievements array is OPTIONAL - use only if you want separate plain-text bullets
-- If the input has HTML in description, preserve that format and enhance the content
+- The description field MUST contain bullet points using HTML: <ul><li>Achievement 1</li><li>Achievement 2</li></ul>
+- Always format experience descriptions as bullet points for better readability
+- Each bullet should highlight a key achievement, responsibility, or accomplishment
+- Use 3-6 bullet points per experience entry
+- The achievements array should be EMPTY - put all content in description as HTML bullets
 
 OUTPUT FORMAT:
-- summary: { text: "optimized summary", keywords: ["keyword1", "keyword2"] }
+- summary: { text: "optimized summary", keywords: [] } (keywords should always be empty array)
 - experience: array of { company, position, location, startDate, endDate, current, description (can contain HTML), achievements: [] (optional) }
 - skills: { technical: [], soft: [], tools: [], languages: [], certifications: [] }
 - estimatedAtsScore: number (0-100)
@@ -1449,7 +1501,8 @@ OUTPUT FORMAT:
             content: {
                 // Personal info is preserved from original (not modified by optimization)
                 personalInfo: currentContent?.personalInfo || currentContent?.personal_info || null,
-                summary: optimizedContent.summary || null,
+                // Ensure keywords are always empty in rewrites
+                summary: optimizedContent.summary ? { ...optimizedContent.summary, keywords: [] } : null,
                 experience: optimizedContent.experience || [],
                 // Education is preserved from original (minimal changes needed)
                 education: currentContent?.education || [],

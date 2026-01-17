@@ -4,6 +4,7 @@ import downloadModel from "../models/download.model.js";
 import pdfService from "./pdf/pdf.service.js";
 import { mergeThemeConfig } from "./pdf/theme-merger.js";
 import cacheService from "./cache.service.js";
+import { userTypeConstants } from "../utils/constants.js";
 
 /**
  * Download Service
@@ -18,47 +19,50 @@ const PDF_CACHE_TTL = 900;
 /**
  * Generate and return resume PDF
  * @param {number} resumeContentID - Resume content ID
- * @param {number} userID - User ID
- * @param {Object} options - Generation options
+ * @param {number} userID - User ID or Candidate ID
+ * @param {Object} options - Generation options including userType
  * @returns {Promise<Object>} PDF buffer and metadata
  */
 export const downloadResumePDF = async (resumeContentID, userID, options = {}) => {
     const startTime = Date.now();
+    const { userType = userTypeConstants.USER, ...otherOptions } = options;
     
     try {
         logger.info('[DOWNLOAD_SERVICE] Starting PDF download', {
             resumeContentID,
             userID,
-            options
+            options,
+            userType
         });
 
         // Get resume data for rendering (needed for cache key and PDF generation)
-        const resumeData = await downloadModel.getResumeForDownload(resumeContentID, userID);
+        const resumeData = await downloadModel.getResumeForDownload(resumeContentID, userID, userType);
 
         // Build theme configuration - this includes all custom overrides
-        const themeConfig = buildThemeConfig(resumeData.theme, options.themeOverrides);
+        const themeConfig = buildThemeConfig(resumeData.theme, otherOptions.themeOverrides);
 
         // Apply section visibility/order from user preferences or options
-        if (options.sectionVisibility) {
+        if (otherOptions.sectionVisibility) {
             themeConfig.sections = themeConfig.sections || {};
             themeConfig.sections.visibility = {
                 ...themeConfig.sections.visibility,
-                ...options.sectionVisibility
+                ...otherOptions.sectionVisibility
             };
         }
 
-        if (options.sectionOrder) {
+        if (otherOptions.sectionOrder) {
             themeConfig.sections = themeConfig.sections || {};
-            themeConfig.sections.order = options.sectionOrder;
+            themeConfig.sections.order = otherOptions.sectionOrder;
         }
 
         // Check cache with theme-aware cache key
-        if (options.useCache !== false) {
+        if (otherOptions.useCache !== false) {
             const cacheKey = buildCacheKey('pdf', resumeContentID, {
-                ...options,
+                ...otherOptions,
                 // Include theme updatedAt to invalidate cache when theme changes
                 themeUpdatedAt: resumeData.theme?.updatedAt,
-                themeCustomOverrides: resumeData.theme?.customOverrides
+                themeCustomOverrides: resumeData.theme?.customOverrides,
+                userType
             });
             const cachedPDF = await getCachedPDF(cacheKey);
             if (cachedPDF) {
@@ -75,12 +79,12 @@ export const downloadResumePDF = async (resumeContentID, userID, options = {}) =
             resumeData.content,
             themeConfig,
             {
-                showPageNumbers: options.showPageNumbers || false
+                showPageNumbers: otherOptions.showPageNumbers || false
             }
         );
 
         // Build filename
-        const filename = buildFilename(resumeData, options);
+        const filename = buildFilename(resumeData, otherOptions);
 
         const result = {
             buffer: pdfBuffer,
@@ -96,11 +100,12 @@ export const downloadResumePDF = async (resumeContentID, userID, options = {}) =
         };
 
         // Cache the result with theme-aware cache key
-        if (options.useCache !== false) {
+        if (otherOptions.useCache !== false) {
             const cacheKey = buildCacheKey('pdf', resumeContentID, {
-                ...options,
+                ...otherOptions,
                 themeUpdatedAt: resumeData.theme?.updatedAt,
-                themeCustomOverrides: resumeData.theme?.customOverrides
+                themeCustomOverrides: resumeData.theme?.customOverrides,
+                userType
             });
             await cachePDF(cacheKey, result);
         }
@@ -110,7 +115,8 @@ export const downloadResumePDF = async (resumeContentID, userID, options = {}) =
             resumeContentID,
             filename,
             sizeKB: Math.round(pdfBuffer.length / 1024),
-            durationMs: duration
+            durationMs: duration,
+            userType
         });
 
         return result;
@@ -118,7 +124,8 @@ export const downloadResumePDF = async (resumeContentID, userID, options = {}) =
         logger.error('[DOWNLOAD_SERVICE] Failed to generate PDF', {
             error: error.message,
             resumeContentID,
-            durationMs: Date.now() - startTime
+            durationMs: Date.now() - startTime,
+            userType
         });
         throw error;
     }
@@ -127,37 +134,39 @@ export const downloadResumePDF = async (resumeContentID, userID, options = {}) =
 /**
  * Download a specific rewrite version as PDF
  * @param {number} rewriteID - Rewrite ID
- * @param {number} userID - User ID
- * @param {Object} options - Generation options
+ * @param {number} userID - User ID or Candidate ID
+ * @param {Object} options - Generation options including userType
  * @returns {Promise<Object>} PDF buffer and metadata
  */
 export const downloadRewritePDF = async (rewriteID, userID, options = {}) => {
     const startTime = Date.now();
+    const { userType = userTypeConstants.USER, ...otherOptions } = options;
     
     try {
         logger.info('[DOWNLOAD_SERVICE] Starting rewrite PDF download', {
             rewriteID,
-            userID
+            userID,
+            userType
         });
 
         // Get rewrite data for rendering
-        const resumeData = await downloadModel.getRewriteForDownload(rewriteID, userID);
+        const resumeData = await downloadModel.getRewriteForDownload(rewriteID, userID, userType);
 
         // Build theme configuration
-        const themeConfig = buildThemeConfig(resumeData.theme, options.themeOverrides);
+        const themeConfig = buildThemeConfig(resumeData.theme, otherOptions.themeOverrides);
 
         // Generate PDF
         const pdfBuffer = await pdfService.generateResumePDF(
             resumeData.content,
             themeConfig,
             {
-                showPageNumbers: options.showPageNumbers || false
+                showPageNumbers: otherOptions.showPageNumbers || false
             }
         );
 
         // Build filename with rewrite version
         const filename = buildFilename(resumeData, {
-            ...options,
+            ...otherOptions,
             suffix: `_v${resumeData.metadata.versionNumber}`
         });
 
@@ -180,14 +189,16 @@ export const downloadRewritePDF = async (rewriteID, userID, options = {}) => {
             rewriteID,
             filename,
             sizeKB: Math.round(pdfBuffer.length / 1024),
-            durationMs: duration
+            durationMs: duration,
+            userType
         });
 
         return result;
     } catch (error) {
         logger.error('[DOWNLOAD_SERVICE] Failed to generate rewrite PDF', {
             error: error.message,
-            rewriteID
+            rewriteID,
+            userType
         });
         throw error;
     }
@@ -196,19 +207,22 @@ export const downloadRewritePDF = async (rewriteID, userID, options = {}) => {
 /**
  * Generate PDF preview (first page, lower quality)
  * @param {number} resumeContentID - Resume content ID
- * @param {number} userID - User ID
- * @param {Object} options - Preview options
+ * @param {number} userID - User ID or Candidate ID
+ * @param {Object} options - Preview options including userType
  * @returns {Promise<Object>} PDF buffer
  */
 export const getPreviewPDF = async (resumeContentID, userID, options = {}) => {
+    const { userType = userTypeConstants.USER, ...otherOptions } = options;
+    
     try {
         logger.info('[DOWNLOAD_SERVICE] Generating PDF preview', {
             resumeContentID,
-            userID
+            userID,
+            userType
         });
 
-        const resumeData = await downloadModel.getResumeForDownload(resumeContentID, userID);
-        const themeConfig = buildThemeConfig(resumeData.theme, options.themeOverrides);
+        const resumeData = await downloadModel.getResumeForDownload(resumeContentID, userID, userType);
+        const themeConfig = buildThemeConfig(resumeData.theme, otherOptions.themeOverrides);
 
         const pdfBuffer = await pdfService.generateResumePDFPreview(
             resumeData.content,
@@ -222,7 +236,8 @@ export const getPreviewPDF = async (resumeContentID, userID, options = {}) => {
     } catch (error) {
         logger.error('[DOWNLOAD_SERVICE] Failed to generate PDF preview', {
             error: error.message,
-            resumeContentID
+            resumeContentID,
+            userType
         });
         throw error;
     }
@@ -231,14 +246,16 @@ export const getPreviewPDF = async (resumeContentID, userID, options = {}) => {
 /**
  * Generate HTML preview (for testing/debugging)
  * @param {number} resumeContentID - Resume content ID
- * @param {number} userID - User ID
- * @param {Object} options - Preview options
+ * @param {number} userID - User ID or Candidate ID
+ * @param {Object} options - Preview options including userType
  * @returns {Promise<string>} HTML string
  */
 export const getHTMLPreview = async (resumeContentID, userID, options = {}) => {
+    const { userType = userTypeConstants.USER, ...otherOptions } = options;
+    
     try {
-        const resumeData = await downloadModel.getResumeForDownload(resumeContentID, userID);
-        const themeConfig = buildThemeConfig(resumeData.theme, options.themeOverrides);
+        const resumeData = await downloadModel.getResumeForDownload(resumeContentID, userID, userType);
+        const themeConfig = buildThemeConfig(resumeData.theme, otherOptions.themeOverrides);
 
         const html = pdfService.generateResumeHTMLPreview(
             resumeData.content,
@@ -249,7 +266,8 @@ export const getHTMLPreview = async (resumeContentID, userID, options = {}) => {
     } catch (error) {
         logger.error('[DOWNLOAD_SERVICE] Failed to generate HTML preview', {
             error: error.message,
-            resumeContentID
+            resumeContentID,
+            userType
         });
         throw error;
     }
@@ -258,25 +276,29 @@ export const getHTMLPreview = async (resumeContentID, userID, options = {}) => {
 /**
  * Download resume by analysis ID
  * @param {number} analysisID - Analysis ID
- * @param {number} userID - User ID
- * @param {Object} options - Generation options
+ * @param {number} userID - User ID or Candidate ID
+ * @param {Object} options - Generation options including userType
  * @returns {Promise<Object>} PDF buffer and metadata
  */
 export const downloadResumePDFByAnalysis = async (analysisID, userID, options = {}) => {
+    const { userType = userTypeConstants.USER, ...otherOptions } = options;
+    
     try {
         logger.info('[DOWNLOAD_SERVICE] Downloading resume by analysis', {
             analysisID,
-            userID
+            userID,
+            userType
         });
 
-        const resumeData = await downloadModel.getResumeForDownloadByAnalysisID(analysisID, userID);
+        const resumeData = await downloadModel.getResumeForDownloadByAnalysisID(analysisID, userID, userType);
         
         // Use the regular download flow with the content ID
-        return await downloadResumePDF(resumeData.metadata.id, userID, options);
+        return await downloadResumePDF(resumeData.metadata.id, userID, { ...otherOptions, userType });
     } catch (error) {
         logger.error('[DOWNLOAD_SERVICE] Failed to download by analysis', {
             error: error.message,
-            analysisID
+            analysisID,
+            userType
         });
         throw error;
     }

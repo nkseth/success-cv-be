@@ -35,6 +35,11 @@
  *                       id:
  *                         type: integer
  *                         example: 1
+ *                       resumeId:
+ *                         type: integer
+ *                         nullable: true
+ *                         description: Resume content ID
+ *                         example: 5
  *                       status:
  *                         type: string
  *                         enum: [pending, processing, completed, failed]
@@ -52,22 +57,38 @@
  *                         type: string
  *                         format: date-time
  *                         nullable: true
+ *                       scores:
+ *                         type: object
+ *                         nullable: true
+ *                         description: Current scores from resume content
+ *                         properties:
+ *                           atsScore:
+ *                             type: number
+ *                             description: ATS compatibility score
+ *                             example: 85
+ *                           contentScore:
+ *                             type: number
+ *                             description: Content quality score
+ *                             example: 78
+ *                           formatScore:
+ *                             type: number
+ *                             description: Format/presentation score
+ *                             example: 90
+ *                           overallScore:
+ *                             type: number
+ *                             description: Overall resume score
+ *                             example: 84
+ *                       atsScore:
+ *                         type: number
+ *                         nullable: true
+ *                         description: ATS score (extracted for convenience)
+ *                         example: 85
  *                       meta:
  *                         type: object
+ *                         nullable: true
  *                         properties:
  *                           processedDataID:
  *                             type: integer
- *                           scores:
- *                             type: object
- *                             properties:
- *                               overall_score:
- *                                 type: number
- *                               job_fit_score:
- *                                 type: number
- *                               resume_quality_score:
- *                                 type: number
- *                               ats_score:
- *                                 type: number
  *                       document:
  *                         type: object
  *                         properties:

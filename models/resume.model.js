@@ -13,9 +13,37 @@ import {
     resumeRewritesTable,
     analysisTable,
     processedAndRawDataTable,
-    userDocumentTable
+    userDocumentTable,
+    candidateResumeContentTable,
+    candidateResumeRewritesTable,
+    candidateAnalysisTable,
+    candidateProcessedAndRawDataTable,
+    candidateDocumentTable
 } from "../drizzle/schema.js";
 import { getUserTheme, restoreThemeFromSnapshot } from "./theme.model.js";
+import { getDynamicTables, isCandidate as checkIsCandidate } from "../utils/dynamic-tables.js";
+import { userTypeConstants } from "../utils/constants.js";
+
+// ========== DYNAMIC TABLE HELPERS ==========
+
+/**
+ * Get the appropriate tables based on user type
+ * This allows the same model functions to work for both users and candidates
+ * @param {string} userType - 'user' | 'candidate'
+ * @returns {Object} Object containing appropriate tables
+ */
+const getTablesForUserType = (userType) => {
+    const isCandidateUser = checkIsCandidate(userType);
+    return {
+        contentTable: isCandidateUser ? candidateResumeContentTable : resumeContentTable,
+        rewritesTable: isCandidateUser ? candidateResumeRewritesTable : resumeRewritesTable,
+        analysisTable: isCandidateUser ? candidateAnalysisTable : analysisTable,
+        processedDataTable: isCandidateUser ? candidateProcessedAndRawDataTable : processedAndRawDataTable,
+        documentTable: isCandidateUser ? candidateDocumentTable : userDocumentTable,
+        entityIDColumn: isCandidateUser ? 'candidateID' : 'userID',
+        isCandidate: isCandidateUser
+    };
+};
 
 // ========== RESUME CONTENT OPERATIONS ==========
 
@@ -26,24 +54,29 @@ import { getUserTheme, restoreThemeFromSnapshot } from "./theme.model.js";
  * @param {number} analysisID - Analysis ID
  * @param {Object} contentData - Parsed resume content from analysis
  * @param {Object} analysisSummary - Lightweight summary of analysis issues (optional)
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Created resume content
  */
-export const createResumeContent = async (userID, analysisID, contentData, analysisSummary = null) => {
+export const createResumeContent = async (userID, analysisID, contentData, analysisSummary = null, userType = userTypeConstants.USER) => {
     try {
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+        
         logger.info('[RESUME_MODEL] Creating resume content from analysis', {
             userID,
             analysisID,
-            hasAnalysisSummary: !!analysisSummary
+            hasAnalysisSummary: !!analysisSummary,
+            userType
         });
 
         // Check if content already exists for this analysis
         const existing = await db
-            .select({ id: resumeContentTable.id })
-            .from(resumeContentTable)
+            .select({ id: tables.contentTable.id })
+            .from(tables.contentTable)
             .where(
                 and(
-                    eq(resumeContentTable.analysisID, analysisID),
-                    eq(resumeContentTable.userID, userID)
+                    eq(tables.contentTable.analysisID, analysisID),
+                    eq(tables.contentTable[entityIDField], userID)
                 )
             )
             .limit(1);
@@ -53,7 +86,7 @@ export const createResumeContent = async (userID, analysisID, contentData, analy
                 analysisID,
                 existingID: existing[0].id
             });
-            return await getResumeContentByID(existing[0].id, userID);
+            return await getResumeContentByID(existing[0].id, userID, userType);
         }
 
         // Structure the content
@@ -67,30 +100,33 @@ export const createResumeContent = async (userID, analysisID, contentData, analy
             scores = {}
         } = contentData;
 
+        const insertValues = {
+            [entityIDField]: userID,
+            analysisID,
+            personalInfo,
+            summary,
+            experience,
+            education,
+            skills,
+            additionalSections,
+            currentScores: scores,
+            analysisSummary: analysisSummary, // Lightweight summary of analysis issues
+            version: 1,
+            lastEditType: 'initial',
+            createdAt: new Date(),
+            updatedAt: new Date()
+        };
+
         const [content] = await db
-            .insert(resumeContentTable)
-            .values({
-                userID,
-                analysisID,
-                personalInfo,
-                summary,
-                experience,
-                education,
-                skills,
-                additionalSections,
-                currentScores: scores,
-                analysisSummary: analysisSummary, // Lightweight summary of analysis issues
-                version: 1,
-                lastEditType: 'initial',
-                createdAt: new Date(),
-                updatedAt: new Date()
-            })
+            .insert(tables.contentTable)
+            .values(insertValues)
             .returning();
 
         logger.info('[RESUME_MODEL] ✅ Resume content created', {
             contentID: content.id,
             analysisID,
-            hasAnalysisSummary: !!analysisSummary
+            hasAnalysisSummary: !!analysisSummary,
+            userType
         });
 
         return content;
@@ -98,7 +134,8 @@ export const createResumeContent = async (userID, analysisID, contentData, analy
         logger.error('[RESUME_MODEL] Failed to create resume content', {
             error: error.message,
             userID,
-            analysisID
+            analysisID,
+            userType
         });
         if (error instanceof AppError) throw error;
         throw new AppError(`Failed to create resume content: ${error.message}`, 500);
@@ -109,44 +146,48 @@ export const createResumeContent = async (userID, analysisID, contentData, analy
  * Get resume content by ID
  * @param {number} contentID - Resume content ID
  * @param {number} userID - User ID for authorization
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Resume content with related data
  */
-export const getResumeContentByID = async (contentID, userID) => {
+export const getResumeContentByID = async (contentID, userID, userType = userTypeConstants.USER) => {
     try {
-        logger.info('[RESUME_MODEL] Fetching resume content', { contentID, userID });
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+        
+        logger.info('[RESUME_MODEL] Fetching resume content', { contentID, userID, userType });
 
         const content = await db
             .select({
                 // Content fields
-                id: resumeContentTable.id,
-                userID: resumeContentTable.userID,
-                analysisID: resumeContentTable.analysisID,
-                personalInfo: resumeContentTable.personalInfo,
-                summary: resumeContentTable.summary,
-                experience: resumeContentTable.experience,
-                education: resumeContentTable.education,
-                skills: resumeContentTable.skills,
-                additionalSections: resumeContentTable.additionalSections,
-                currentScores: resumeContentTable.currentScores,
-                analysisSummary: resumeContentTable.analysisSummary,
-                version: resumeContentTable.version,
-                lastEditType: resumeContentTable.lastEditType,
-                lastEditedSection: resumeContentTable.lastEditedSection,
-                activeRewriteID: resumeContentTable.activeRewriteID,
-                createdAt: resumeContentTable.createdAt,
-                updatedAt: resumeContentTable.updatedAt,
+                id: tables.contentTable.id,
+                userID: tables.contentTable[entityIDField],
+                analysisID: tables.contentTable.analysisID,
+                personalInfo: tables.contentTable.personalInfo,
+                summary: tables.contentTable.summary,
+                experience: tables.contentTable.experience,
+                education: tables.contentTable.education,
+                skills: tables.contentTable.skills,
+                additionalSections: tables.contentTable.additionalSections,
+                currentScores: tables.contentTable.currentScores,
+                analysisSummary: tables.contentTable.analysisSummary,
+                version: tables.contentTable.version,
+                lastEditType: tables.contentTable.lastEditType,
+                lastEditedSection: tables.contentTable.lastEditedSection,
+                activeRewriteID: tables.contentTable.activeRewriteID,
+                createdAt: tables.contentTable.createdAt,
+                updatedAt: tables.contentTable.updatedAt,
                 // Document fields
-                documentID: userDocumentTable.id,
-                documentTitle: userDocumentTable.title,
-                fileURL: userDocumentTable.fileURL
+                documentID: tables.documentTable.id,
+                documentTitle: tables.documentTable.title,
+                fileURL: tables.documentTable.fileURL
             })
-            .from(resumeContentTable)
-            .innerJoin(analysisTable, eq(resumeContentTable.analysisID, analysisTable.id))
-            .innerJoin(userDocumentTable, eq(analysisTable.documentID, userDocumentTable.id))
+            .from(tables.contentTable)
+            .innerJoin(tables.analysisTable, eq(tables.contentTable.analysisID, tables.analysisTable.id))
+            .innerJoin(tables.documentTable, eq(tables.analysisTable.documentID, tables.documentTable.id))
             .where(
                 and(
-                    eq(resumeContentTable.id, contentID),
-                    eq(resumeContentTable.userID, userID)
+                    eq(tables.contentTable.id, contentID),
+                    eq(tables.contentTable[entityIDField], userID)
                 )
             )
             .limit(1);
@@ -159,7 +200,8 @@ export const getResumeContentByID = async (contentID, userID) => {
     } catch (error) {
         logger.error('[RESUME_MODEL] Failed to fetch resume content', {
             error: error.message,
-            contentID
+            contentID,
+            userType
         });
         if (error instanceof AppError) throw error;
         throw new AppError(`Failed to fetch resume content: ${error.message}`, 500);
@@ -170,19 +212,23 @@ export const getResumeContentByID = async (contentID, userID) => {
  * Get resume content by analysis ID
  * @param {number} analysisID - Analysis ID
  * @param {number} userID - User ID for authorization
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object|null>} Resume content or null
  */
-export const getResumeContentByAnalysisID = async (analysisID, userID) => {
+export const getResumeContentByAnalysisID = async (analysisID, userID, userType = userTypeConstants.USER) => {
     try {
-        logger.info('[RESUME_MODEL] Fetching resume content by analysis', { analysisID, userID });
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+        
+        logger.info('[RESUME_MODEL] Fetching resume content by analysis', { analysisID, userID, userType });
 
         const content = await db
             .select()
-            .from(resumeContentTable)
+            .from(tables.contentTable)
             .where(
                 and(
-                    eq(resumeContentTable.analysisID, analysisID),
-                    eq(resumeContentTable.userID, userID)
+                    eq(tables.contentTable.analysisID, analysisID),
+                    eq(tables.contentTable[entityIDField], userID)
                 )
             )
             .limit(1);
@@ -195,7 +241,8 @@ export const getResumeContentByAnalysisID = async (analysisID, userID) => {
     } catch (error) {
         logger.error('[RESUME_MODEL] Failed to fetch resume content by analysis', {
             error: error.message,
-            analysisID
+            analysisID,
+            userType
         });
         throw new AppError(`Failed to fetch resume content: ${error.message}`, 500);
     }
@@ -204,7 +251,7 @@ export const getResumeContentByAnalysisID = async (analysisID, userID) => {
 /**
  * Get all resume contents for a user
  * @param {number} userID - User ID
- * @param {Object} options - Options including pagination, filters, search, sort
+ * @param {Object} options - Options including pagination, filters, search, sort, userType
  * @returns {Promise<Object>} Object with resumes array and totalCount
  */
 export const getAllResumeContents = async (userID, options = {}) => {
@@ -213,18 +260,22 @@ export const getAllResumeContents = async (userID, options = {}) => {
             pagination = { limit: 10, offset: 0 },
             filters = {},
             search = { query: '', fields: [] },
-            sort = { field: 'updatedAt', order: 'desc' }
+            sort = { field: 'updatedAt', order: 'desc' },
+            userType = userTypeConstants.USER
         } = options;
 
-        logger.info('[RESUME_MODEL] Fetching all resume contents for user', { userID, options });
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+
+        logger.info('[RESUME_MODEL] Fetching all resume contents for user', { userID, options, userType });
 
         // Build base where conditions
-        const whereConditions = [eq(resumeContentTable.userID, userID)];
+        const whereConditions = [eq(tables.contentTable[entityIDField], userID)];
 
         // Add filter conditions
         const filterConditions = buildWhereConditions(
             filters,
-            resumeContentTable,
+            tables.contentTable,
             { eq, inArray, gte, lte, or, and }
         );
         whereConditions.push(...filterConditions);
@@ -232,7 +283,7 @@ export const getAllResumeContents = async (userID, options = {}) => {
         // Add search condition (search in document title or personal info)
         const searchCondition = buildSearchCondition(
             search.query,
-            [userDocumentTable.title],
+            [tables.documentTable.title],
             { or, ilike }
         );
         if (searchCondition) {
@@ -242,37 +293,37 @@ export const getAllResumeContents = async (userID, options = {}) => {
         // Get total count
         const [{ totalCount }] = await db
             .select({ totalCount: count() })
-            .from(resumeContentTable)
-            .innerJoin(analysisTable, eq(resumeContentTable.analysisID, analysisTable.id))
-            .innerJoin(userDocumentTable, eq(analysisTable.documentID, userDocumentTable.id))
+            .from(tables.contentTable)
+            .innerJoin(tables.analysisTable, eq(tables.contentTable.analysisID, tables.analysisTable.id))
+            .innerJoin(tables.documentTable, eq(tables.analysisTable.documentID, tables.documentTable.id))
             .where(and(...whereConditions));
 
         // Build order by
-        const orderByClause = buildOrderBy(sort, resumeContentTable, { asc, desc });
+        const orderByClause = buildOrderBy(sort, tables.contentTable, { asc, desc });
 
         // Fetch paginated contents
         const contents = await db
             .select({
-                id: resumeContentTable.id,
-                analysisID: resumeContentTable.analysisID,
-                personalInfo: resumeContentTable.personalInfo,
-                currentScores: resumeContentTable.currentScores,
-                version: resumeContentTable.version,
-                lastEditType: resumeContentTable.lastEditType,
-                createdAt: resumeContentTable.createdAt,
-                updatedAt: resumeContentTable.updatedAt,
-                documentID: userDocumentTable.id,
-                documentTitle: userDocumentTable.title
+                id: tables.contentTable.id,
+                analysisID: tables.contentTable.analysisID,
+                personalInfo: tables.contentTable.personalInfo,
+                currentScores: tables.contentTable.currentScores,
+                version: tables.contentTable.version,
+                lastEditType: tables.contentTable.lastEditType,
+                createdAt: tables.contentTable.createdAt,
+                updatedAt: tables.contentTable.updatedAt,
+                documentID: tables.documentTable.id,
+                documentTitle: tables.documentTable.title
             })
-            .from(resumeContentTable)
-            .innerJoin(analysisTable, eq(resumeContentTable.analysisID, analysisTable.id))
-            .innerJoin(userDocumentTable, eq(analysisTable.documentID, userDocumentTable.id))
+            .from(tables.contentTable)
+            .innerJoin(tables.analysisTable, eq(tables.contentTable.analysisID, tables.analysisTable.id))
+            .innerJoin(tables.documentTable, eq(tables.analysisTable.documentID, tables.documentTable.id))
             .where(and(...whereConditions))
             .orderBy(...orderByClause)
             .limit(pagination.limit)
             .offset(pagination.offset);
 
-        logger.info('[RESUME_MODEL] ✅ Fetched resume contents', { count: contents.length, totalCount });
+        logger.info('[RESUME_MODEL] ✅ Fetched resume contents', { count: contents.length, totalCount, userType });
         return { resumes: contents, totalCount };
     } catch (error) {
         logger.error('[RESUME_MODEL] Failed to fetch resume contents', {
@@ -289,13 +340,18 @@ export const getAllResumeContents = async (userID, options = {}) => {
  * @param {number} userID - User ID
  * @param {string} sectionName - Section to update
  * @param {Object} sectionData - New section data
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Updated resume content
  */
-export const updateResumeSection = async (contentID, userID, sectionName, sectionData) => {
+export const updateResumeSection = async (contentID, userID, sectionName, sectionData, userType = userTypeConstants.USER) => {
     try {
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+        
         logger.info('[RESUME_MODEL] Updating resume section', {
             contentID,
-            sectionName
+            sectionName,
+            userType
         });
 
         // Validate section name
@@ -306,12 +362,12 @@ export const updateResumeSection = async (contentID, userID, sectionName, sectio
 
         // Verify ownership
         const existing = await db
-            .select({ id: resumeContentTable.id, version: resumeContentTable.version })
-            .from(resumeContentTable)
+            .select({ id: tables.contentTable.id, version: tables.contentTable.version })
+            .from(tables.contentTable)
             .where(
                 and(
-                    eq(resumeContentTable.id, contentID),
-                    eq(resumeContentTable.userID, userID)
+                    eq(tables.contentTable.id, contentID),
+                    eq(tables.contentTable[entityIDField], userID)
                 )
             )
             .limit(1);
@@ -330,15 +386,16 @@ export const updateResumeSection = async (contentID, userID, sectionName, sectio
         };
 
         const [updated] = await db
-            .update(resumeContentTable)
+            .update(tables.contentTable)
             .set(updateData)
-            .where(eq(resumeContentTable.id, contentID))
+            .where(eq(tables.contentTable.id, contentID))
             .returning();
 
         logger.info('[RESUME_MODEL] ✅ Section updated', {
             contentID,
             sectionName,
-            newVersion: updated.version
+            newVersion: updated.version,
+            userType
         });
 
         return updated;
@@ -346,7 +403,8 @@ export const updateResumeSection = async (contentID, userID, sectionName, sectio
         logger.error('[RESUME_MODEL] Failed to update section', {
             error: error.message,
             contentID,
-            sectionName
+            sectionName,
+            userType
         });
         if (error instanceof AppError) throw error;
         throw new AppError(`Failed to update section: ${error.message}`, 500);
@@ -358,13 +416,18 @@ export const updateResumeSection = async (contentID, userID, sectionName, sectio
  * @param {number} contentID - Resume content ID
  * @param {number} userID - User ID
  * @param {Object} sectionsData - Object with section names as keys
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Updated resume content
  */
-export const updateMultipleSections = async (contentID, userID, sectionsData) => {
+export const updateMultipleSections = async (contentID, userID, sectionsData, userType = userTypeConstants.USER) => {
     try {
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+        
         logger.info('[RESUME_MODEL] Updating multiple sections', {
             contentID,
-            sections: Object.keys(sectionsData)
+            sections: Object.keys(sectionsData),
+            userType
         });
 
         // Validate section names
@@ -377,12 +440,12 @@ export const updateMultipleSections = async (contentID, userID, sectionsData) =>
 
         // Verify ownership
         const existing = await db
-            .select({ id: resumeContentTable.id, version: resumeContentTable.version })
-            .from(resumeContentTable)
+            .select({ id: tables.contentTable.id, version: tables.contentTable.version })
+            .from(tables.contentTable)
             .where(
                 and(
-                    eq(resumeContentTable.id, contentID),
-                    eq(resumeContentTable.userID, userID)
+                    eq(tables.contentTable.id, contentID),
+                    eq(tables.contentTable[entityIDField], userID)
                 )
             )
             .limit(1);
@@ -401,21 +464,23 @@ export const updateMultipleSections = async (contentID, userID, sectionsData) =>
         };
 
         const [updated] = await db
-            .update(resumeContentTable)
+            .update(tables.contentTable)
             .set(updateData)
-            .where(eq(resumeContentTable.id, contentID))
+            .where(eq(tables.contentTable.id, contentID))
             .returning();
 
         logger.info('[RESUME_MODEL] ✅ Multiple sections updated', {
             contentID,
-            newVersion: updated.version
+            newVersion: updated.version,
+            userType
         });
 
         return updated;
     } catch (error) {
         logger.error('[RESUME_MODEL] Failed to update sections', {
             error: error.message,
-            contentID
+            contentID,
+            userType
         });
         if (error instanceof AppError) throw error;
         throw new AppError(`Failed to update sections: ${error.message}`, 500);
@@ -426,24 +491,28 @@ export const updateMultipleSections = async (contentID, userID, sectionsData) =>
  * Update scores after recalculation
  * @param {number} contentID - Resume content ID
  * @param {Object} scores - New scores
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Updated resume content
  */
-export const updateResumeScores = async (contentID, scores) => {
+export const updateResumeScores = async (contentID, scores, userType = userTypeConstants.USER) => {
     try {
+        const tables = getTablesForUserType(userType);
+        
         const [updated] = await db
-            .update(resumeContentTable)
+            .update(tables.contentTable)
             .set({
                 currentScores: scores,
                 updatedAt: new Date()
             })
-            .where(eq(resumeContentTable.id, contentID))
+            .where(eq(tables.contentTable.id, contentID))
             .returning();
 
         return updated;
     } catch (error) {
         logger.error('[RESUME_MODEL] Failed to update scores', {
             error: error.message,
-            contentID
+            contentID,
+            userType
         });
         throw new AppError(`Failed to update scores: ${error.message}`, 500);
     }
@@ -458,28 +527,33 @@ export const updateResumeScores = async (contentID, scores) => {
  * @param {number} resumeContentID - Resume content ID
  * @param {Object} currentContent - Current resume content to snapshot
  * @param {Object} options - Rewrite options
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Created rewrite record
  */
-export const createRewrite = async (userID, analysisID, resumeContentID, currentContent = null, options = {}) => {
+export const createRewrite = async (userID, analysisID, resumeContentID, currentContent = null, options = {}, userType = userTypeConstants.USER) => {
     try {
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+        
         logger.info('[RESUME_MODEL] Creating rewrite with content snapshot', {
             userID,
             analysisID,
             resumeContentID,
-            hasContentSnapshot: !!currentContent
+            hasContentSnapshot: !!currentContent,
+            userType
         });
 
         // Get current version number
         const existingRewrites = await db
-            .select({ versionNumber: resumeRewritesTable.versionNumber })
-            .from(resumeRewritesTable)
+            .select({ versionNumber: tables.rewritesTable.versionNumber })
+            .from(tables.rewritesTable)
             .where(
                 and(
-                    eq(resumeRewritesTable.analysisID, analysisID),
-                    eq(resumeRewritesTable.userID, userID)
+                    eq(tables.rewritesTable.analysisID, analysisID),
+                    eq(tables.rewritesTable[entityIDField], userID)
                 )
             )
-            .orderBy(desc(resumeRewritesTable.versionNumber))
+            .orderBy(desc(tables.rewritesTable.versionNumber))
             .limit(1);
 
         const nextVersion = existingRewrites.length > 0 
@@ -490,7 +564,7 @@ export const createRewrite = async (userID, analysisID, resumeContentID, current
         let themeSnapshot = null;
         if (resumeContentID) {
             try {
-                const currentTheme = await getUserTheme(resumeContentID, userID);
+                const currentTheme = await getUserTheme(resumeContentID, userID, userType);
                 if (currentTheme) {
                     themeSnapshot = {
                         themeID: currentTheme.themeID,
@@ -524,28 +598,31 @@ export const createRewrite = async (userID, analysisID, resumeContentID, current
             snapshotAt: new Date().toISOString()
         } : null;
 
+        const insertValues = {
+            [entityIDField]: userID,
+            analysisID,
+            resumeContentID,
+            status: 'pending',
+            versionNumber: nextVersion,
+            versionLabel: options.versionLabel || `Rewrite v${nextVersion}`,
+            optimizationSettings: options.optimizationSettings || {},
+            sourceContentSnapshot,
+            isActive: false,
+            wasModifiedAfterApply: false,
+            createdAt: new Date(),
+            updatedAt: new Date()
+        };
+
         const [rewrite] = await db
-            .insert(resumeRewritesTable)
-            .values({
-                userID,
-                analysisID,
-                resumeContentID,
-                status: 'pending',
-                versionNumber: nextVersion,
-                versionLabel: options.versionLabel || `Rewrite v${nextVersion}`,
-                optimizationSettings: options.optimizationSettings || {},
-                sourceContentSnapshot,
-                isActive: false,
-                wasModifiedAfterApply: false,
-                createdAt: new Date(),
-                updatedAt: new Date()
-            })
+            .insert(tables.rewritesTable)
+            .values(insertValues)
             .returning();
 
         logger.info('[RESUME_MODEL] ✅ Rewrite created with snapshot', {
             rewriteID: rewrite.id,
             version: nextVersion,
-            hasSnapshot: !!sourceContentSnapshot
+            hasSnapshot: !!sourceContentSnapshot,
+            userType
         });
 
         return rewrite;
@@ -553,7 +630,8 @@ export const createRewrite = async (userID, analysisID, resumeContentID, current
         logger.error('[RESUME_MODEL] Failed to create rewrite', {
             error: error.message,
             userID,
-            analysisID
+            analysisID,
+            userType
         });
         if (error instanceof AppError) throw error;
         throw new AppError(`Failed to create rewrite: ${error.message}`, 500);
@@ -564,17 +642,21 @@ export const createRewrite = async (userID, analysisID, resumeContentID, current
  * Get rewrite by ID
  * @param {number} rewriteID - Rewrite ID
  * @param {number} userID - User ID
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Rewrite record with theme info
  */
-export const getRewriteByID = async (rewriteID, userID) => {
+export const getRewriteByID = async (rewriteID, userID, userType = userTypeConstants.USER) => {
     try {
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+        
         const rewrite = await db
             .select()
-            .from(resumeRewritesTable)
+            .from(tables.rewritesTable)
             .where(
                 and(
-                    eq(resumeRewritesTable.id, rewriteID),
-                    eq(resumeRewritesTable.userID, userID)
+                    eq(tables.rewritesTable.id, rewriteID),
+                    eq(tables.rewritesTable[entityIDField], userID)
                 )
             )
             .limit(1);
@@ -620,7 +702,7 @@ export const getRewriteByID = async (rewriteID, userID) => {
  * Get all rewrites for an analysis
  * @param {number} analysisID - Analysis ID
  * @param {number} userID - User ID
- * @param {Object} options - Options including pagination, filters, sort
+ * @param {Object} options - Options including pagination, filters, sort, userType
  * @returns {Promise<Object>} Object with rewrites array and totalCount
  */
 export const getRewritesByAnalysisID = async (analysisID, userID, options = {}) => {
@@ -628,21 +710,25 @@ export const getRewritesByAnalysisID = async (analysisID, userID, options = {}) 
         const {
             pagination = { limit: 10, offset: 0 },
             filters = {},
-            sort = { field: 'createdAt', order: 'desc' }
+            sort = { field: 'createdAt', order: 'desc' },
+            userType = userTypeConstants.USER
         } = options;
 
-        logger.info('[RESUME_MODEL] Fetching rewrites for analysis', { analysisID, userID, options });
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+
+        logger.info('[RESUME_MODEL] Fetching rewrites for analysis', { analysisID, userID, options, userType });
 
         // Build base where conditions
         const whereConditions = [
-            eq(resumeRewritesTable.analysisID, analysisID),
-            eq(resumeRewritesTable.userID, userID)
+            eq(tables.rewritesTable.analysisID, analysisID),
+            eq(tables.rewritesTable[entityIDField], userID)
         ];
 
         // Add filter conditions
         const filterConditions = buildWhereConditions(
             filters,
-            resumeRewritesTable,
+            tables.rewritesTable,
             { eq, inArray, gte, lte, or, and }
         );
         whereConditions.push(...filterConditions);
@@ -650,22 +736,22 @@ export const getRewritesByAnalysisID = async (analysisID, userID, options = {}) 
         // Get total count
         const [{ totalCount }] = await db
             .select({ totalCount: count() })
-            .from(resumeRewritesTable)
+            .from(tables.rewritesTable)
             .where(and(...whereConditions));
 
         // Build order by
-        const orderByClause = buildOrderBy(sort, resumeRewritesTable, { asc, desc });
+        const orderByClause = buildOrderBy(sort, tables.rewritesTable, { asc, desc });
 
         // Fetch paginated rewrites
         const rewrites = await db
             .select()
-            .from(resumeRewritesTable)
+            .from(tables.rewritesTable)
             .where(and(...whereConditions))
             .orderBy(...orderByClause)
             .limit(pagination.limit)
             .offset(pagination.offset);
 
-        logger.info('[RESUME_MODEL] ✅ Fetched rewrites', { count: rewrites.length, totalCount });
+        logger.info('[RESUME_MODEL] ✅ Fetched rewrites', { count: rewrites.length, totalCount, userType });
         return { rewrites, totalCount };
     } catch (error) {
         logger.error('[RESUME_MODEL] Failed to fetch rewrites', {
@@ -680,24 +766,28 @@ export const getRewritesByAnalysisID = async (analysisID, userID, options = {}) 
  * Update rewrite status and content
  * @param {number} rewriteID - Rewrite ID
  * @param {Object} updates - Fields to update
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Updated rewrite
  */
-export const updateRewrite = async (rewriteID, updates) => {
+export const updateRewrite = async (rewriteID, updates, userType = userTypeConstants.USER) => {
     try {
+        const tables = getTablesForUserType(userType);
+        
         const [updated] = await db
-            .update(resumeRewritesTable)
+            .update(tables.rewritesTable)
             .set({
                 ...updates,
                 updatedAt: new Date()
             })
-            .where(eq(resumeRewritesTable.id, rewriteID))
+            .where(eq(tables.rewritesTable.id, rewriteID))
             .returning();
 
         return updated;
     } catch (error) {
         logger.error('[RESUME_MODEL] Failed to update rewrite', {
             error: error.message,
-            rewriteID
+            rewriteID,
+            userType
         });
         throw new AppError(`Failed to update rewrite: ${error.message}`, 500);
     }
@@ -708,14 +798,18 @@ export const updateRewrite = async (rewriteID, updates) => {
  * This marks the rewrite as active and updates the resume content with rewritten data
  * @param {number} rewriteID - Rewrite ID
  * @param {number} userID - User ID
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Updated resume content
  */
-export const applyRewrite = async (rewriteID, userID) => {
+export const applyRewrite = async (rewriteID, userID, userType = userTypeConstants.USER) => {
     try {
-        logger.info('[RESUME_MODEL] Applying rewrite to content', { rewriteID, userID });
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+        
+        logger.info('[RESUME_MODEL] Applying rewrite to content', { rewriteID, userID, userType });
 
         // Get the rewrite
-        const rewrite = await getRewriteByID(rewriteID, userID);
+        const rewrite = await getRewriteByID(rewriteID, userID, userType);
 
         if (rewrite.status !== 'completed') {
             throw new AppError('Rewrite must be completed before applying', 400);
@@ -731,7 +825,7 @@ export const applyRewrite = async (rewriteID, userID) => {
             : rewrite.rewrittenContent;
 
         // Get current resume content
-        const currentContent = await getResumeContentByAnalysisID(rewrite.analysisID, userID);
+        const currentContent = await getResumeContentByAnalysisID(rewrite.analysisID, userID, userType);
         
         if (!currentContent) {
             throw new AppError('Resume content not found', 404);
@@ -743,11 +837,11 @@ export const applyRewrite = async (rewriteID, userID) => {
             // Check if content was modified after the previous rewrite was applied
             const previousRewrite = await db
                 .select({ 
-                    appliedAt: resumeRewritesTable.appliedAt,
-                    rewrittenContent: resumeRewritesTable.rewrittenContent 
+                    appliedAt: tables.rewritesTable.appliedAt,
+                    rewrittenContent: tables.rewritesTable.rewrittenContent 
                 })
-                .from(resumeRewritesTable)
-                .where(eq(resumeRewritesTable.id, currentContent.activeRewriteID))
+                .from(tables.rewritesTable)
+                .where(eq(tables.rewritesTable.id, currentContent.activeRewriteID))
                 .limit(1);
 
             if (previousRewrite.length > 0 && previousRewrite[0].appliedAt) {
@@ -757,7 +851,7 @@ export const applyRewrite = async (rewriteID, userID) => {
                 // Get current theme to save with the previous rewrite
                 let currentThemeSnapshot = null;
                 try {
-                    const currentTheme = await getUserTheme(currentContent.id, userID);
+                    const currentTheme = await getUserTheme(currentContent.id, userID, userType);
                     if (currentTheme) {
                         currentThemeSnapshot = {
                             themeID: currentTheme.themeID,
@@ -795,14 +889,14 @@ export const applyRewrite = async (rewriteID, userID) => {
                 const currentAnalysisSummary = currentContent.analysisSummary;
                 
                 await db
-                    .update(resumeRewritesTable)
+                    .update(tables.rewritesTable)
                     .set({ 
                         rewrittenContent: currentResumeSnapshot,
                         rewriteSummary: currentAnalysisSummary,
                         wasModifiedAfterApply: wasModified, 
                         updatedAt: new Date() 
                     })
-                    .where(eq(resumeRewritesTable.id, currentContent.activeRewriteID));
+                    .where(eq(tables.rewritesTable.id, currentContent.activeRewriteID));
                 
                 logger.info('[RESUME_MODEL] Saved current content, scores, analysisSummary, and theme to previous rewrite', {
                     previousRewriteID: currentContent.activeRewriteID,
@@ -816,25 +910,25 @@ export const applyRewrite = async (rewriteID, userID) => {
 
         // Deactivate all other rewrites for this analysis
         await db
-            .update(resumeRewritesTable)
+            .update(tables.rewritesTable)
             .set({ isActive: false, updatedAt: new Date() })
             .where(
                 and(
-                    eq(resumeRewritesTable.analysisID, rewrite.analysisID),
-                    eq(resumeRewritesTable.userID, userID)
+                    eq(tables.rewritesTable.analysisID, rewrite.analysisID),
+                    eq(tables.rewritesTable[entityIDField], userID)
                 )
             );
 
         // Mark this rewrite as active and reset modification flag
         await db
-            .update(resumeRewritesTable)
+            .update(tables.rewritesTable)
             .set({
                 isActive: true,
                 appliedAt: new Date(),
                 wasModifiedAfterApply: false,
                 updatedAt: new Date()
             })
-            .where(eq(resumeRewritesTable.id, rewriteID));
+            .where(eq(tables.rewritesTable.id, rewriteID));
 
         // Get the rewrite summary from the rewrite (if available)
         const rewriteSummary = typeof rewrite.rewriteSummary === 'string'
@@ -843,7 +937,7 @@ export const applyRewrite = async (rewriteID, userID) => {
 
         // Update resume content with rewritten data and analysisSummary
         const [updatedContent] = await db
-            .update(resumeContentTable)
+            .update(tables.contentTable)
             .set({
                 personalInfo: content.personalInfo || currentContent.personalInfo,
                 summary: content.summary || content.professionalSummary || currentContent.summary,
@@ -859,13 +953,13 @@ export const applyRewrite = async (rewriteID, userID) => {
                 activeRewriteID: rewriteID,
                 updatedAt: new Date()
             })
-            .where(eq(resumeContentTable.id, currentContent.id))
+            .where(eq(tables.contentTable.id, currentContent.id))
             .returning();
 
         // Restore theme if the rewrite has theme info stored
         // This updates userResumeThemeTable (user's theme config), NOT the actual theme definitions
         if (content.theme && content.theme.themeID) {
-            await restoreThemeFromSnapshot(userID, updatedContent.id, content.theme);
+            await restoreThemeFromSnapshot(userID, updatedContent.id, content.theme, userType);
             logger.info('[RESUME_MODEL] Restored theme from rewrite', {
                 rewriteID,
                 themeID: content.theme.themeID,
@@ -881,14 +975,16 @@ export const applyRewrite = async (rewriteID, userID) => {
             contentID: updatedContent.id,
             newVersion: updatedContent.version,
             versionNumber: rewrite.versionNumber,
-            hasTheme: !!(content.theme && content.theme.themeID)
+            hasTheme: !!(content.theme && content.theme.themeID),
+            userType
         });
 
         return updatedContent;
     } catch (error) {
         logger.error('[RESUME_MODEL] Failed to apply rewrite', {
             error: error.message,
-            rewriteID
+            rewriteID,
+            userType
         });
         if (error instanceof AppError) throw error;
         throw new AppError(`Failed to apply rewrite: ${error.message}`, 500);
@@ -900,14 +996,15 @@ export const applyRewrite = async (rewriteID, userID) => {
  * Updates resume content with the selected rewrite's content
  * @param {number} rewriteID - Target rewrite ID to switch to
  * @param {number} userID - User ID
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Object with updated content and version info
  */
-export const switchRewriteVersion = async (rewriteID, userID) => {
+export const switchRewriteVersion = async (rewriteID, userID, userType = userTypeConstants.USER) => {
     try {
-        logger.info('[RESUME_MODEL] Switching rewrite version', { rewriteID, userID });
+        logger.info('[RESUME_MODEL] Switching rewrite version', { rewriteID, userID, userType });
 
         // Get target rewrite
-        const targetRewrite = await getRewriteByID(rewriteID, userID);
+        const targetRewrite = await getRewriteByID(rewriteID, userID, userType);
 
         if (targetRewrite.status !== 'completed') {
             throw new AppError('Cannot switch to an incomplete rewrite version', 400);
@@ -915,8 +1012,8 @@ export const switchRewriteVersion = async (rewriteID, userID) => {
 
         // If already active, just return current state with theme
         if (targetRewrite.isActive) {
-            const currentContent = await getResumeContentByAnalysisID(targetRewrite.analysisID, userID);
-            const currentTheme = await getUserTheme(currentContent.id, userID);
+            const currentContent = await getResumeContentByAnalysisID(targetRewrite.analysisID, userID, userType);
+            const currentTheme = await getUserTheme(currentContent.id, userID, userType);
             return {
                 content: currentContent,
                 rewrite: targetRewrite,
@@ -926,13 +1023,13 @@ export const switchRewriteVersion = async (rewriteID, userID) => {
         }
 
         // Apply the rewrite (handles all the switching logic including theme restoration)
-        const updatedContent = await applyRewrite(rewriteID, userID);
+        const updatedContent = await applyRewrite(rewriteID, userID, userType);
 
         // Get updated rewrite info (now includes theme)
-        const updatedRewrite = await getRewriteByID(rewriteID, userID);
+        const updatedRewrite = await getRewriteByID(rewriteID, userID, userType);
         
         // Get the current theme after restoration
-        const restoredTheme = await getUserTheme(updatedContent.id, userID);
+        const restoredTheme = await getUserTheme(updatedContent.id, userID, userType);
 
         return {
             content: updatedContent,
@@ -950,7 +1047,8 @@ export const switchRewriteVersion = async (rewriteID, userID) => {
     } catch (error) {
         logger.error('[RESUME_MODEL] Failed to switch rewrite version', {
             error: error.message,
-            rewriteID
+            rewriteID,
+            userType
         });
         if (error instanceof AppError) throw error;
         throw new AppError(`Failed to switch rewrite version: ${error.message}`, 500);
@@ -961,18 +1059,22 @@ export const switchRewriteVersion = async (rewriteID, userID) => {
  * Get the active rewrite for a resume/analysis
  * @param {number} analysisID - Analysis ID
  * @param {number} userID - User ID
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object|null>} Active rewrite or null
  */
-export const getActiveRewrite = async (analysisID, userID) => {
+export const getActiveRewrite = async (analysisID, userID, userType = userTypeConstants.USER) => {
     try {
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+        
         const activeRewrite = await db
             .select()
-            .from(resumeRewritesTable)
+            .from(tables.rewritesTable)
             .where(
                 and(
-                    eq(resumeRewritesTable.analysisID, analysisID),
-                    eq(resumeRewritesTable.userID, userID),
-                    eq(resumeRewritesTable.isActive, true)
+                    eq(tables.rewritesTable.analysisID, analysisID),
+                    eq(tables.rewritesTable[entityIDField], userID),
+                    eq(tables.rewritesTable.isActive, true)
                 )
             )
             .limit(1);
@@ -981,7 +1083,8 @@ export const getActiveRewrite = async (analysisID, userID) => {
     } catch (error) {
         logger.error('[RESUME_MODEL] Failed to get active rewrite', {
             error: error.message,
-            analysisID
+            analysisID,
+            userType
         });
         throw new AppError(`Failed to get active rewrite: ${error.message}`, 500);
     }
@@ -993,14 +1096,18 @@ export const getActiveRewrite = async (analysisID, userID) => {
  * Also restores the initial analysis summary
  * @param {number} analysisID - Analysis ID
  * @param {number} userID - User ID  
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Updated content
  */
-export const clearActiveRewrite = async (analysisID, userID) => {
+export const clearActiveRewrite = async (analysisID, userID, userType = userTypeConstants.USER) => {
     try {
-        logger.info('[RESUME_MODEL] Clearing active rewrite', { analysisID, userID });
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+        
+        logger.info('[RESUME_MODEL] Clearing active rewrite', { analysisID, userID, userType });
 
         // Get current content
-        const currentContent = await getResumeContentByAnalysisID(analysisID, userID);
+        const currentContent = await getResumeContentByAnalysisID(analysisID, userID, userType);
         
         if (!currentContent) {
             throw new AppError('Resume content not found', 404);
@@ -1011,10 +1118,10 @@ export const clearActiveRewrite = async (analysisID, userID) => {
         try {
             const analysisData = await db
                 .select({
-                    processedData: processedAndRawDataTable.processedData
+                    processedData: tables.processedDataTable.processedData
                 })
-                .from(processedAndRawDataTable)
-                .where(eq(processedAndRawDataTable.analysisID, analysisID))
+                .from(tables.processedDataTable)
+                .where(eq(tables.processedDataTable.analysisID, analysisID))
                 .limit(1);
 
             if (analysisData.length > 0 && analysisData[0].processedData) {
@@ -1041,12 +1148,12 @@ export const clearActiveRewrite = async (analysisID, userID) => {
 
         // Deactivate all rewrites for this analysis
         await db
-            .update(resumeRewritesTable)
+            .update(tables.rewritesTable)
             .set({ isActive: false, updatedAt: new Date() })
             .where(
                 and(
-                    eq(resumeRewritesTable.analysisID, analysisID),
-                    eq(resumeRewritesTable.userID, userID)
+                    eq(tables.rewritesTable.analysisID, analysisID),
+                    eq(tables.rewritesTable[entityIDField], userID)
                 )
             );
 
@@ -1064,22 +1171,24 @@ export const clearActiveRewrite = async (analysisID, userID) => {
         }
 
         const [updatedContent] = await db
-            .update(resumeContentTable)
+            .update(tables.contentTable)
             .set(updateData)
-            .where(eq(resumeContentTable.id, currentContent.id))
+            .where(eq(tables.contentTable.id, currentContent.id))
             .returning();
 
         logger.info('[RESUME_MODEL] ✅ Active rewrite cleared', {
             contentID: updatedContent.id,
             newVersion: updatedContent.version,
-            restoredInitialSummary: !!initialAnalysisSummary
+            restoredInitialSummary: !!initialAnalysisSummary,
+            userType
         });
 
         return updatedContent;
     } catch (error) {
         logger.error('[RESUME_MODEL] Failed to clear active rewrite', {
             error: error.message,
-            analysisID
+            analysisID,
+            userType
         });
         if (error instanceof AppError) throw error;
         throw new AppError(`Failed to clear active rewrite: ${error.message}`, 500);
@@ -1090,30 +1199,34 @@ export const clearActiveRewrite = async (analysisID, userID) => {
  * Get analysis data needed for creating rewrites
  * @param {number} analysisID - Analysis ID
  * @param {number} userID - User ID
+ * @param {string} userType - 'user' | 'candidate'
  * @returns {Promise<Object>} Analysis data with processed content
  */
-export const getAnalysisDataForRewrite = async (analysisID, userID) => {
+export const getAnalysisDataForRewrite = async (analysisID, userID, userType = userTypeConstants.USER) => {
     try {
-        logger.info('[RESUME_MODEL] Fetching analysis data for rewrite', { analysisID, userID });
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+        
+        logger.info('[RESUME_MODEL] Fetching analysis data for rewrite', { analysisID, userID, userType });
 
         const analysisData = await db
             .select({
-                analysisID: analysisTable.id,
-                analysisStatus: analysisTable.status,
-                documentID: userDocumentTable.id,
-                documentTitle: userDocumentTable.title,
-                fileURL: userDocumentTable.fileURL,
-                processedDataID: processedAndRawDataTable.id,
-                rawData: processedAndRawDataTable.rawData,
-                processedData: processedAndRawDataTable.processedData
+                analysisID: tables.analysisTable.id,
+                analysisStatus: tables.analysisTable.status,
+                documentID: tables.documentTable.id,
+                documentTitle: tables.documentTable.title,
+                fileURL: tables.documentTable.fileURL,
+                processedDataID: tables.processedDataTable.id,
+                rawData: tables.processedDataTable.rawData,
+                processedData: tables.processedDataTable.processedData
             })
-            .from(analysisTable)
-            .innerJoin(userDocumentTable, eq(analysisTable.documentID, userDocumentTable.id))
-            .innerJoin(processedAndRawDataTable, eq(analysisTable.id, processedAndRawDataTable.analysisID))
+            .from(tables.analysisTable)
+            .innerJoin(tables.documentTable, eq(tables.analysisTable.documentID, tables.documentTable.id))
+            .innerJoin(tables.processedDataTable, eq(tables.analysisTable.id, tables.processedDataTable.analysisID))
             .where(
                 and(
-                    eq(analysisTable.id, analysisID),
-                    eq(analysisTable.userID, userID)
+                    eq(tables.analysisTable.id, analysisID),
+                    eq(tables.analysisTable[entityIDField], userID)
                 )
             )
             .limit(1);
@@ -1126,12 +1239,13 @@ export const getAnalysisDataForRewrite = async (analysisID, userID) => {
             throw new AppError('Analysis must be completed before rewriting', 400);
         }
 
-        logger.info('[RESUME_MODEL] ✅ Analysis data fetched successfully');
+        logger.info('[RESUME_MODEL] ✅ Analysis data fetched successfully', { userType });
         return analysisData[0];
     } catch (error) {
         logger.error('[RESUME_MODEL] Failed to fetch analysis data', {
             error: error.message,
-            analysisID
+            analysisID,
+            userType
         });
         if (error instanceof AppError) throw error;
         throw new AppError(`Failed to fetch analysis data: ${error.message}`, 500);

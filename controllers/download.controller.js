@@ -3,12 +3,14 @@ import { sendSuccess } from "../utils/apiHelpers.js";
 import { validateInteger } from "../utils/validate-helper.js";
 import logger from "../middleware/logger.js";
 import downloadService from "../services/download.service.js";
+import { userTypeConstants } from "../utils/constants.js";
 
 /**
  * Download Controller
  * 
  * Handles resume PDF download endpoints with proper streaming
  * and content disposition headers for file downloads.
+ * Supports both regular users and candidates via userType.
  */
 
 /**
@@ -22,6 +24,7 @@ import downloadService from "../services/download.service.js";
  */
 export const downloadResumeController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { id } = req.params;
     const { 
         format = 'pdf',
@@ -33,6 +36,7 @@ export const downloadResumeController = asyncHandler(async (req, res, next) => {
 
     logger.info('[DOWNLOAD_CONTROLLER] Resume download requested', {
         userID,
+        userType,
         resumeContentID,
         format
     });
@@ -46,7 +50,8 @@ export const downloadResumeController = asyncHandler(async (req, res, next) => {
         userID,
         {
             showPageNumbers: showPageNumbers === 'true',
-            includeTimestamp: includeTimestamp === 'true'
+            includeTimestamp: includeTimestamp === 'true',
+            userType
         }
     );
 
@@ -71,6 +76,7 @@ export const downloadResumeController = asyncHandler(async (req, res, next) => {
  */
 export const downloadResumeByAnalysisController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { analysisId } = req.params;
     const { showPageNumbers, includeTimestamp } = req.query;
 
@@ -78,6 +84,7 @@ export const downloadResumeByAnalysisController = asyncHandler(async (req, res, 
 
     logger.info('[DOWNLOAD_CONTROLLER] Resume download by analysis requested', {
         userID,
+        userType,
         analysisId: validatedAnalysisID
     });
 
@@ -86,7 +93,8 @@ export const downloadResumeByAnalysisController = asyncHandler(async (req, res, 
         userID,
         {
             showPageNumbers: showPageNumbers === 'true',
-            includeTimestamp: includeTimestamp === 'true'
+            includeTimestamp: includeTimestamp === 'true',
+            userType
         }
     );
 
@@ -104,6 +112,7 @@ export const downloadResumeByAnalysisController = asyncHandler(async (req, res, 
  */
 export const downloadRewriteController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { id, rewriteId } = req.params;
     const { showPageNumbers, includeTimestamp } = req.query;
 
@@ -113,6 +122,7 @@ export const downloadRewriteController = asyncHandler(async (req, res, next) => 
 
     logger.info('[DOWNLOAD_CONTROLLER] Rewrite download requested', {
         userID,
+        userType,
         rewriteId: validatedRewriteID
     });
 
@@ -121,7 +131,8 @@ export const downloadRewriteController = asyncHandler(async (req, res, next) => 
         userID,
         {
             showPageNumbers: showPageNumbers === 'true',
-            includeTimestamp: includeTimestamp === 'true'
+            includeTimestamp: includeTimestamp === 'true',
+            userType
         }
     );
 
@@ -144,6 +155,7 @@ export const downloadRewriteController = asyncHandler(async (req, res, next) => 
  */
 export const previewResumeController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { id } = req.params;
     const { format = 'pdf' } = req.query;
 
@@ -151,13 +163,14 @@ export const previewResumeController = asyncHandler(async (req, res, next) => {
 
     logger.info('[DOWNLOAD_CONTROLLER] Resume preview requested', {
         userID,
+        userType,
         resumeContentID,
         format
     });
 
     if (format === 'html') {
         // Return HTML preview for debugging/testing
-        const html = await downloadService.getHTMLPreview(resumeContentID, userID);
+        const html = await downloadService.getHTMLPreview(resumeContentID, userID, userType);
         
         res.setHeader('Content-Type', 'text/html');
         res.send(html);
@@ -165,7 +178,7 @@ export const previewResumeController = asyncHandler(async (req, res, next) => {
     }
 
     // PDF preview
-    const result = await downloadService.getPreviewPDF(resumeContentID, userID);
+    const result = await downloadService.getPreviewPDF(resumeContentID, userID, userType);
 
     // Inline disposition for viewing in browser
     res.setHeader('Content-Type', result.contentType);
@@ -182,6 +195,7 @@ export const previewResumeController = asyncHandler(async (req, res, next) => {
  */
 export const downloadWithCustomThemeController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { id } = req.params;
     const { 
         themeId,
@@ -196,6 +210,7 @@ export const downloadWithCustomThemeController = asyncHandler(async (req, res, n
 
     logger.info('[DOWNLOAD_CONTROLLER] Custom theme download requested', {
         userID,
+        userType,
         resumeContentID,
         hasThemeId: !!themeId,
         hasOverrides: !!themeOverrides
@@ -208,7 +223,8 @@ export const downloadWithCustomThemeController = asyncHandler(async (req, res, n
         sectionOrder,
         showPageNumbers: showPageNumbers === true,
         includeTimestamp: includeTimestamp === true,
-        useCache: false  // Don't cache custom downloads
+        useCache: false,  // Don't cache custom downloads
+        userType
     };
 
     // If a specific theme ID is provided, we could fetch and apply it
@@ -239,18 +255,20 @@ export const downloadWithCustomThemeController = asyncHandler(async (req, res, n
  */
 export const getDownloadInfoController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
     const { id } = req.params;
 
     const resumeContentID = validateInteger(id, 'Resume ID');
 
     logger.info('[DOWNLOAD_CONTROLLER] Download info requested', {
         userID,
+        userType,
         resumeContentID
     });
 
     // Get resume data for metadata
     const downloadModel = await import('../models/download.model.js');
-    const resumeData = await downloadModel.default.getResumeForDownload(resumeContentID, userID);
+    const resumeData = await downloadModel.default.getResumeForDownload(resumeContentID, userID, userType);
 
     const info = {
         resumeContentID: resumeData.metadata.id,

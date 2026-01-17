@@ -1,19 +1,19 @@
 import { Router } from "express";
 import logger from "../../middleware/logger.js";
 import { sendSuccess } from "../../utils/apiHelpers.js";
-import { authenticateUser } from "../../middleware/authenticate-routes.js";
+import { commonAuthenticate } from "../../middleware/authenticate-routes.js";
 import { getUserByIdController } from "../../controllers/user.controller.js";
 import { createOrgByUserIDController, getOrgsByUserIDController } from "../../controllers/organisation.controller.js";
 import { createResumeController } from "../../controllers/resume-analysis.controller.js";
 
 /**
  * User Routes
- * All routes require user authentication
+ * All routes require authentication (supports both users and candidates)
  */
 
 const router = Router();
 
-router.use(authenticateUser);
+router.use(commonAuthenticate);
 
 router.get('/health', (req, res, next) => {
     logger.info("API v1 AUTH User health route accessed");
