@@ -2,21 +2,41 @@
 
 ## Overview
 
-Real-time resume analysis job monitoring using Server-Sent Events (SSE). 
+Real-time job monitoring using Server-Sent Events (SSE) for both Resume Analysis and Resume Rewrite operations.
 
-**Optimized for simplicity**: Just one endpoint, server handles everything!
+**Optimized for simplicity**: Just one endpoint per job type, server handles everything!
 
 ## Quick Start
 
+### Resume Analysis
 ```javascript
-// That's it! One line to monitor any job
+// Monitor analysis job
 const eventSource = new EventSource(
   `/api/v1/sse/job/${jobId}?queueName=resume-analysis`
 );
 
 eventSource.addEventListener('job_update', (e) => {
-  const { progress, message } = JSON.parse(e.data);
+  const { progress, message, status } = JSON.parse(e.data);
   console.log(`${progress}%: ${message}`);
+  if (status === 'completed') eventSource.close();
+});
+```
+
+### Resume Rewrite ⭐ NEW
+```javascript
+// Monitor rewrite job - dedicated endpoint!
+const eventSource = new EventSource(
+  `/api/v1/sse/rewrite/${jobId}`
+);
+
+eventSource.addEventListener('job_update', (e) => {
+  const { progress, message, status, data } = JSON.parse(e.data);
+  console.log(`${progress}%: ${message}`);
+  
+  if (status === 'completed') {
+    console.log('Rewrite complete!', data);
+    eventSource.close();
+  }
 });
 ```
 
@@ -32,18 +52,22 @@ Connect and subscribe to a specific job in **one API call**. The server:
 - ✅ Sends real-time progress updates
 - ✅ Cleans up when job completes
 
-**Endpoint**:
+**Endpoints**:
 ```
+# For analysis jobs
 GET /api/v1/sse/job/:jobId?queueName=resume-analysis
+
+# For rewrite jobs (auto-subscribes to resume-rewrite queue)
+GET /api/v1/sse/rewrite/:jobId
 ```
 
 **No manual connection ID needed** - server handles it all!
 
 ---
 
-## API Endpoint
+## API Endpoints
 
-### Monitor Job Progress
+### Monitor Analysis Job
 
 **URL**: `GET /api/v1/sse/job/:jobId`
 
@@ -53,6 +77,17 @@ GET /api/v1/sse/job/:jobId?queueName=resume-analysis
 **Example**:
 ```bash
 curl 'http://localhost:8000/api/v1/sse/job/resume-123-1699267200000?queueName=resume-analysis'
+```
+
+### Monitor Rewrite Job ⭐
+
+**URL**: `GET /api/v1/sse/rewrite/:jobId`
+
+Auto-subscribes to the `resume-rewrite` queue for progress updates.
+
+**Example**:
+```bash
+curl 'http://localhost:8000/api/v1/sse/rewrite/rewrite-456-1699267200000'
 ```
 
 **Initial Response** (SSE):
@@ -246,7 +281,9 @@ const cleanup = monitorJob(
 
 ## Complete Workflow
 
-### 1. Upload Resume
+### Resume Analysis Workflow
+
+#### 1. Upload Resume
 ```javascript
 // Get presigned URL
 const { data } = await fetch('/api/v1/upload/presigned-url', {
@@ -263,7 +300,7 @@ await fetch(data.uploadUrl, {
 });
 ```
 
-### 2. Add to Queue
+#### 2. Add to Queue
 ```javascript
 const job = await fetch('/api/v1/queue/add', {
   method: 'POST',
@@ -281,7 +318,7 @@ const job = await fetch('/api/v1/queue/add', {
 const jobId = job.data.jobId; // Use this for monitoring!
 ```
 
-### 3. Monitor Progress
+#### 3. Monitor Progress
 ```javascript
 const eventSource = new EventSource(`/api/v1/sse/job/${jobId}`);
 
@@ -294,6 +331,144 @@ eventSource.addEventListener('job_update', (e) => {
     eventSource.close();
   }
 });
+```
+
+### Resume Rewrite Workflow ⭐
+
+#### 1. Create Rewrite Job
+```javascript
+// Create rewrite from resume or analysis
+const response = await fetch(`/api/v1/resumes/${resumeId}/rewrites`, {
+  method: 'POST',
+  headers: { 
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  },
+  body: JSON.stringify({
+    versionLabel: 'ATS Optimized v1',
+    targetATSScore: 90,
+    focusAreas: ['experience', 'skills'],
+    optimizationLevel: 'comprehensive'
+  })
+}).then(r => r.json());
+
+const { jobId, id: rewriteId } = response.data;
+```
+
+#### 2. Connect to SSE for Live Updates
+```javascript
+const eventSource = new EventSource(`/api/v1/sse/rewrite/${jobId}`);
+
+eventSource.addEventListener('connected', () => {
+  console.log('Connected to rewrite job monitoring');
+});
+
+eventSource.addEventListener('job_update', (e) => {
+  const data = JSON.parse(e.data);
+  
+  // Update UI with progress
+  updateProgressBar(data.progress);
+  updateStatusMessage(data.message);
+  
+  // Handle stages
+  switch(data.stage) {
+    case 'PREPARING':
+      showPreparingUI();
+      break;
+    case 'OPTIMIZING':
+      showOptimizingUI();
+      break;
+    case 'APPLYING':
+      showApplyingUI();
+      break;
+  }
+  
+  // Handle completion
+  if (data.status === 'completed') {
+    console.log('Rewrite completed!', data.data);
+    // data.data contains: rewriteID, analysisID, scores, autoApplied
+    showCompletedUI(data.data);
+    eventSource.close();
+  }
+  
+  // Handle failure
+  if (data.status === 'failed') {
+    console.error('Rewrite failed:', data.error);
+    showErrorUI(data.error);
+    eventSource.close();
+  }
+});
+
+eventSource.onerror = () => {
+  console.error('SSE connection error');
+  eventSource.close();
+};
+```
+
+#### 3. Rewrite Progress Stages
+
+| Stage | Progress | Description |
+|-------|----------|-------------|
+| `INIT` | 0% | Initializing resume rewrite |
+| `PREPARING` | 15% | Preparing current content for optimization |
+| `OPTIMIZING` | 50% | AI is optimizing resume content |
+| `SAVING` | 85% | Saving optimized content |
+| `APPLYING` | 92% | Applying rewrite to resume |
+| `COMPLETE` | 100% | Resume optimization completed |
+
+#### 4. React Component Example
+
+```jsx
+import { useEffect, useState } from 'react';
+
+function RewriteProgress({ jobId, onComplete }) {
+  const [progress, setProgress] = useState(0);
+  const [message, setMessage] = useState('Connecting...');
+  const [stage, setStage] = useState('INIT');
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const eventSource = new EventSource(`/api/v1/sse/rewrite/${jobId}`);
+
+    eventSource.addEventListener('job_update', (e) => {
+      const data = JSON.parse(e.data);
+      
+      setProgress(data.progress);
+      setMessage(data.message);
+      setStage(data.stage);
+
+      if (data.status === 'completed') {
+        onComplete(data.data);
+        eventSource.close();
+      } else if (data.status === 'failed') {
+        setError(data.error);
+        eventSource.close();
+      }
+    });
+
+    eventSource.onerror = () => {
+      setError('Connection lost');
+      eventSource.close();
+    };
+
+    return () => eventSource.close();
+  }, [jobId, onComplete]);
+
+  if (error) {
+    return <div className="error">Rewrite failed: {error}</div>;
+  }
+
+  return (
+    <div className="rewrite-progress">
+      <div className="stage-indicator">{stage}</div>
+      <div className="progress-bar">
+        <div className="fill" style={{ width: `${progress}%` }} />
+      </div>
+      <p>{message}</p>
+      <span>{progress}%</span>
+    </div>
+  );
+}
 ```
 
 ---
@@ -320,11 +495,12 @@ console.log(stats);
 
 ## Key Features
 
-1. **✅ One Endpoint**: `/api/v1/sse/job/:jobId`
+1. **✅ Two Endpoints**: `/api/v1/sse/job/:jobId` (analysis) and `/api/v1/sse/rewrite/:jobId` (rewrite)
 2. **✅ Server-Side IDs**: No UUID library needed in frontend
 3. **✅ Auto-Subscribe**: Connect and subscribe in one call
 4. **✅ Auto-Cleanup**: Connection closes when job completes
 5. **✅ Simple**: Minimal frontend code required
+6. **✅ Real-time**: Instant progress updates for both analysis and rewrite jobs
 
 ---
 

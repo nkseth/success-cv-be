@@ -5,7 +5,7 @@
  * Each renderer takes section data and theme config, returns HTML string.
  */
 
-import { escapeHtml, formatDate, formatDateRange } from "./helpers.js";
+import { escapeHtml, sanitizeHtml, formatDate, formatDateRange } from "./helpers.js";
 
 /**
  * Render Personal Info / Header Section
@@ -113,14 +113,21 @@ export const renderExperience = (experience, config) => {
 
         const dateStr = formatDateRange(startDate, current ? 'Present' : endDate);
         
+        // Render achievements only if present and non-empty
         let achievementsHTML = '';
-        if (achievements && achievements.length > 0) {
+        if (achievements && Array.isArray(achievements) && achievements.length > 0) {
             achievementsHTML = `
                 <ul class="entry-achievements item-list">
                     ${achievements.map(ach => `<li>${escapeHtml(ach)}</li>`).join('')}
                 </ul>
             `;
         }
+
+        // Description can contain HTML content from rich text editor
+        // Use sanitizeHtml to allow safe HTML while preventing XSS
+        const descriptionHTML = description 
+            ? `<div class="entry-description">${sanitizeHtml(description)}</div>` 
+            : '';
 
         return `
             <div class="entry-item experience-item">
@@ -134,7 +141,7 @@ export const renderExperience = (experience, config) => {
                         ${location ? `<p class="entry-location">${escapeHtml(location)}</p>` : ''}
                     </div>
                 </div>
-                ${description ? `<p class="entry-description">${escapeHtml(description)}</p>` : ''}
+                ${descriptionHTML}
                 ${achievementsHTML}
             </div>
         `;

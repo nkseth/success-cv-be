@@ -99,7 +99,8 @@ export const getResumeForDownload = async (resumeContentID, userID) => {
                 customOverrides: userTheme.customOverrides,
                 sectionVisibility: userTheme.sectionVisibility,
                 sectionOrder: userTheme.sectionOrder,
-                isATSOptimized: userTheme.isATSOptimized
+                isATSOptimized: userTheme.isATSOptimized,
+                updatedAt: userTheme.updatedAt
             } : null,
             scores: content.currentScores || {}
         };
@@ -253,7 +254,8 @@ export const getRewriteForDownload = async (rewriteID, userID) => {
                 customOverrides: userTheme.customOverrides,
                 sectionVisibility: userTheme.sectionVisibility,
                 sectionOrder: userTheme.sectionOrder,
-                isATSOptimized: userTheme.isATSOptimized
+                isATSOptimized: userTheme.isATSOptimized,
+                updatedAt: userTheme.updatedAt
             } : null,
             scores: rewrittenContent.scores || rewrite.improvements?.after || {}
         };

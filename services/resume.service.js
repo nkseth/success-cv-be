@@ -53,11 +53,11 @@ export const createResumeFromAnalysis = async (userID, analysisID, analysisData)
         // Extract and structure resume content
         const contentData = extractResumeContent(parsed);
 
-        // Extract analysis report (issues, improvements, quality scores)
-        const analysisReport = extractAnalysisReport(parsed);
+        // Extract lightweight analysis summary (counts and initial version marker)
+        const analysisSummary = extractAnalysisSummary(parsed);
 
-        // Create resume content record with embedded analysis report
-        const content = await resumeModel.createResumeContent(userID, analysisID, contentData, analysisReport);
+        // Create resume content record with lightweight analysis summary
+        const content = await resumeModel.createResumeContent(userID, analysisID, contentData, analysisSummary);
 
         // Apply default theme automatically so user gets a properly themed resume
         try {
@@ -149,20 +149,46 @@ function extractResumeContent(analysisData) {
         keywords: analysisData.keywords || []
     };
 
-    // Extract experiences - mapping AI schema fields (highlights instead of achievements)
-    const experience = (analysisData.experiences || analysisData.work_experience || []).map((exp, idx) => ({
-        id: `exp_${idx + 1}`,
-        company: exp.company || exp.organization || '',
-        position: exp.position || exp.title || exp.role || '',
-        location: exp.location || '',
-        startDate: exp.start_date || exp.startDate || '',
-        endDate: exp.end_date || exp.endDate || '',
-        current: exp.current || exp.is_current || (exp.end_date === '' || exp.end_date?.toLowerCase() === 'present'),
-        description: exp.summary || exp.description || '',
-        achievements: exp.highlights || exp.achievements || exp.bullet_points || [],
-        keywords: exp.keywords || [],
-        website: exp.website || ''
-    }));
+    // Extract experiences - mapping AI schema fields
+    // Convert summary and highlights into HTML description format
+    const experience = (analysisData.experiences || analysisData.work_experience || []).map((exp, idx) => {
+        // Build HTML description from summary and highlights
+        const summaryText = exp.summary || exp.description || '';
+        const highlights = exp.highlights || exp.achievements || exp.bullet_points || [];
+        
+        let description = '';
+        
+        // Add summary paragraph if present
+        if (summaryText) {
+            description += `<p>${summaryText}</p>`;
+        }
+        
+        // Add highlights as bullet list if present
+        if (highlights && highlights.length > 0) {
+            description += '<ul>';
+            highlights.forEach(highlight => {
+                if (highlight && highlight.trim()) {
+                    description += `<li>${highlight}</li>`;
+                }
+            });
+            description += '</ul>';
+        }
+        
+        return {
+            id: `exp_${idx + 1}`,
+            company: exp.company || exp.organization || '',
+            position: exp.position || exp.title || exp.role || '',
+            location: exp.location || '',
+            startDate: exp.start_date || exp.startDate || '',
+            endDate: exp.end_date || exp.endDate || '',
+            current: exp.current || exp.is_current || (exp.end_date === '' || exp.end_date?.toLowerCase() === 'present'),
+            description: description,
+            // Keep achievements empty since content is now in description HTML
+            achievements: [],
+            keywords: exp.keywords || [],
+            website: exp.website || ''
+        };
+    });
 
     // Extract education - mapping AI schema fields (area instead of field, study_type instead of degree)
     const education = (analysisData.education || []).map((edu, idx) => ({
@@ -227,16 +253,36 @@ function extractResumeContent(analysisData) {
             id: 'projects',
             title: 'Projects',
             type: 'projects',
-            content: analysisData.projects.map((proj, idx) => ({
-                id: `proj_${idx + 1}`,
-                name: proj.name || proj.title || '',
-                description: proj.description || '',
-                technologies: proj.technologies || proj.tech_stack || [],
-                link: proj.link || proj.url || '',
-                highlights: proj.highlights || [],
-                startDate: proj.start_date || proj.startDate || '',
-                endDate: proj.end_date || proj.endDate || ''
-            }))
+            content: analysisData.projects.map((proj, idx) => {
+                // Build HTML description from description and highlights
+                const descText = proj.description || '';
+                const highlights = proj.highlights || [];
+                
+                let description = '';
+                if (descText) {
+                    description += `<p>${descText}</p>`;
+                }
+                if (highlights && highlights.length > 0) {
+                    description += '<ul>';
+                    highlights.forEach(h => {
+                        if (h && h.trim()) {
+                            description += `<li>${h}</li>`;
+                        }
+                    });
+                    description += '</ul>';
+                }
+                
+                return {
+                    id: `proj_${idx + 1}`,
+                    name: proj.name || proj.title || '',
+                    description: description,
+                    technologies: proj.technologies || proj.tech_stack || [],
+                    link: proj.link || proj.url || '',
+                    highlights: [],
+                    startDate: proj.start_date || proj.startDate || '',
+                    endDate: proj.end_date || proj.endDate || ''
+                };
+            })
         });
     }
 
@@ -294,15 +340,35 @@ function extractResumeContent(analysisData) {
             id: 'volunteers',
             title: 'Volunteer Experience',
             type: 'volunteers',
-            content: analysisData.volunteers.map((vol, idx) => ({
-                id: `vol_${idx + 1}`,
-                organization: vol.organization || '',
-                role: vol.role || '',
-                startDate: vol.start_date || vol.startDate || '',
-                endDate: vol.end_date || vol.endDate || '',
-                description: vol.description || '',
-                highlights: vol.highlights || []
-            }))
+            content: analysisData.volunteers.map((vol, idx) => {
+                // Build HTML description from description and highlights
+                const descText = vol.description || '';
+                const highlights = vol.highlights || [];
+                
+                let description = '';
+                if (descText) {
+                    description += `<p>${descText}</p>`;
+                }
+                if (highlights && highlights.length > 0) {
+                    description += '<ul>';
+                    highlights.forEach(h => {
+                        if (h && h.trim()) {
+                            description += `<li>${h}</li>`;
+                        }
+                    });
+                    description += '</ul>';
+                }
+                
+                return {
+                    id: `vol_${idx + 1}`,
+                    organization: vol.organization || '',
+                    role: vol.role || '',
+                    startDate: vol.start_date || vol.startDate || '',
+                    endDate: vol.end_date || vol.endDate || '',
+                    description: description,
+                    highlights: []
+                };
+            })
         });
     }
 
@@ -382,96 +448,64 @@ function extractResumeContent(analysisData) {
 }
 
 /**
- * Extract analysis report from AI analysis data
- * This contains issues, improvements, and quality scores for the resume
+ * Extract lightweight analysis summary from AI analysis data
+ * Only contains counts and version marker - full analysis is fetched via analysisID
  * @param {Object} analysisData - Raw analysis data from AI
- * @returns {Object} Structured analysis report
+ * @returns {Object} Lightweight analysis summary
  */
-function extractAnalysisReport(analysisData) {
-    logger.info('[RESUME_SERVICE] Extracting analysis report');
+function extractAnalysisSummary(analysisData) {
+    logger.info('[RESUME_SERVICE] Extracting lightweight analysis summary');
     
-    const analysisReport = {
-        // Critical mistakes that must be fixed
-        criticalMistakes: (analysisData.critical_mistakes || []).map(mistake => ({
-            issue: mistake.issue || mistake.mistake || mistake,
-            impact: mistake.impact || 'High - may cause resume rejection',
-            fixSuggestion: mistake.fix_suggestion || mistake.suggestion || mistake.fix || ''
-        })),
-        
-        // Major issues that should be addressed
-        majorIssues: (analysisData.major_issues || []).map(issue => ({
-            issue: issue.issue || issue,
-            impact: issue.impact || 'Medium - reduces resume effectiveness',
-            fixSuggestion: issue.fix_suggestion || issue.suggestion || issue.fix || ''
-        })),
-        
-        // Minor improvements for polish
-        minorImprovements: (analysisData.minor_improvements || []).map(improvement => ({
-            area: improvement.area || improvement.section || 'General',
-            suggestion: improvement.suggestion || improvement.improvement || improvement
-        })),
-        
-        // Optimization opportunities
-        optimizationOpportunities: analysisData.optimization_opportunities || [],
-        
-        // Quality scores from analysis
-        resumeQuality: {
-            atsCompatibilityScore: analysisData.resume_quality?.ats_compatibility_score || 0,
-            contentQualityScore: analysisData.resume_quality?.content_quality_score || 0,
-            formattingScore: analysisData.resume_quality?.formatting_design_score || analysisData.resume_quality?.formatting_score || 0,
-            grammarScore: analysisData.resume_quality?.grammar_language_score || 0,
-            professionalBrandingScore: analysisData.resume_quality?.professional_branding_score || 0,
-            completenessScore: analysisData.resume_quality?.completeness_score || 0,
-            overallQualityScore: analysisData.resume_quality?.overall_quality_score || 0,
-            improvementPoints: analysisData.resume_quality?.improvement_points || 0
+    const criticalCount = (analysisData.critical_mistakes || []).length;
+    const majorCount = (analysisData.major_issues || []).length;
+    const minorCount = (analysisData.minor_improvements || []).length;
+    
+    const analysisSummary = {
+        // Issue counts by severity
+        issuesCounts: {
+            critical: criticalCount,
+            major: majorCount,
+            minor: minorCount
         },
         
-        // Relevance scores
-        relevanceScores: {
-            overallScore: analysisData.relevance?.['Overall Score'] || 0,
-            skillsRelevance: analysisData.relevance?.['Skills Relevance'] || 0,
-            workExperience: analysisData.relevance?.['Work Experience'] || 0,
-            education: analysisData.relevance?.['Education'] || 0
-        },
+        // Initial summary message
+        improvementSummary: criticalCount > 0 
+            ? `Found ${criticalCount} critical issue(s), ${majorCount} major issue(s), and ${minorCount} minor improvement(s)`
+            : majorCount > 0
+                ? `Found ${majorCount} major issue(s) and ${minorCount} minor improvement(s)`
+                : minorCount > 0
+                    ? `Found ${minorCount} minor improvement(s)`
+                    : 'No significant issues found',
         
-        // Job fit score
-        jobFitScore: analysisData.JobFitScore || 0,
+        // No score change for initial analysis
+        scoreChange: null,
         
-        // Summary counts for quick reference
-        summary: {
-            totalCritical: (analysisData.critical_mistakes || []).length,
-            totalMajor: (analysisData.major_issues || []).length,
-            totalMinor: (analysisData.minor_improvements || []).length,
-            totalOptimizations: (analysisData.optimization_opportunities || []).length
-        },
-        
-        // Version marker to track source
+        // Version marker
         version: 'initial',
-        extractedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString()
     };
     
-    logger.info('[RESUME_SERVICE] ✅ Analysis report extracted', {
-        criticalCount: analysisReport.summary.totalCritical,
-        majorCount: analysisReport.summary.totalMajor,
-        minorCount: analysisReport.summary.totalMinor,
-        atsScore: analysisReport.resumeQuality.atsCompatibilityScore
+    logger.info('[RESUME_SERVICE] ✅ Analysis summary extracted', {
+        criticalCount,
+        majorCount,
+        minorCount
     });
     
-    return analysisReport;
+    return analysisSummary;
 }
 
 /**
  * Get resume by ID with full details
- * Returns unified response with content, analysisReport, rewrites (each with their own analysis)
+ * Returns unified response with content, analysisSummary, rewrites (each with their own summary)
  * @param {number} contentID - Resume content ID
  * @param {number} userID - User ID
- * @returns {Promise<Object>} Resume with theme info and analysis
+ * @returns {Promise<Object>} Resume with theme info and analysis summary
  */
 export const getResumeByID = async (contentID, userID) => {
     try {
         logger.info('[RESUME_SERVICE] Fetching resume', { contentID, userID });
 
-        // Get resume content (now includes analysisReport)
+        // Get resume content (now includes analysisSummary)
         const content = await resumeModel.getResumeContentByID(contentID, userID);
 
         // Get applied theme if any
@@ -503,14 +537,14 @@ export const getResumeByID = async (contentID, userID) => {
                 // Override currentScores with normalized structure
                 currentScores: normalizedContentScores
             },
-            // Provide analysisReport at top level for easy access
-            // (it's also in content.analysisReport for completeness)
-            analysisReport: content.analysisReport || null,
+            // Provide analysisSummary at top level for easy access
+            // (it's also in content.analysisSummary for completeness)
+            analysisSummary: content.analysisSummary || null,
             theme: theme || null,
-            // Include analysis report in each rewrite for version switching
+            // Include rewriteSummary in each rewrite for version switching
             rewrites: rewrites.map(r => {
                 // Normalize rewrite scores to match content structure
-                const rewriteScores = r.rewrittenContent?.scores || r.analysisReport?.newScores || null;
+                const rewriteScores = r.rewrittenContent?.scores || r.rewriteSummary?.scoreComparison?.after || null;
                 const normalizedRewriteScores = rewriteScores ? {
                     atsScore: rewriteScores.atsScore || 0,
                     contentScore: rewriteScores.contentScore || 0,
@@ -533,7 +567,7 @@ export const getResumeByID = async (contentID, userID) => {
                     isActive: r.isActive,
                     // Include normalized scores for this specific rewrite version
                     scores: normalizedRewriteScores,
-                    analysisReport: r.analysisReport || null,
+                    rewriteSummary: r.rewriteSummary || null,
                     improvements: r.improvements || null,
                     createdAt: r.createdAt,
                     completedAt: r.completedAt
@@ -822,7 +856,7 @@ export const getRewrite = async (rewriteID, userID) => {
             wasModifiedAfterApply: rewrite.wasModifiedAfterApply,
             optimizationSettings: rewrite.optimizationSettings,
             improvements: rewrite.improvements,
-            analysisReport: rewrite.analysisReport,
+            rewriteSummary: rewrite.rewriteSummary,
             rewrittenContent: rewrite.status === 'completed' ? rewrite.rewrittenContent : null,
             sourceContentSnapshot: rewrite.sourceContentSnapshot,
             createdAt: rewrite.createdAt,
@@ -851,13 +885,15 @@ export const getRewritesByAnalysis = async (analysisID, userID, options = {}) =>
         
         const formattedRewrites = rewrites.map(r => ({
             id: r.id,
+            resumeId: r.resumeContentID,
+            analysisId: r.analysisID,
             status: r.status,
             versionNumber: r.versionNumber,
             versionLabel: r.versionLabel,
             isActive: r.isActive,
             wasModifiedAfterApply: r.wasModifiedAfterApply,
             improvements: r.improvements,
-            analysisReport: r.analysisReport,
+            rewriteSummary: r.rewriteSummary,
             scores: r.rewrittenContent?.scores || null,
             createdAt: r.createdAt,
             completedAt: r.completedAt,
@@ -946,7 +982,7 @@ export const switchRewriteVersion = async (rewriteID, userID) => {
                 skills: result.content.skills,
                 additionalSections: result.content.additionalSections,
                 currentScores: result.content.currentScores,
-                analysisReport: result.content.analysisReport
+                analysisSummary: result.content.analysisSummary
             },
             activeRewrite: result.rewrite,
             message: result.message
@@ -982,7 +1018,7 @@ export const getActiveRewrite = async (analysisID, userID) => {
             wasModifiedAfterApply: activeRewrite.wasModifiedAfterApply,
             appliedAt: activeRewrite.appliedAt,
             improvements: activeRewrite.improvements,
-            analysisReport: activeRewrite.analysisReport
+            rewriteSummary: activeRewrite.rewriteSummary
         };
     } catch (error) {
         logger.error('[RESUME_SERVICE] Failed to get active rewrite', {
@@ -1048,7 +1084,7 @@ export const compareRewriteVersions = async (rewriteID1, rewriteID2, userID) => 
                 isActive: rewrite1.isActive,
                 content: rewrite1.rewrittenContent,
                 improvements: rewrite1.improvements,
-                analysisReport: rewrite1.analysisReport,
+                rewriteSummary: rewrite1.rewriteSummary,
                 createdAt: rewrite1.createdAt
             },
             version2: {
@@ -1059,7 +1095,7 @@ export const compareRewriteVersions = async (rewriteID1, rewriteID2, userID) => 
                 isActive: rewrite2.isActive,
                 content: rewrite2.rewrittenContent,
                 improvements: rewrite2.improvements,
-                analysisReport: rewrite2.analysisReport,
+                rewriteSummary: rewrite2.rewriteSummary,
                 createdAt: rewrite2.createdAt
             }
         };
@@ -1362,9 +1398,15 @@ CRITICAL RULES:
 5. Preserve factual information (company names, dates, roles)
 6. Target ATS Score: ${options.targetATSScore || 85}%
 
+EXPERIENCE DESCRIPTION FORMAT:
+- The description field can contain HTML content (e.g., <p>, <ul>, <li>, <strong>)
+- You can put bullet points INSIDE description using HTML: <ul><li>Achievement 1</li><li>Achievement 2</li></ul>
+- The achievements array is OPTIONAL - use only if you want separate plain-text bullets
+- If the input has HTML in description, preserve that format and enhance the content
+
 OUTPUT FORMAT:
 - summary: { text: "optimized summary", keywords: ["keyword1", "keyword2"] }
-- experience: array of { company, position, location, startDate, endDate, current, description, achievements: [] }
+- experience: array of { company, position, location, startDate, endDate, current, description (can contain HTML), achievements: [] (optional) }
 - skills: { technical: [], soft: [], tools: [], languages: [], certifications: [] }
 - estimatedAtsScore: number (0-100)
 - fixesSummary: "Brief description of improvements made"`;

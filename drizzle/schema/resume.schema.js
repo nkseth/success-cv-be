@@ -86,19 +86,18 @@ export const resumeContentTable = pgTable("resume_content", {
     currentScores: json(), // { atsScore, contentScore, formatScore, overallScore }
     
     /**
-     * Analysis report containing issues and improvement suggestions.
-     * For initial upload: Contains issues found during analysis
-     * When rewrite is active: Contains issues resolved vs remaining
+     * Lightweight analysis summary for display purposes.
+     * Full analysis data lives in processedAndRawDataTable and is fetched via analysisID.
+     * When a rewrite is active, this shows what was improved.
      * Structure: {
-     *   criticalMistakes: Array<{ issue, impact, fix_suggestion }>,
-     *   majorIssues: Array<{ issue, impact, fix_suggestion }>,
-     *   minorImprovements: Array<{ area, suggestion }>,
-     *   resumeQuality: { ats_compatibility_score, content_quality_score, ... },
-     *   optimizationOpportunities: Array<string>,
-     *   version: 'initial' | 'rewrite_v1' | 'rewrite_v2' | ...
+     *   issuesCounts: { critical: number, major: number, minor: number },
+     *   improvementSummary: string (what was fixed/changed),
+     *   scoreChange: { before: number, after: number },
+     *   version: 'initial' | 'rewrite_v1' | 'rewrite_v2' | ...,
+     *   updatedAt: timestamp
      * }
      */
-    analysisReport: json(),
+    analysisSummary: json(),
     
     // Version tracking
     version: integer().default(1).notNull(),
@@ -171,16 +170,17 @@ export const resumeRewritesTable = pgTable("resume_rewrites", {
     improvements: json(), // { before: scores, after: scores, changes: [] }
     
     /**
-     * Post-rewrite analysis report showing what was fixed.
+     * Lightweight summary of what was fixed/improved in this rewrite.
+     * Full analysis comparison can be fetched via analysisID.
      * Structure: {
-     *   resolvedIssues: Array<{ issue, howFixed }>,
-     *   remainingIssues: Array<{ issue, impact, fix_suggestion }>,
-     *   newScores: { atsScore, contentScore, ... },
      *   improvementSummary: string,
-     *   version: 'rewrite_v1' | 'rewrite_v2' | ...
+     *   resolvedCounts: { critical: number, major: number, minor: number },
+     *   scoreComparison: { before: { atsScore, ... }, after: { atsScore, ... }, improvement: { atsScore, ... } },
+     *   version: 'rewrite_v1' | 'rewrite_v2' | ...,
+     *   generatedAt: timestamp
      * }
      */
-    analysisReport: json(),
+    rewriteSummary: json(),
     
     // Whether this rewrite is currently active (applied to resumeContent)
     isActive: boolean().default(false).notNull(),
@@ -287,7 +287,7 @@ export const candidateResumeContentTable = pgTable("candidate_resume_content", {
     additionalSections: json(),
     
     currentScores: json(),
-    analysisReport: json(), // Same structure as user resume analysisReport
+    analysisSummary: json(), // Same structure as user resume analysisSummary
     version: integer().default(1).notNull(),
     lastEditType: varchar({ length: 20 }).default('initial'),
     lastEditedSection: varchar({ length: 50 }),
@@ -316,7 +316,7 @@ export const candidateResumeRewritesTable = pgTable("candidate_resume_rewrites",
     optimizationSettings: json(),
     rewrittenContent: json(),
     improvements: json(),
-    analysisReport: json(), // Same structure as user resume rewrite analysisReport
+    rewriteSummary: json(), // Same structure as user resume rewrite rewriteSummary
     
     isActive: boolean().default(false).notNull(),
     appliedAt: timestamp(),

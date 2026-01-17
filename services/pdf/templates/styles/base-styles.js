@@ -235,6 +235,42 @@ export const getBaseStyles = (config) => {
             line-height: var(--line-height);
         }
 
+        /* HTML content within description (from rich text editors) */
+        .entry-description p {
+            margin-bottom: var(--spacing-line);
+        }
+
+        .entry-description p:last-child {
+            margin-bottom: 0;
+        }
+
+        .entry-description ul,
+        .entry-description ol {
+            margin-top: var(--spacing-line);
+            margin-bottom: var(--spacing-line);
+            padding-left: 18pt;
+        }
+
+        .entry-description li {
+            font-size: var(--font-size-body);
+            margin-bottom: var(--spacing-line);
+            line-height: var(--line-height);
+        }
+
+        .entry-description li:last-child {
+            margin-bottom: 0;
+        }
+
+        .entry-description strong,
+        .entry-description b {
+            font-weight: var(--font-weight-semibold);
+        }
+
+        .entry-description em,
+        .entry-description i {
+            font-style: italic;
+        }
+
         .entry-achievements {
             margin-top: var(--spacing-line);
             padding-left: 18pt;

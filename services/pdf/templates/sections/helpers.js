@@ -106,6 +106,61 @@ export const nl2br = (text) => {
 };
 
 /**
+ * Sanitize HTML content - allows safe HTML tags while preventing XSS
+ * Use this for content that may contain HTML (like experience descriptions)
+ * @param {string} html - HTML string to sanitize
+ * @returns {string} Sanitized HTML string
+ */
+export const sanitizeHtml = (html) => {
+    if (html === null || html === undefined) return '';
+    if (typeof html !== 'string') return String(html);
+    
+    // If content doesn't look like HTML, escape it
+    if (!/<[a-z][\s\S]*>/i.test(html)) {
+        return escapeHtml(html);
+    }
+    
+    // Allow safe HTML tags commonly used in rich text editors
+    const allowedTags = ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 'ul', 'ol', 'li', 'span', 'div', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+    const allowedAttributes = ['href', 'target', 'class', 'style'];
+    
+    // Remove script tags and event handlers completely
+    let sanitized = html
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+        .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '')
+        .replace(/on\w+\s*=\s*[^\s>]+/gi, '')
+        .replace(/javascript:/gi, '');
+    
+    // Remove disallowed tags but keep their content
+    sanitized = sanitized.replace(/<(\/?)([a-z][a-z0-9]*)([^>]*)>/gi, (match, close, tag, attrs) => {
+        const lowerTag = tag.toLowerCase();
+        if (!allowedTags.includes(lowerTag)) {
+            return ''; // Remove disallowed tags
+        }
+        
+        // Filter attributes for allowed tags
+        if (!close && attrs) {
+            const filteredAttrs = attrs.replace(/([a-z-]+)\s*=\s*["']([^"']*)["']/gi, (attrMatch, attrName, attrValue) => {
+                if (allowedAttributes.includes(attrName.toLowerCase())) {
+                    // Additional check for href to prevent javascript:
+                    if (attrName.toLowerCase() === 'href' && attrValue.toLowerCase().includes('javascript:')) {
+                        return '';
+                    }
+                    return attrMatch;
+                }
+                return '';
+            });
+            return `<${close}${tag}${filteredAttrs}>`;
+        }
+        
+        return match;
+    });
+    
+    return sanitized;
+};
+
+/**
  * Generate a unique ID
  * @param {string} prefix - ID prefix
  * @returns {string} Unique ID
@@ -146,6 +201,7 @@ export const toStyleString = (styles) => {
 
 export default {
     escapeHtml,
+    sanitizeHtml,
     formatDate,
     formatDateRange,
     truncateText,

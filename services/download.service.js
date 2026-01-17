@@ -32,23 +32,10 @@ export const downloadResumePDF = async (resumeContentID, userID, options = {}) =
             options
         });
 
-        // Check cache first (if caching enabled)
-        if (options.useCache !== false) {
-            const cacheKey = buildCacheKey('pdf', resumeContentID, options);
-            const cachedPDF = await getCachedPDF(cacheKey);
-            if (cachedPDF) {
-                logger.info('[DOWNLOAD_SERVICE] ✅ Returning cached PDF', {
-                    resumeContentID,
-                    durationMs: Date.now() - startTime
-                });
-                return cachedPDF;
-            }
-        }
-
-        // Get resume data for rendering
+        // Get resume data for rendering (needed for cache key and PDF generation)
         const resumeData = await downloadModel.getResumeForDownload(resumeContentID, userID);
 
-        // Build theme configuration
+        // Build theme configuration - this includes all custom overrides
         const themeConfig = buildThemeConfig(resumeData.theme, options.themeOverrides);
 
         // Apply section visibility/order from user preferences or options
@@ -63,6 +50,24 @@ export const downloadResumePDF = async (resumeContentID, userID, options = {}) =
         if (options.sectionOrder) {
             themeConfig.sections = themeConfig.sections || {};
             themeConfig.sections.order = options.sectionOrder;
+        }
+
+        // Check cache with theme-aware cache key
+        if (options.useCache !== false) {
+            const cacheKey = buildCacheKey('pdf', resumeContentID, {
+                ...options,
+                // Include theme updatedAt to invalidate cache when theme changes
+                themeUpdatedAt: resumeData.theme?.updatedAt,
+                themeCustomOverrides: resumeData.theme?.customOverrides
+            });
+            const cachedPDF = await getCachedPDF(cacheKey);
+            if (cachedPDF) {
+                logger.info('[DOWNLOAD_SERVICE] ✅ Returning cached PDF', {
+                    resumeContentID,
+                    durationMs: Date.now() - startTime
+                });
+                return cachedPDF;
+            }
         }
 
         // Generate PDF
@@ -90,9 +95,13 @@ export const downloadResumePDF = async (resumeContentID, userID, options = {}) =
             }
         };
 
-        // Cache the result
+        // Cache the result with theme-aware cache key
         if (options.useCache !== false) {
-            const cacheKey = buildCacheKey('pdf', resumeContentID, options);
+            const cacheKey = buildCacheKey('pdf', resumeContentID, {
+                ...options,
+                themeUpdatedAt: resumeData.theme?.updatedAt,
+                themeCustomOverrides: resumeData.theme?.customOverrides
+            });
             await cachePDF(cacheKey, result);
         }
 
@@ -277,37 +286,42 @@ export const downloadResumePDFByAnalysis = async (analysisID, userID, options = 
 
 /**
  * Build theme configuration from user theme and overrides
+ * Uses mergeThemeConfig to properly deep-merge theme config with custom overrides
  * @param {Object} userTheme - User's applied theme
- * @param {Object} overrides - Additional overrides
+ * @param {Object} overrides - Additional overrides from download options
  * @returns {Object} Complete theme config
  */
 const buildThemeConfig = (userTheme, overrides = null) => {
-    let baseConfig = null;
+    // Start with base theme config from the database
+    const baseThemeConfig = userTheme?.config || null;
+    
+    // User's custom overrides (stored when they customize the theme)
+    const userCustomOverrides = userTheme?.customOverrides || null;
+    
+    // First merge: base theme with user's saved customizations
+    let mergedConfig = mergeThemeConfig(baseThemeConfig, userCustomOverrides);
 
-    if (userTheme) {
-        baseConfig = {
-            ...userTheme.config,
-            ...(userTheme.customOverrides || {})
+    // Apply section visibility from user theme settings
+    if (userTheme?.sectionVisibility) {
+        mergedConfig.sections = mergedConfig.sections || {};
+        mergedConfig.sections.visibility = {
+            ...mergedConfig.sections.visibility,
+            ...userTheme.sectionVisibility
         };
-
-        // Apply section visibility/order from user theme
-        if (userTheme.sectionVisibility) {
-            baseConfig.sections = baseConfig.sections || {};
-            baseConfig.sections.visibility = userTheme.sectionVisibility;
-        }
-
-        if (userTheme.sectionOrder) {
-            baseConfig.sections = baseConfig.sections || {};
-            baseConfig.sections.order = userTheme.sectionOrder;
-        }
     }
 
-    // Apply any additional overrides
+    // Apply section order from user theme settings
+    if (userTheme?.sectionOrder) {
+        mergedConfig.sections = mergedConfig.sections || {};
+        mergedConfig.sections.order = userTheme.sectionOrder;
+    }
+
+    // Apply any additional overrides passed in options (e.g., from download request)
     if (overrides) {
-        baseConfig = baseConfig ? { ...baseConfig, ...overrides } : overrides;
+        mergedConfig = mergeThemeConfig(mergedConfig, overrides);
     }
 
-    return mergeThemeConfig(baseConfig);
+    return mergedConfig;
 };
 
 /**

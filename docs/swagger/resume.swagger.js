@@ -102,69 +102,38 @@
  *               type: integer
  *             overallScore:
  *               type: integer
- *         analysisReport:
+ *         analysisSummary:
  *           type: object
- *           description: Analysis report with issues and improvements (initial or post-rewrite)
+ *           description: Lightweight summary of analysis issues and improvements. Full analysis data fetched via analysisID.
  *           properties:
- *             criticalMistakes:
- *               type: array
- *               description: Critical issues that must be fixed
- *               items:
- *                 type: object
- *                 properties:
- *                   issue:
- *                     type: string
- *                   impact:
- *                     type: string
- *                   fixSuggestion:
- *                     type: string
- *             majorIssues:
- *               type: array
- *               description: Major issues that should be addressed
- *               items:
- *                 type: object
- *                 properties:
- *                   issue:
- *                     type: string
- *                   impact:
- *                     type: string
- *                   fixSuggestion:
- *                     type: string
- *             minorImprovements:
- *               type: array
- *               description: Minor improvements for polish
- *               items:
- *                 type: object
- *                 properties:
- *                   area:
- *                     type: string
- *                   suggestion:
- *                     type: string
- *             resumeQuality:
+ *             issuesCounts:
  *               type: object
- *               description: Quality scores from analysis
+ *               description: Count of issues by severity
  *               properties:
- *                 atsCompatibilityScore:
+ *                 critical:
  *                   type: integer
- *                 contentQualityScore:
+ *                 major:
  *                   type: integer
- *                 overallQualityScore:
+ *                 minor:
  *                   type: integer
- *             resolvedIssues:
- *               type: array
- *               description: Issues resolved by rewrite (only in post-rewrite reports)
- *               items:
- *                 type: object
- *                 properties:
- *                   originalIssue:
- *                     type: string
- *                   category:
- *                     type: string
- *                   howFixed:
- *                     type: string
+ *             improvementSummary:
+ *               type: string
+ *               description: Summary of what was fixed/changed
+ *             scoreChange:
+ *               type: object
+ *               nullable: true
+ *               description: Score comparison (null for initial upload)
+ *               properties:
+ *                 before:
+ *                   type: integer
+ *                 after:
+ *                   type: integer
  *             version:
  *               type: string
  *               description: Version marker (initial, rewrite_v1, rewrite_v2, etc.)
+ *             updatedAt:
+ *               type: string
+ *               format: date-time
  *         version:
  *           type: integer
  *         lastEditType:
@@ -176,6 +145,12 @@
  *       properties:
  *         id:
  *           type: integer
+ *         resumeId:
+ *           type: integer
+ *           description: ID of the resume content this rewrite belongs to
+ *         analysisId:
+ *           type: integer
+ *           description: ID of the analysis this rewrite is based on
  *         versionNumber:
  *           type: integer
  *           description: Sequential version number (1, 2, 3, etc.)
@@ -200,40 +175,63 @@
  *         improvements:
  *           type: object
  *           description: Improvement metrics and changes made
- *         analysisReport:
+ *         rewriteSummary:
  *           type: object
- *           description: Post-rewrite analysis showing resolved vs remaining issues
+ *           description: Lightweight summary of what was fixed/improved in this rewrite
  *           properties:
- *             resolvedIssues:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   originalIssue:
- *                     type: string
- *                   category:
- *                     type: string
- *                   howFixed:
- *                     type: string
- *             remainingIssues:
- *               type: array
- *               items:
- *                 type: object
- *             newScores:
+ *             improvementSummary:
+ *               type: string
+ *               description: Summary text of what was improved
+ *             resolvedCounts:
  *               type: object
+ *               description: Count of resolved issues by severity
+ *               properties:
+ *                 critical:
+ *                   type: integer
+ *                 major:
+ *                   type: integer
+ *                 minor:
+ *                   type: integer
+ *             totalResolved:
+ *               type: integer
+ *               description: Total number of resolved issues
+ *             totalRemaining:
+ *               type: integer
+ *               description: Total number of remaining issues
  *             scoreComparison:
  *               type: object
  *               properties:
  *                 before:
  *                   type: object
+ *                   properties:
+ *                     atsScore:
+ *                       type: integer
+ *                     contentScore:
+ *                       type: integer
+ *                     overallScore:
+ *                       type: integer
  *                 after:
  *                   type: object
+ *                   properties:
+ *                     atsScore:
+ *                       type: integer
+ *                     contentScore:
+ *                       type: integer
+ *                     overallScore:
+ *                       type: integer
  *                 improvement:
  *                   type: object
- *             improvementSummary:
- *               type: string
+ *                   properties:
+ *                     atsScore:
+ *                       type: integer
+ *                     description:
+ *                       type: string
  *             version:
  *               type: string
+ *               description: Version marker (rewrite_v1, rewrite_v2, etc.)
+ *             generatedAt:
+ *               type: string
+ *               format: date-time
  *         optimizationSettings:
  *           type: object
  *           properties:

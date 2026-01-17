@@ -434,15 +434,21 @@ ${issuesList || 'No specific issues identified - apply general ATS optimization'
 
 **YOUR TASK:**
 1. Apply all the identified fixes to the resume content
-2. Enhance achievement bullets with STAR format and metrics
-3. Add strong action verbs (Led, Architected, Spearheaded, Engineered)
-4. Ensure ATS-friendly formatting and keywords
-5. Target ATS Score: ${options.targetATSScore || 85}%
+2. For experience entries: The description field can contain HTML content with formatting
+   - You can use HTML tags like <p>, <ul>, <li>, <strong>, <em> for rich formatting
+   - Put achievements/bullet points INSIDE the description using HTML <ul><li> tags
+   - The achievements array is optional - use it only if you want separate plain-text bullets
+3. Enhance content with STAR format and metrics
+4. Add strong action verbs (Led, Architected, Spearheaded, Engineered)
+5. Ensure ATS-friendly formatting and keywords
+6. Target ATS Score: ${options.targetATSScore || 85}%
 
 **OUTPUT REQUIREMENTS:**
 - Return the FIXED content in the exact schema format
 - Keep the same structure as the input (number of experiences, etc.)
 - Preserve all factual information (company names, dates, etc.)
+- Experience description can contain HTML formatted content
+- Achievements array is optional - use if separate bullet points are needed
 - Only enhance the text quality and apply fixes
 - Provide a brief summary of fixes made`;
 };

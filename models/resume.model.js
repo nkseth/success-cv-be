@@ -15,6 +15,7 @@ import {
     processedAndRawDataTable,
     userDocumentTable
 } from "../drizzle/schema.js";
+import { getUserTheme, restoreThemeFromSnapshot } from "./theme.model.js";
 
 // ========== RESUME CONTENT OPERATIONS ==========
 
@@ -24,15 +25,15 @@ import {
  * @param {number} userID - User ID
  * @param {number} analysisID - Analysis ID
  * @param {Object} contentData - Parsed resume content from analysis
- * @param {Object} analysisReport - Analysis report with issues and improvements (optional)
+ * @param {Object} analysisSummary - Lightweight summary of analysis issues (optional)
  * @returns {Promise<Object>} Created resume content
  */
-export const createResumeContent = async (userID, analysisID, contentData, analysisReport = null) => {
+export const createResumeContent = async (userID, analysisID, contentData, analysisSummary = null) => {
     try {
         logger.info('[RESUME_MODEL] Creating resume content from analysis', {
             userID,
             analysisID,
-            hasAnalysisReport: !!analysisReport
+            hasAnalysisSummary: !!analysisSummary
         });
 
         // Check if content already exists for this analysis
@@ -78,7 +79,7 @@ export const createResumeContent = async (userID, analysisID, contentData, analy
                 skills,
                 additionalSections,
                 currentScores: scores,
-                analysisReport: analysisReport, // Embed initial analysis report
+                analysisSummary: analysisSummary, // Lightweight summary of analysis issues
                 version: 1,
                 lastEditType: 'initial',
                 createdAt: new Date(),
@@ -89,7 +90,7 @@ export const createResumeContent = async (userID, analysisID, contentData, analy
         logger.info('[RESUME_MODEL] ✅ Resume content created', {
             contentID: content.id,
             analysisID,
-            hasAnalysisReport: !!analysisReport
+            hasAnalysisSummary: !!analysisSummary
         });
 
         return content;
@@ -127,7 +128,7 @@ export const getResumeContentByID = async (contentID, userID) => {
                 skills: resumeContentTable.skills,
                 additionalSections: resumeContentTable.additionalSections,
                 currentScores: resumeContentTable.currentScores,
-                analysisReport: resumeContentTable.analysisReport,
+                analysisSummary: resumeContentTable.analysisSummary,
                 version: resumeContentTable.version,
                 lastEditType: resumeContentTable.lastEditType,
                 lastEditedSection: resumeContentTable.lastEditedSection,
@@ -485,6 +486,29 @@ export const createRewrite = async (userID, analysisID, resumeContentID, current
             ? existingRewrites[0].versionNumber + 1 
             : 1;
 
+        // Get current theme for this resume (to snapshot with the content)
+        let themeSnapshot = null;
+        if (resumeContentID) {
+            try {
+                const currentTheme = await getUserTheme(resumeContentID, userID);
+                if (currentTheme) {
+                    themeSnapshot = {
+                        themeID: currentTheme.themeID,
+                        themeName: currentTheme.themeName,
+                        themeSlug: currentTheme.themeSlug,
+                        themeCategory: currentTheme.themeCategory,
+                        themeConfig: currentTheme.themeConfig,
+                        customOverrides: currentTheme.customOverrides,
+                        sectionVisibility: currentTheme.sectionVisibility,
+                        sectionOrder: currentTheme.sectionOrder,
+                        isATSOptimized: currentTheme.isATSOptimized
+                    };
+                }
+            } catch (themeError) {
+                logger.warn('[RESUME_MODEL] Could not fetch theme for snapshot', { error: themeError.message });
+            }
+        }
+
         // Build source content snapshot (captures what AI will optimize from)
         const sourceContentSnapshot = currentContent ? {
             personalInfo: currentContent.personalInfo,
@@ -494,6 +518,8 @@ export const createRewrite = async (userID, analysisID, resumeContentID, current
             skills: currentContent.skills,
             additionalSections: currentContent.additionalSections,
             currentScores: currentContent.currentScores,
+            analysisSummary: currentContent.analysisSummary,
+            theme: themeSnapshot,
             version: currentContent.version,
             snapshotAt: new Date().toISOString()
         } : null;
@@ -538,7 +564,7 @@ export const createRewrite = async (userID, analysisID, resumeContentID, current
  * Get rewrite by ID
  * @param {number} rewriteID - Rewrite ID
  * @param {number} userID - User ID
- * @returns {Promise<Object>} Rewrite record
+ * @returns {Promise<Object>} Rewrite record with theme info
  */
 export const getRewriteByID = async (rewriteID, userID) => {
     try {
@@ -557,7 +583,33 @@ export const getRewriteByID = async (rewriteID, userID) => {
             throw new AppError('Rewrite not found or unauthorized', 404);
         }
 
-        return rewrite[0];
+        const rewriteData = rewrite[0];
+        
+        // Extract theme from rewrittenContent if available
+        let theme = null;
+        if (rewriteData.rewrittenContent) {
+            const content = typeof rewriteData.rewrittenContent === 'string'
+                ? JSON.parse(rewriteData.rewrittenContent)
+                : rewriteData.rewrittenContent;
+            if (content.theme) {
+                theme = content.theme;
+            }
+        }
+        
+        // If no theme in rewrittenContent, check sourceContentSnapshot
+        if (!theme && rewriteData.sourceContentSnapshot) {
+            const snapshot = typeof rewriteData.sourceContentSnapshot === 'string'
+                ? JSON.parse(rewriteData.sourceContentSnapshot)
+                : rewriteData.sourceContentSnapshot;
+            if (snapshot.theme) {
+                theme = snapshot.theme;
+            }
+        }
+
+        return {
+            ...rewriteData,
+            theme
+        };
     } catch (error) {
         if (error instanceof AppError) throw error;
         throw new AppError(`Failed to fetch rewrite: ${error.message}`, 500);
@@ -702,8 +754,32 @@ export const applyRewrite = async (rewriteID, userID) => {
                 // Check if content was modified after the previous rewrite was applied
                 const wasModified = currentContent.updatedAt > previousRewrite[0].appliedAt;
                 
-                // Save current resume content back to the previous rewrite's rewrittenContent
+                // Get current theme to save with the previous rewrite
+                let currentThemeSnapshot = null;
+                try {
+                    const currentTheme = await getUserTheme(currentContent.id, userID);
+                    if (currentTheme) {
+                        currentThemeSnapshot = {
+                            themeID: currentTheme.themeID,
+                            themeName: currentTheme.themeName,
+                            themeSlug: currentTheme.themeSlug,
+                            themeCategory: currentTheme.themeCategory,
+                            themeConfig: currentTheme.themeConfig,
+                            customOverrides: currentTheme.customOverrides,
+                            sectionVisibility: currentTheme.sectionVisibility,
+                            sectionOrder: currentTheme.sectionOrder,
+                            isATSOptimized: currentTheme.isATSOptimized
+                        };
+                    }
+                } catch (themeError) {
+                    logger.warn('[RESUME_MODEL] Could not fetch theme for previous rewrite snapshot', { 
+                        error: themeError.message 
+                    });
+                }
+                
+                // Save current resume content back to the previous rewrite
                 // This preserves any edits the user made while this version was active
+                // Includes: sections, scores, analysisSummary, AND theme
                 const currentResumeSnapshot = {
                     personalInfo: currentContent.personalInfo,
                     summary: currentContent.summary,
@@ -711,21 +787,29 @@ export const applyRewrite = async (rewriteID, userID) => {
                     education: currentContent.education,
                     skills: currentContent.skills,
                     additionalSections: currentContent.additionalSections,
-                    scores: currentContent.currentScores
+                    scores: currentContent.currentScores,
+                    theme: currentThemeSnapshot
                 };
+                
+                // Also save the current analysisSummary to the previous rewrite as rewriteSummary
+                const currentAnalysisSummary = currentContent.analysisSummary;
                 
                 await db
                     .update(resumeRewritesTable)
                     .set({ 
                         rewrittenContent: currentResumeSnapshot,
+                        rewriteSummary: currentAnalysisSummary,
                         wasModifiedAfterApply: wasModified, 
                         updatedAt: new Date() 
                     })
                     .where(eq(resumeRewritesTable.id, currentContent.activeRewriteID));
                 
-                logger.info('[RESUME_MODEL] Saved current content to previous rewrite', {
+                logger.info('[RESUME_MODEL] Saved current content, scores, analysisSummary, and theme to previous rewrite', {
                     previousRewriteID: currentContent.activeRewriteID,
-                    wasModified
+                    wasModified,
+                    hasScores: !!currentContent.currentScores,
+                    hasAnalysisSummary: !!currentAnalysisSummary,
+                    hasTheme: !!currentThemeSnapshot
                 });
             }
         }
@@ -752,12 +836,12 @@ export const applyRewrite = async (rewriteID, userID) => {
             })
             .where(eq(resumeRewritesTable.id, rewriteID));
 
-        // Get the analysis report from the rewrite (if available)
-        const rewriteAnalysisReport = typeof rewrite.analysisReport === 'string'
-            ? JSON.parse(rewrite.analysisReport)
-            : rewrite.analysisReport;
+        // Get the rewrite summary from the rewrite (if available)
+        const rewriteSummary = typeof rewrite.rewriteSummary === 'string'
+            ? JSON.parse(rewrite.rewriteSummary)
+            : rewrite.rewriteSummary;
 
-        // Update resume content with rewritten data and analysis report
+        // Update resume content with rewritten data and analysisSummary
         const [updatedContent] = await db
             .update(resumeContentTable)
             .set({
@@ -768,8 +852,8 @@ export const applyRewrite = async (rewriteID, userID) => {
                 skills: content.skills || currentContent.skills,
                 additionalSections: content.additionalSections || currentContent.additionalSections,
                 currentScores: content.scores || currentContent.currentScores,
-                // Update analysis report to show post-rewrite analysis
-                analysisReport: rewriteAnalysisReport || currentContent.analysisReport,
+                // Update analysisSummary to show post-rewrite summary
+                analysisSummary: rewriteSummary || currentContent.analysisSummary,
                 version: currentContent.version + 1,
                 lastEditType: 'ai_rewrite',
                 activeRewriteID: rewriteID,
@@ -778,11 +862,26 @@ export const applyRewrite = async (rewriteID, userID) => {
             .where(eq(resumeContentTable.id, currentContent.id))
             .returning();
 
+        // Restore theme if the rewrite has theme info stored
+        // This updates userResumeThemeTable (user's theme config), NOT the actual theme definitions
+        if (content.theme && content.theme.themeID) {
+            await restoreThemeFromSnapshot(userID, updatedContent.id, content.theme);
+            logger.info('[RESUME_MODEL] Restored theme from rewrite', {
+                rewriteID,
+                themeID: content.theme.themeID,
+                themeName: content.theme.themeName,
+                hasCustomOverrides: !!content.theme.customOverrides,
+                hasSectionVisibility: !!content.theme.sectionVisibility,
+                hasSectionOrder: !!content.theme.sectionOrder
+            });
+        }
+
         logger.info('[RESUME_MODEL] ✅ Rewrite applied to content', {
             rewriteID,
             contentID: updatedContent.id,
             newVersion: updatedContent.version,
-            versionNumber: rewrite.versionNumber
+            versionNumber: rewrite.versionNumber,
+            hasTheme: !!(content.theme && content.theme.themeID)
         });
 
         return updatedContent;
@@ -814,21 +913,26 @@ export const switchRewriteVersion = async (rewriteID, userID) => {
             throw new AppError('Cannot switch to an incomplete rewrite version', 400);
         }
 
-        // If already active, just return current state
+        // If already active, just return current state with theme
         if (targetRewrite.isActive) {
             const currentContent = await getResumeContentByAnalysisID(targetRewrite.analysisID, userID);
+            const currentTheme = await getUserTheme(currentContent.id, userID);
             return {
                 content: currentContent,
                 rewrite: targetRewrite,
+                theme: currentTheme,
                 message: 'This version is already active'
             };
         }
 
-        // Apply the rewrite (handles all the switching logic)
+        // Apply the rewrite (handles all the switching logic including theme restoration)
         const updatedContent = await applyRewrite(rewriteID, userID);
 
-        // Get updated rewrite info
+        // Get updated rewrite info (now includes theme)
         const updatedRewrite = await getRewriteByID(rewriteID, userID);
+        
+        // Get the current theme after restoration
+        const restoredTheme = await getUserTheme(updatedContent.id, userID);
 
         return {
             content: updatedContent,
@@ -837,8 +941,10 @@ export const switchRewriteVersion = async (rewriteID, userID) => {
                 versionNumber: updatedRewrite.versionNumber,
                 versionLabel: updatedRewrite.versionLabel,
                 isActive: updatedRewrite.isActive,
-                appliedAt: updatedRewrite.appliedAt
+                appliedAt: updatedRewrite.appliedAt,
+                theme: updatedRewrite.theme
             },
+            theme: restoredTheme,
             message: `Switched to rewrite version ${updatedRewrite.versionNumber}`
         };
     } catch (error) {
@@ -884,7 +990,7 @@ export const getActiveRewrite = async (analysisID, userID) => {
 /**
  * Clear active rewrite (revert to original/manual state)
  * This deactivates all rewrites and clears activeRewriteID from content
- * Also restores the initial analysis report
+ * Also restores the initial analysis summary
  * @param {number} analysisID - Analysis ID
  * @param {number} userID - User ID  
  * @returns {Promise<Object>} Updated content
@@ -900,8 +1006,8 @@ export const clearActiveRewrite = async (analysisID, userID) => {
             throw new AppError('Resume content not found', 404);
         }
 
-        // Get the original analysis data to restore the initial analysis report
-        let initialAnalysisReport = null;
+        // Get the original analysis data to restore the initial analysis summary
+        let initialAnalysisSummary = null;
         try {
             const analysisData = await db
                 .select({
@@ -916,33 +1022,21 @@ export const clearActiveRewrite = async (analysisID, userID) => {
                     ? JSON.parse(analysisData[0].processedData)
                     : analysisData[0].processedData;
                 
-                // Rebuild the initial analysis report structure
-                initialAnalysisReport = {
-                    criticalMistakes: (parsedData.critical_mistakes || []).map(m => ({
-                        issue: m.issue || m.mistake || m,
-                        impact: m.impact || 'High - may cause resume rejection',
-                        fixSuggestion: m.fix_suggestion || m.suggestion || m.fix || ''
-                    })),
-                    majorIssues: (parsedData.major_issues || []).map(i => ({
-                        issue: i.issue || i,
-                        impact: i.impact || 'Medium - reduces resume effectiveness',
-                        fixSuggestion: i.fix_suggestion || i.suggestion || i.fix || ''
-                    })),
-                    minorImprovements: (parsedData.minor_improvements || []).map(i => ({
-                        area: i.area || i.section || 'General',
-                        suggestion: i.suggestion || i.improvement || i
-                    })),
-                    resumeQuality: {
-                        atsCompatibilityScore: parsedData.resume_quality?.ats_compatibility_score || 0,
-                        contentQualityScore: parsedData.resume_quality?.content_quality_score || 0,
-                        overallQualityScore: parsedData.resume_quality?.overall_quality_score || 0
+                // Build lightweight initial analysis summary
+                initialAnalysisSummary = {
+                    issuesCounts: {
+                        critical: (parsedData.critical_mistakes || []).length,
+                        major: (parsedData.major_issues || []).length,
+                        minor: (parsedData.minor_improvements || []).length
                     },
+                    improvementSummary: 'Original analysis - no rewrites applied',
+                    scoreChange: null,
                     version: 'initial',
-                    restoredAt: new Date().toISOString()
+                    updatedAt: new Date().toISOString()
                 };
             }
         } catch (err) {
-            logger.warn('[RESUME_MODEL] Could not restore initial analysis report', { error: err.message });
+            logger.warn('[RESUME_MODEL] Could not restore initial analysis summary', { error: err.message });
         }
 
         // Deactivate all rewrites for this analysis
@@ -956,7 +1050,7 @@ export const clearActiveRewrite = async (analysisID, userID) => {
                 )
             );
 
-        // Clear activeRewriteID from content and restore initial analysis report
+        // Clear activeRewriteID from content and restore initial analysis summary
         const updateData = {
             activeRewriteID: null,
             lastEditType: 'manual',
@@ -964,9 +1058,9 @@ export const clearActiveRewrite = async (analysisID, userID) => {
             updatedAt: new Date()
         };
         
-        // Only update analysisReport if we were able to restore it
-        if (initialAnalysisReport) {
-            updateData.analysisReport = initialAnalysisReport;
+        // Only update analysisSummary if we were able to restore it
+        if (initialAnalysisSummary) {
+            updateData.analysisSummary = initialAnalysisSummary;
         }
 
         const [updatedContent] = await db
@@ -978,7 +1072,7 @@ export const clearActiveRewrite = async (analysisID, userID) => {
         logger.info('[RESUME_MODEL] ✅ Active rewrite cleared', {
             contentID: updatedContent.id,
             newVersion: updatedContent.version,
-            restoredInitialAnalysis: !!initialAnalysisReport
+            restoredInitialSummary: !!initialAnalysisSummary
         });
 
         return updatedContent;

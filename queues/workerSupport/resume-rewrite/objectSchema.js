@@ -34,6 +34,8 @@ export const optimizedSummarySchema = z.object({
 /**
  * Optimized Experience Entry Schema
  * Matches the structure in resumeContentTable.experience
+ * Description can contain HTML content from rich text editors
+ * Achievements are optional - content may be in description instead
  */
 export const optimizedExperienceSchema = z.object({
     company: z.string().describe('Company name'),
@@ -42,8 +44,8 @@ export const optimizedExperienceSchema = z.object({
     startDate: z.string().nullable().optional().describe('Start date'),
     endDate: z.string().nullable().optional().describe('End date or Present'),
     current: z.boolean().optional().describe('Is current position'),
-    description: z.string().nullable().optional().describe('Role description'),
-    achievements: z.array(z.string()).describe('Achievement bullets with STAR format and metrics')
+    description: z.string().nullable().optional().describe('Role description - can contain HTML content with bullet points, formatted text, etc. Use HTML tags like <ul>, <li>, <p>, <strong> for formatting'),
+    achievements: z.array(z.string()).optional().describe('Achievement bullets with STAR format and metrics - optional if achievements are already in description')
 }).describe('Optimized work experience entry');
 
 /**
@@ -99,6 +101,8 @@ export const summaryContentSchema = z.object({
 
 /**
  * Experience Entry Schema - matches resumeContentTable.experience array items
+ * Description can contain HTML content from rich text editors
+ * Achievements are optional - content may be in description instead
  */
 export const experienceEntrySchema = z.object({
     id: z.string().optional().describe('Unique identifier for this experience'),
@@ -108,8 +112,8 @@ export const experienceEntrySchema = z.object({
     startDate: z.string().optional().describe('Start date (e.g., "Jan 2020" or "2020-01")'),
     endDate: z.string().optional().describe('End date or "Present" for current role'),
     current: z.boolean().optional().describe('Whether this is the current position'),
-    description: z.string().optional().describe('Brief role description'),
-    achievements: z.array(z.string()).describe('3-5 achievement bullets using STAR format with quantifiable metrics'),
+    description: z.string().optional().describe('Role description - can contain HTML content with bullet points, formatted text, etc.'),
+    achievements: z.array(z.string()).optional().describe('Achievement bullets using STAR format with quantifiable metrics - optional if in description'),
     keywords: z.array(z.string()).optional().describe('ATS keywords for this role')
 }).describe('Work experience entry');
 

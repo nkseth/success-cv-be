@@ -18,12 +18,7 @@ export const PROGRESS_STAGES = {
     ANALYZING: { percent: 60, message: 'Analyzing resume with AI...' },
     SCORING: { percent: 80, message: 'Calculating scores...' },
     SAVING: { percent: 90, message: 'Saving results to database...' },
-    COMPLETE: { percent: 100, message: 'Resume analysis completed!' },
-    
-    // Resume Rewrite stages
-    PREPARING: { percent: 15, message: 'Preparing analysis data for optimization...' },
-    OPTIMIZING: { percent: 50, message: 'Optimizing resume content with AI...' },
-    APPLYING: { percent: 85, message: 'Applying rewrite to resume...' }
+    COMPLETE: { percent: 100, message: 'Resume analysis completed!' }
 };
 
 /**
@@ -153,6 +148,32 @@ export async function executeWithProgress(jobId, stageName, asyncFunction) {
     
     if (!stage) {
         logger.warn('[PROGRESS] Unknown stage name', { stageName });
+        return await asyncFunction();
+    }
+    
+    return await safeExecuteWithSSE(
+        jobId, 
+        stage.percent, 
+        stage.message, 
+        asyncFunction, 
+        stageName
+    );
+}
+
+/**
+ * Execute operation with rewrite-specific progress tracking
+ * Uses REWRITE_PROGRESS_STAGES for more granular progress updates
+ * 
+ * @param {string} jobId - Job ID
+ * @param {string} stageName - Stage name (key from REWRITE_PROGRESS_STAGES)
+ * @param {Function} asyncFunction - Async operation to execute
+ * @returns {Promise<any>} Operation result
+ */
+export async function executeWithRewriteProgress(jobId, stageName, asyncFunction) {
+    const stage = REWRITE_PROGRESS_STAGES[stageName];
+    
+    if (!stage) {
+        logger.warn('[PROGRESS] Unknown rewrite stage name', { stageName });
         return await asyncFunction();
     }
     

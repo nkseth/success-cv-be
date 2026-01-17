@@ -745,6 +745,89 @@ export const updateUserTheme = async (resumeContentID, userID, updates) => {
 };
 
 /**
+ * Restore a full theme configuration from a snapshot (used when switching rewrite versions)
+ * This updates the userResumeThemeTable only, NOT the actual theme definitions
+ * @param {number} userID - User ID
+ * @param {number} resumeContentID - Resume content ID  
+ * @param {Object} themeSnapshot - Full theme snapshot with themeID, customOverrides, sectionVisibility, sectionOrder
+ * @returns {Promise<Object>} Updated user theme
+ */
+export const restoreThemeFromSnapshot = async (userID, resumeContentID, themeSnapshot) => {
+    try {
+        if (!themeSnapshot || !themeSnapshot.themeID) {
+            logger.warn('[THEME_MODEL] No theme snapshot to restore', { resumeContentID });
+            return null;
+        }
+
+        logger.info('[THEME_MODEL] Restoring theme from snapshot', {
+            userID,
+            resumeContentID,
+            themeID: themeSnapshot.themeID,
+            themeName: themeSnapshot.themeName
+        });
+
+        // Check if user already has a theme for this resume
+        const existing = await db
+            .select()
+            .from(userResumeThemeTable)
+            .where(
+                and(
+                    eq(userResumeThemeTable.resumeContentID, resumeContentID),
+                    eq(userResumeThemeTable.userID, userID)
+                )
+            )
+            .limit(1);
+
+        let userTheme;
+
+        if (existing && existing.length > 0) {
+            // Update existing with full snapshot config
+            [userTheme] = await db
+                .update(userResumeThemeTable)
+                .set({
+                    themeID: themeSnapshot.themeID,
+                    customOverrides: themeSnapshot.customOverrides || null,
+                    sectionVisibility: themeSnapshot.sectionVisibility || null,
+                    sectionOrder: themeSnapshot.sectionOrder || null,
+                    updatedAt: new Date()
+                })
+                .where(eq(userResumeThemeTable.id, existing[0].id))
+                .returning();
+        } else {
+            // Create new with full snapshot config
+            [userTheme] = await db
+                .insert(userResumeThemeTable)
+                .values({
+                    userID,
+                    resumeContentID,
+                    themeID: themeSnapshot.themeID,
+                    customOverrides: themeSnapshot.customOverrides || null,
+                    sectionVisibility: themeSnapshot.sectionVisibility || null,
+                    sectionOrder: themeSnapshot.sectionOrder || null,
+                    isDraft: true,
+                    createdAt: new Date(),
+                    updatedAt: new Date()
+                })
+                .returning();
+        }
+
+        logger.info('[THEME_MODEL] ✅ Theme restored from snapshot', {
+            userThemeID: userTheme.id,
+            themeID: themeSnapshot.themeID
+        });
+
+        return userTheme;
+    } catch (error) {
+        logger.error('[THEME_MODEL] Failed to restore theme from snapshot', {
+            error: error.message,
+            resumeContentID
+        });
+        // Non-critical - don't throw, just return null
+        return null;
+    }
+};
+
+/**
  * Publish user's resume (mark as not draft)
  * @param {number} resumeContentID - Resume content ID
  * @param {number} userID - User ID
@@ -795,5 +878,6 @@ export default {
     applyTheme,
     getUserTheme,
     updateUserTheme,
+    restoreThemeFromSnapshot,
     publishResume
 };
