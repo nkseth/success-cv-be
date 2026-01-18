@@ -1,7 +1,7 @@
 import { Router } from "express";
 import logger from "../../middleware/logger.js";
 import { sendSuccess } from "../../utils/apiHelpers.js";
-import { forgotPasswordController, LoginControllerCandidate, registerSingleController, registerBulkController, resetPasswordControllerCandidate } from "../../controllers/candidate.auth.controller.js";
+import { forgotPasswordController, LoginControllerCandidate, registerSingleController, registerBulkController, resetPasswordControllerCandidate, verifyCandidateController } from "../../controllers/candidate.auth.controller.js";
 
 const router = Router();
 
@@ -30,10 +30,10 @@ router.post('/verify/send', (req, res, next) => {
     sendSuccess(res, null, "Verification code sent successfully");
 });
 
-router.get('/verify/:token', (req, res, next) => {
+router.post('/verify', (req, res, next) => {
     logger.info("Confirm verification code endpoint hit");
-    sendSuccess(res, null, "Email verified successfully");
-});
+    next();
+}, verifyCandidateController);
 
 router.post('/forgot-password', (req, res, next) => {
     logger.info("Forgot password endpoint hit");

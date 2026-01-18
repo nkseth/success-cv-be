@@ -5,7 +5,7 @@ import { sendSuccess } from "../utils/apiHelpers.js";
 import { userTypeConstants } from "../utils/constants.js";
 import { validateEmail, validateString } from "../utils/validate-helper.js";
 import { comparePassword } from '../utils/security-helper.js';
-import { createCandidate, createCandidatesBulk, forgotpasswordTokenGenerationCandidate, getCandidateByEmail, resetPasswordUsingToken } from '../models/candidate.model.js';
+import { createCandidate, createCandidatesBulk, forgotpasswordTokenGenerationCandidate, getCandidateByEmail, resetPasswordUsingToken, verifyCandidateByToken } from '../models/candidate.model.js';
 
 export const registerSingleController = asyncHandler(async (req, res, next) => {
     if (!req.body || typeof req.body !== 'object') {
@@ -180,4 +180,23 @@ export const LoginControllerCandidate = asyncHandler(async (req, res, next) => {
         refreshToken
     }
     sendSuccess(res, data, "Login successful", 200)
+});
+
+export const verifyCandidateController = asyncHandler(async (req, res, next) => {
+    const { token } = req.body;
+
+    if (!token) {
+        return next(new AppError('Verification token is required', 400));
+    }
+
+    const verifiedCandidate = await verifyCandidateByToken(token);
+
+    sendSuccess(res, {
+        candidate: {
+            id: verifiedCandidate.id,
+            email: verifiedCandidate.email,
+            fullname: verifiedCandidate.fullname,
+            isVerified: verifiedCandidate.isVerified
+        }
+    }, 'Email verified successfully. You can now login.', 200);
 });

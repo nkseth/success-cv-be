@@ -1,6 +1,6 @@
 import { eq, and, inArray, isNull } from "drizzle-orm";
 import { db } from "../config/db.js";
-import { candidatesTable, forgotPasswordTokenTable } from "../drizzle/schema.js";
+import { candidatesTable, forgotPasswordTokenTable, verifyTable } from "../drizzle/schema.js";
 import { createProfile } from "./profile.model.js";
 import { AppError } from "../middleware/error.js";
 import { validateEmail, validateInteger, validateString } from "../utils/validate-helper.js";
@@ -8,6 +8,8 @@ import { hashPassword, excludeFields } from "../utils/security-helper.js";
 import { userTypeConstants } from "../utils/constants.js";
 import crypto from 'crypto';
 import { forgotpasswordTokenValidation } from "./auth.model.js";
+import { sendCandidateVerificationEmail } from "../services/email/emailTrigger.js";
+import { getOrgByID } from "./organisation.model.js";
 
 /**
  * Create a single candidate
@@ -39,12 +41,24 @@ export const createCandidate = async (candidateData) => {
             email: validatedData.email,
             passwordHash,
             organisationID: validatedData.organisationID,
+            isVerified: false,
             createdAt: new Date(),
             updatedAt: new Date()
         }).returning();
 
         // Create parallel profile for candidate
         await createProfile({ candidateID: candidate.id });
+
+        // Send verification email with credentials (non-blocking)
+        sendCandidateVerificationEmailWithToken(candidate, validatedData.password)
+            .then(result => {
+                if (result.success) {
+                    console.log(`Verification email sent to ${candidate.email}`);
+                } else {
+                    console.error(`Failed to send verification email to ${candidate.email}:`, result.error);
+                }
+            })
+            .catch(err => console.error(`Error sending verification email to ${candidate.email}:`, err));
 
         return excludeFields(candidate, ['passwordHash', 'deletedAt']);
     } catch (error) {
@@ -136,7 +150,8 @@ export const createCandidatesBulk = async (candidatesData) => {
             hashPromises.push(
                 hashPassword(candidateData.password).then(passwordHash => ({
                     ...candidateData,
-                    passwordHash
+                    passwordHash,
+                    originalPassword: candidateData.password // Preserve for verification email
                 }))
             );
         });
@@ -155,7 +170,8 @@ export const createCandidatesBulk = async (candidatesData) => {
                 isVerified: false,
                 createdAt: currentTime,
                 updatedAt: currentTime,
-                originalIndex: candidate.index
+                originalIndex: candidate.index,
+                originalPassword: candidate.originalPassword // Preserve for verification email
             });
         });
 
@@ -180,6 +196,20 @@ export const createCandidatesBulk = async (candidatesData) => {
                 })
             );
             await Promise.all(profilePromises);
+
+            // Step 7: Send verification emails in parallel (non-blocking)
+            insertedCandidates.forEach((candidate, i) => {
+                const originalPassword = candidatesToInsert[i].originalPassword;
+                sendCandidateVerificationEmailWithToken(candidate, originalPassword)
+                    .then(result => {
+                        if (result.success) {
+                            console.log(`Verification email sent to ${candidate.email}`);
+                        } else {
+                            console.error(`Failed to send verification email to ${candidate.email}:`, result.error);
+                        }
+                    })
+                    .catch(err => console.error(`Error sending verification email to ${candidate.email}:`, err));
+            });
 
             // Process results
             insertedCandidates.forEach((candidate, i) => {
@@ -406,5 +436,154 @@ export const getCandidatesByOrganisationId = async (organisationID) => {
             throw error;
         }
         throw new AppError(`Failed to get candidates by organisation: ${error.message}`, 500);
+    }
+};
+
+/**
+ * Create verification token for candidate
+ */
+export const createCandidateVerificationToken = async (candidateId) => {
+    try {
+        const validatedId = validateInteger(candidateId, 'Candidate ID');
+
+        const [verifyObj] = await db.insert(verifyTable).values({
+            candidateID: validatedId,
+            userType: userTypeConstants.CANDIDATE,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            isUsed: false
+        }).returning();
+
+        return verifyObj;
+    } catch (error) {
+        if (error instanceof AppError) {
+            throw error;
+        }
+        throw new AppError(`Failed to create candidate verification token: ${error.message}`, 500);
+    }
+};
+
+/**
+ * Get active verification token for a candidate
+ */
+export const getActiveCandidateVerificationToken = async (candidateId) => {
+    try {
+        const validatedId = validateInteger(candidateId, 'Candidate ID');
+
+        const [verificationData] = await db.select()
+            .from(verifyTable)
+            .where(and(
+                eq(verifyTable.candidateID, validatedId),
+                eq(verifyTable.userType, userTypeConstants.CANDIDATE),
+                eq(verifyTable.isUsed, false)
+            )).limit(1);
+
+        return verificationData || null;
+    } catch (error) {
+        if (error instanceof AppError) {
+            throw error;
+        }
+        throw new AppError(`Failed to get active verification token: ${error.message}`, 500);
+    }
+};
+
+/**
+ * Generate or get existing verification token for candidate
+ */
+export const generateCandidateVerificationToken = async (candidateId) => {
+    try {
+        // Check for existing active token
+        const activeToken = await getActiveCandidateVerificationToken(candidateId);
+        if (activeToken) {
+            return activeToken;
+        }
+
+        // Create new token
+        const newToken = await createCandidateVerificationToken(candidateId);
+        return newToken;
+    } catch (error) {
+        if (error instanceof AppError) {
+            throw error;
+        }
+        throw new AppError(`Failed to generate candidate verification token: ${error.message}`, 500);
+    }
+};
+
+/**
+ * Verify candidate using token
+ */
+export const verifyCandidateByToken = async (token) => {
+    try {
+        // Get token data
+        const [verificationData] = await db.select()
+            .from(verifyTable)
+            .where(and(
+                eq(verifyTable.id, token),
+                eq(verifyTable.userType, userTypeConstants.CANDIDATE),
+                eq(verifyTable.isUsed, false)
+            )).limit(1);
+
+        if (!verificationData) {
+            throw new AppError('Invalid or expired verification token', 400);
+        }
+
+        // Mark token as used
+        await db.update(verifyTable)
+            .set({
+                isUsed: true,
+                updatedAt: new Date()
+            })
+            .where(eq(verifyTable.id, token));
+
+        // Update candidate as verified
+        const [updatedCandidate] = await db.update(candidatesTable)
+            .set({
+                isVerified: true,
+                updatedAt: new Date()
+            })
+            .where(eq(candidatesTable.id, verificationData.candidateID))
+            .returning();
+
+        if (!updatedCandidate) {
+            throw new AppError('Failed to verify candidate', 500);
+        }
+
+        return excludeFields(updatedCandidate, ['passwordHash', 'deletedAt']);
+    } catch (error) {
+        if (error instanceof AppError) {
+            throw error;
+        }
+        throw new AppError(`Failed to verify candidate: ${error.message}`, 500);
+    }
+};
+
+/**
+ * Send verification email to candidate
+ */
+export const sendCandidateVerificationEmailWithToken = async (candidate, password) => {
+    try {
+        // Generate verification token
+        const verificationToken = await generateCandidateVerificationToken(candidate.id);
+        
+        // Get organisation slug
+        const organisation = await getOrgByID(candidate.organisationID);
+        const orgSlug = organisation?.slug || '';
+        
+        // Build verification URL with subdomain
+        const verificationUrl = `https://${orgSlug}.${process.env.FRONTEND_URL}/auth/verify?token=${verificationToken.id}`;
+        
+        // Send verification email
+        await sendCandidateVerificationEmail(
+            candidate.email,
+            candidate.fullname,
+            password,
+            verificationUrl
+        );
+
+        return { success: true, tokenId: verificationToken.id };
+    } catch (error) {
+        console.error(`Failed to send verification email to ${candidate.email}:`, error);
+        // Don't throw - we don't want email failure to break registration
+        return { success: false, error: error.message };
     }
 };
