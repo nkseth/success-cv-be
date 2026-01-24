@@ -434,21 +434,37 @@ ${issuesList || 'No specific issues identified - apply general ATS optimization'
 
 **YOUR TASK:**
 1. Apply all the identified fixes to the resume content
-2. For experience entries: The description field can contain HTML content with formatting
-   - You can use HTML tags like <p>, <ul>, <li>, <strong>, <em> for rich formatting
-   - Put achievements/bullet points INSIDE the description using HTML <ul><li> tags
-   - The achievements array is optional - use it only if you want separate plain-text bullets
+2. **CRITICAL - Experience Format:**
+   - The description field MUST contain HTML formatted bullet points
+   - Format: <ul><li>Achievement 1</li><li>Achievement 2</li><li>Achievement 3</li></ul>
+   - Put ALL bullet points/achievements INSIDE the description using HTML <ul><li> tags
+   - The achievements array should be EMPTY - all content goes in description HTML
+   - DO NOT lose any bullet points from the original - enhance them but keep ALL of them
 3. Enhance content with STAR format and metrics
 4. Add strong action verbs (Led, Architected, Spearheaded, Engineered)
 5. Ensure ATS-friendly formatting and keywords
 6. Target ATS Score: ${options.targetATSScore || 85}%
 
+**EXPERIENCE FORMAT EXAMPLE:**
+{
+  "id": "exp_1",
+  "company": "TechCo",
+  "position": "Senior Software Engineer",
+  "startDate": "2020-01-01",
+  "endDate": "Present",
+  "current": true,
+  "description": "<ul><li>Led development of microservices architecture serving 1M+ daily users, achieving 99.9% uptime</li><li>Reduced API latency by 40% through strategic optimization and caching implementation</li><li>Mentored team of 4 junior developers, improving code review efficiency by 60%</li></ul>",
+  "achievements": [],
+  "keywords": ["microservices", "API optimization", "team leadership"]
+}
+
 **OUTPUT REQUIREMENTS:**
 - Return the FIXED content in the exact schema format
 - Keep the same structure as the input (number of experiences, etc.)
 - Preserve all factual information (company names, dates, etc.)
-- Experience description can contain HTML formatted content
-- Achievements array is optional - use if separate bullet points are needed
+- Experience description MUST be HTML with <ul><li> for bullets
+- Achievements array should be empty [] - all bullets in description
+- Preserve ALL original bullet points - just enhance the text
 - Only enhance the text quality and apply fixes
 - Provide a brief summary of fixes made`;
 };
@@ -510,6 +526,172 @@ Provide a complete optimization including:
 Make all content specific, quantifiable, and action-oriented.`;
 };
 
+// ========== USER-DRIVEN OPTIMIZATION (NEW APPROACH) ==========
+
+/**
+ * Get the system prompt for user-driven resume optimization
+ * This is the new simplified approach where user provides their goal
+ * @returns {string} System prompt
+ */
+export const getUserDrivenSystemPrompt = () => {
+    return `You are an expert resume writer and ATS (Applicant Tracking System) optimization specialist with 15+ years of experience helping candidates land jobs at top companies.
+
+YOUR EXPERTISE:
+- Crafting compelling, achievement-focused resume content
+- Maximizing ATS compatibility scores (consistently achieving 90%+)
+- Strategic keyword placement for specific roles and industries
+- Reframing existing achievements with impactful language
+- Industry-specific best practices (tech, finance, healthcare, etc.)
+- Modern resume formatting and structure
+- Action-oriented language using power verbs
+- STAR method (Situation, Task, Action, Result) for achievements
+
+YOUR APPROACH:
+1. Understand the user's optimization goal
+2. Tailor content specifically for that goal
+3. ONLY rewrite and enhance existing content - DO NOT add new content
+4. Preserve all dates, company names, and factual information EXACTLY as provided
+5. Use industry-appropriate keywords naturally within existing content
+6. Improve the language and phrasing of existing achievements
+7. Ensure professional tone throughout
+
+CRITICAL RULES - MUST FOLLOW:
+- NEVER fabricate or invent new experience, skills, achievements, or any content
+- NEVER add extra experience entries - output EXACTLY the same number of experiences as input
+- NEVER change dates (startDate, endDate) - preserve them EXACTLY as provided
+- NEVER change the "current" field - if an experience has current: false, keep it as false
+- NEVER set all jobs to "present" or "current" - preserve the original employment status
+- ONLY enhance and reframe EXISTING content with better language
+- Preserve all factual information (dates, companies, locations) EXACTLY
+- Keep the candidate's authentic voice and real achievements
+- If the original description mentions specific projects/tasks, KEEP that information
+- Focus on improving WORDING, not adding NEW information`;
+};
+
+/**
+ * Get prompt for user-driven resume optimization
+ * This is the NEW simplified approach - user tells us what they want
+ * 
+ * @param {Object} currentContent - Current resume content from resume_content table
+ * @param {string} userPrompt - User's optimization goal/prompt
+ * @param {Object} options - Additional options (targetATSScore, etc.)
+ * @returns {string} Optimization prompt
+ */
+export const getUserDrivenOptimizationPrompt = (currentContent, userPrompt, options = {}) => {
+    // Extract current content sections
+    const personalInfo = currentContent?.personalInfo || {};
+    const summary = currentContent?.summary?.text || currentContent?.summary || '';
+    const experiences = currentContent?.experience || [];
+    const education = currentContent?.education || [];
+    const skills = currentContent?.skills || {};
+    const additionalSections = currentContent?.additionalSections || [];
+    
+    // Build experience with IDs (IMPORTANT: AI must preserve these IDs)
+    const experienceWithIds = experiences.map((exp, idx) => {
+        const desc = typeof exp.description === 'string' 
+            ? exp.description.replace(/<[^>]*>/g, ' ').substring(0, 400) 
+            : '';
+        return `Experience #${idx + 1}:
+   - ID: "${exp.id || `exp_${idx + 1}`}" (PRESERVE THIS EXACTLY)
+   - Company: "${exp.company || 'Company'}" (PRESERVE THIS EXACTLY)
+   - Position: "${exp.position || 'Position'}"
+   - Location: "${exp.location || ''}"
+   - Dates: "${exp.startDate || ''}" to "${exp.endDate || 'Present'}"
+   - Current: ${exp.current || false}
+   - Description: ${desc}${desc.length >= 400 ? '...' : ''}`;
+    }).join('\n\n');
+    
+    // Build skills summary
+    const allSkills = [
+        ...(skills.technical || []),
+        ...(skills.soft || []),
+        ...(skills.tools || [])
+    ].slice(0, 20);
+    
+    // Build education summary
+    const educationSummary = education.map(edu => 
+        `${edu.degree || ''} ${edu.field ? `in ${edu.field}` : ''} - ${edu.institution || ''}`
+    ).join(', ');
+    
+    return `OPTIMIZATION REQUEST FROM USER:
+"${userPrompt}"
+
+---
+
+CURRENT RESUME CONTENT TO OPTIMIZE:
+
+**PERSONAL INFO:**
+Name: ${personalInfo.fullName || 'Not provided'}
+Title: ${personalInfo.title || 'Not provided'}
+Location: ${personalInfo.location || 'Not provided'}
+
+**PROFESSIONAL SUMMARY:**
+${summary || 'No summary provided'}
+
+**WORK EXPERIENCE (${experiences.length} entries):**
+${experienceWithIds || 'No experience provided'}
+
+**SKILLS:**
+Technical: ${(skills.technical || []).join(', ') || 'None'}
+Soft: ${(skills.soft || []).join(', ') || 'None'}
+Tools: ${(skills.tools || []).join(', ') || 'None'}
+Languages: ${(skills.languages || []).join(', ') || 'None'}
+
+**EDUCATION:**
+${educationSummary || 'No education provided'}
+
+---
+
+YOUR TASK:
+Based on the user's request "${userPrompt}", REWRITE (not add to) this resume:
+
+1. **PROFESSIONAL SUMMARY**: Rewrite to align with the user's goal
+   - Make it compelling and targeted
+   - Include relevant keywords for their target
+   - Keep it 3-4 impactful sentences
+   - ONLY reword existing information - do NOT add new claims
+   - Return as: { text: "...", keywords: [] } (keywords always empty array)
+
+2. **WORK EXPERIENCE**: ONLY rewrite the language of each experience
+   - YOU MUST OUTPUT EXACTLY ${experiences.length} EXPERIENCES - NO MORE, NO LESS
+   - PRESERVE EXACTLY: id, company, startDate, endDate, current, location
+   - DO NOT change any dates - copy them exactly as provided
+   - DO NOT set all jobs to "current" or "present" - preserve original values
+   - ONLY improve the wording/phrasing of descriptions
+   - Keep the same achievements/responsibilities mentioned, just reword them
+   - Use strong action verbs (Led, Architected, Spearheaded, Delivered)
+   - Format description as HTML bullets: <ul><li>Achievement 1</li><li>Achievement 2</li></ul>
+   - DO NOT invent new achievements, metrics, or responsibilities
+   - Set achievements array to [] (empty) - put all content in description
+
+3. **SKILLS**: Reorganize and optimize
+   - Prioritize skills relevant to user's goal
+   - Group into: technical, soft, tools, languages, certifications
+   - Keep certifications as-is if they're objects
+   - ONLY include skills that were already present
+
+4. **ATS OPTIMIZATION**:
+   - Target ATS Score: ${options.targetATSScore || 90}%
+   - Include industry-standard keywords WITHIN existing content
+   - Use both acronyms and full terms where applicable
+
+⚠️ CRITICAL - STRICT PRESERVATION RULES:
+- Experience array MUST have EXACTLY ${experiences.length} entries - no more, no less
+- COPY these IDs exactly: ${experiences.map(e => `"${e.id}"`).join(', ')}
+- COPY these companies exactly: ${experiences.map(e => `"${e.company}"`).join(', ')}
+- COPY these dates exactly: ${experiences.map(e => `startDate: "${e.startDate}", endDate: "${e.endDate}", current: ${e.current}`).join(' | ')}
+- DO NOT change startDate, endDate, or current fields - they must match input EXACTLY
+- If current is false, it MUST remain false - do NOT change it to true
+- If endDate has a specific date, keep that date - do NOT change it to "Present"
+
+⛔ FORBIDDEN ACTIONS:
+- Adding new experience entries
+- Changing dates to make all jobs look current/present
+- Inventing new achievements or metrics not in the original
+- Adding skills that weren't already present
+- Fabricating certifications or qualifications`;
+};
+
 export default {
     getResumeRewriteSystemPrompt,
     getProfessionalSummaryPrompt,
@@ -519,5 +701,8 @@ export default {
     getATSKeywordsPrompt,
     getFormattingPrompt,
     getResumeContentRewritePrompt,
-    getCompleteResumePrompt
+    getCompleteResumePrompt,
+    // New user-driven approach
+    getUserDrivenSystemPrompt,
+    getUserDrivenOptimizationPrompt
 };

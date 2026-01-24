@@ -21,6 +21,7 @@ import {
     getActiveRewriteController,
     clearActiveRewriteController,
     compareRewriteVersionsController,
+    getOptimizationExamplesController,
     // Theme endpoints
     getThemesController,
     getThemeController,
@@ -82,7 +83,7 @@ router.use(commonAuthenticate);
  * @route GET /api/v1/resumes
  * @desc Get all resumes for authenticated user
  * @access Private
- * @query limit
+ * @query page, limit, q (search in document title), status, createdAt, updatedAt, completedAt, isDraft, sortBy, sortOrder
  */
 router.get('/', getAllResumesController);
 
@@ -140,18 +141,26 @@ router.post('/:id/publish', publishResumeController);
 // ========== REWRITE ROUTES ==========
 
 /**
- * @route POST /api/v1/resumes/:id/rewrites
- * @desc Create a new rewrite job for resume
+ * @route GET /api/v1/resumes/optimization-examples
+ * @desc Get example optimization prompts for users
  * @access Private
- * @body { versionLabel?, targetATSScore?, focusAreas?, optimizationLevel? }
+ * @returns { examples: string[], instructions: string, tips: string[] }
+ */
+router.get('/optimization-examples', getOptimizationExamplesController);
+
+/**
+ * @route POST /api/v1/resumes/:id/rewrites
+ * @desc Create a new rewrite job for resume based on user's optimization prompt
+ * @access Private
+ * @body { prompt: string (REQUIRED), versionLabel?: string, targetATSScore?: number }
  */
 router.post('/:id/rewrites', createRewriteController);
 
 /**
  * @route POST /api/v1/resumes/analysis/:analysisId/rewrites
- * @desc Create a new rewrite job by analysis ID
+ * @desc Create a new rewrite job by analysis ID based on user's optimization prompt
  * @access Private
- * @body { versionLabel?, targetATSScore?, focusAreas?, optimizationLevel? }
+ * @body { prompt: string (REQUIRED), versionLabel?: string, targetATSScore?: number }
  */
 router.post('/analysis/:analysisId/rewrites', createRewriteByAnalysisController);
 

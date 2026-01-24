@@ -3,138 +3,153 @@ import { z } from "zod";
 // Simplified schema for better AI generation success
 const JobFit = ["MAYBE", "FIT", "UNFIT"];
 
-// More flexible schema with many optional fields
+// More flexible schema with many optional fields and defaults for resilient parsing
 export const candidateSchemaSimplified = z.object({
   personal_info: z.object({
-    name: z.string().describe("Name is required"),
-    email: z.string().describe("Email address. If not present, use empty string."),
-    phone: z.string().describe("Phone number. If not present, use empty string."),
-    address: z.string().describe("Address. If not present, use empty string."),
-    summary: z.string().describe("Summary. If not present, use empty string.")
+    name: z.string().default("").describe("Full name of the candidate. Required."),
+    email: z.string().default("").describe("Email address. Extract from contact section. If not present, use empty string."),
+    phone: z.string().default("").describe("Phone number with country code. If not present, use empty string."),
+    address: z.string().default("").describe("Full address/location including city, state, country, zip. If not present, use empty string."),
+    summary: z.string().default("").describe("Professional summary/objective from resume header. Extract the entire professional summary text. If not present, use empty string."),
+    linkedin: z.string().default("").describe("LinkedIn profile URL. Extract from contact or social section. If not present, use empty string."),
+    github: z.string().default("").describe("GitHub profile URL. Extract from contact or social section. If not present, use empty string."),
+    website: z.string().default("").describe("Personal website or portfolio URL. If not present, use empty string."),
+    portfolio: z.string().default("").describe("Portfolio URL if different from website. If not present, use empty string.")
   }),
 
   experiences: z.array(z.object({
-    company: z.string().describe("Company name. If not present, use empty string."),
-    position: z.string().describe("Position. If not present, use empty string."),
-    location: z.string().describe("Location. If not present, use empty string."),
-    website: z.string().describe("Website. If not present, use empty string."),
-    start_date: z.string().describe("Start date. If not present, use empty string."),
-    end_date: z.string().describe("End date. If not present, use empty string."),
-    summary: z.string().describe("Summary. If not present, use empty string."),
-    highlights: z.array(z.string()).describe("Highlights. If none, use empty array.")
-  })).describe("Experiences. If no experience, use empty array."),
+    company: z.string().default("").describe("Company name. If not present, use empty string."),
+    position: z.string().default("").describe("Position/job title. If not present, use empty string."),
+    location: z.string().default("").describe("Location. If not present, use empty string."),
+    website: z.string().default("").describe("Website. If not present, use empty string."),
+    start_date: z.string().default("").describe("Start date in YYYY-MM-DD format. If not present, use empty string."),
+    end_date: z.string().default("").describe("End date in YYYY-MM-DD format. Use 'Present' if currently working here. If not present, use empty string."),
+    summary: z.string().default("").describe("BRIEF role overview sentence ONLY if resume has a separate paragraph description (not bullet points). Leave EMPTY if the experience section only has bullet points. NEVER put bullet point content here."),
+    highlights: z.array(z.string()).default([]).describe("CRITICAL: Extract ALL bullet points, achievements, responsibilities, and accomplishments from this experience entry. EVERY single bullet point or listed item MUST be included here. Do NOT put any bullet point content in summary - ALL bullet content goes here. Each array item = one bullet point.")
+  })).default([]).describe("Work experiences. Extract ALL experiences from the resume. If no experience, use empty array."),
 
   education: z.array(z.object({
-    institution: z.string().describe("Institution. If not present, use empty string."),
-    area: z.string().describe("Field of study. If not present, use empty string."),
-    study_type: z.string().describe("Degree type. If not present, use empty string."),
-    location: z.string().describe("Location. If not present, use empty string."),
-    start_date: z.string().describe("Start date. If not present, use empty string."),
-    end_date: z.string().describe("End date. If not present, use empty string."),
-    gpa: z.string().describe("GPA. If not present, use empty string."),
-    honors: z.array(z.string()).describe("Honors and awards. If none, use empty array."),
-    achievements: z.array(z.string()).describe("Achievements. If none, use empty array.")
-  })).describe("Education. If no education, use empty array."),
+    institution: z.string().default("").describe("Institution. If not present, use empty string."),
+    area: z.string().default("").describe("Field of study. If not present, use empty string."),
+    study_type: z.string().default("").describe("Degree type. If not present, use empty string."),
+    location: z.string().default("").describe("Location. If not present, use empty string."),
+    start_date: z.string().default("").describe("Start date. If not present, use empty string."),
+    end_date: z.string().default("").describe("End date. If not present, use empty string."),
+    gpa: z.string().default("").describe("GPA. If not present, use empty string."),
+    honors: z.array(z.string()).default([]).describe("Honors and awards. If none, use empty array."),
+    achievements: z.array(z.string()).default([]).describe("Achievements. If none, use empty array.")
+  })).default([]).describe("Education. If no education, use empty array."),
 
   social: z.array(z.object({
-    name: z.string().describe("Platform name. If not present, use empty string."),
-    url: z.string().describe("URL. If not present, use empty string.")
-  })).describe("Social profiles. If none, use empty array."),
+    name: z.string().default("").describe("Platform name (e.g., 'LinkedIn', 'GitHub', 'Twitter', 'Portfolio', 'Personal Website', 'Behance', 'Dribbble'). If not present, use empty string."),
+    url: z.string().default("").describe("Full URL to the profile. If not present, use empty string.")
+  })).default([]).describe("ALL social profiles and links from the resume. Extract LinkedIn, GitHub, Twitter, personal websites, portfolio links, etc. If none found, use empty array."),
 
   certificates: z.array(z.object({
-    name: z.string().describe("Certificate name. If not present, use empty string."),
-    authority: z.string().describe("Authority. If not present, use empty string."),
-    certification_id: z.string().describe("ID. If not present, use empty string."),
-    start_date: z.string().describe("Start date. If not present, use empty string."),
-    end_date: z.string().describe("End date. If not present, use empty string.")
-  })).describe("Certificates. If none, use empty array."),
+    name: z.string().default("").describe("Certificate name. If not present, use empty string."),
+    authority: z.string().default("").describe("Authority. If not present, use empty string."),
+    certification_id: z.string().default("").describe("ID. If not present, use empty string."),
+    start_date: z.string().default("").describe("Start date. If not present, use empty string."),
+    end_date: z.string().default("").describe("End date. If not present, use empty string.")
+  })).default([]).describe("Certificates. If none, use empty array."),
 
   achievements: z.array(z.object({
-    title: z.string().describe("Achievement title. If not present, use empty string."),
-    date: z.string().describe("Date. If not present, use empty string."),
-    description: z.string().describe("Description. If not present, use empty string.")
-  })).describe("Achievements. If none, use empty array."),
+    title: z.string().default("").describe("Achievement title. If not present, use empty string."),
+    date: z.string().default("").describe("Date. If not present, use empty string."),
+    description: z.string().default("").describe("Description. If not present, use empty string.")
+  })).default([]).describe("Achievements. If none, use empty array."),
 
   languages: z.array(z.object({
-    name: z.string().describe("Language name. If not present, use empty string."),
-    level: z.string().describe("Level. If not present, use empty string.")
-  })).describe("Languages. If none, use empty array."),
+    name: z.string().default("").describe("Language name. If not present, use empty string."),
+    level: z.string().default("").describe("Level. If not present, use empty string.")
+  })).default([]).describe("Languages. If none, use empty array."),
 
   interests: z.array(z.object({
-    name: z.string().describe("Interest name. If not present, use empty string."),
-    keywords: z.array(z.string()).describe("Keywords. If none, use empty array.")
-  })).describe("Interests. If none, use empty array."),
+    name: z.string().default("").describe("Interest name. If not present, use empty string."),
+    keywords: z.array(z.string()).default([]).describe("Keywords. If none, use empty array.")
+  })).default([]).describe("Interests. If none, use empty array."),
 
   hobbies: z.array(z.object({
-    name: z.string().describe("Hobby name. If not present, use empty string."),
-    description: z.string().describe("Description. If not present, use empty string."),
+    name: z.string().default("").describe("Hobby name. If not present, use empty string."),
+    description: z.string().default("").describe("Description. If not present, use empty string."),
     tags: z.array(z.string()).describe("Tags. If none, use empty array.")
-  })).describe("Hobbies. If none, use empty array."),
+  })).default([]).describe("Hobbies. If none, use empty array."),
 
+  // Structured skills - properly categorized for resume content
+  skills: z.object({
+    technical: z.array(z.string()).default([]).describe("Technical/hard skills - programming languages, frameworks, tools, databases, technologies, methodologies. Extract ALL technical skills mentioned in resume. If none, use empty array."),
+    soft: z.array(z.string()).default([]).describe("Soft skills - leadership, communication, teamwork, problem-solving, time management, adaptability, etc. Extract ALL soft skills mentioned or implied. If none, use empty array."),
+    tools: z.array(z.string()).default([]).describe("Tools and platforms - software tools, platforms, IDEs, DevOps tools, project management tools, etc. If none, use empty array."),
+    industry: z.array(z.string()).default([]).describe("Industry-specific skills and domain knowledge. If none, use empty array.")
+  }).default({ technical: [], soft: [], tools: [], industry: [] }).describe("Categorized skills extracted from resume. Extract ALL skills mentioned anywhere in the resume."),
+
+  // Legacy other_skills field - kept for backwards compatibility
   other_skills: z.array(z.object({
-    name: z.string().describe("Skill name. If not present, use empty string."),
-    description: z.string().describe("Description. If not present, use empty string."),
-    tags: z.array(z.string()).describe("Tags. If none, use empty array.")
-  })).describe("Skills. If none, use empty array."),
+    name: z.string().default("").describe("Skill name. If not present, use empty string."),
+    description: z.string().default("").describe("Description. If not present, use empty string."),
+    tags: z.array(z.string()).default([]).describe("Tags categorizing the skill: 'technical', 'soft', 'tool', 'language', etc. If none, use empty array.")
+  })).default([]).describe("Additional skills not captured in the structured skills object. If none, use empty array."),
 
   projects: z.array(z.object({
-    name: z.string().describe("Project name. If not present, use empty string."),
-    description: z.string().describe("Description. If not present, use empty string."),
-    technologies: z.array(z.string()).describe("Technologies used. If none, use empty array."),
-    link: z.string().describe("Project link/URL. If not present, use empty string."),
-    highlights: z.array(z.string()).describe("Key highlights. If none, use empty array.")
-  })).describe("Projects. If none, use empty array."),
+    name: z.string().default("").describe("Project name/title. If not present, use empty string."),
+    description: z.string().default("").describe("Brief project description paragraph (NOT bullet points). If not present, use empty string."),
+    technologies: z.array(z.string()).default([]).describe("ALL technologies, languages, frameworks, tools used in this project. Extract every technology mentioned. If none, use empty array."),
+    link: z.string().default("").describe("Project link/URL (GitHub, live demo, etc.). If not present, use empty string."),
+    highlights: z.array(z.string()).default([]).describe("ALL bullet points about this project - features, achievements, outcomes. Each bullet = one array item. If none, use empty array."),
+    start_date: z.string().default("").describe("Project start date. If not present, use empty string."),
+    end_date: z.string().default("").describe("Project end date. If not present, use empty string.")
+  })).default([]).describe("ALL projects from the resume - personal projects, work projects, open source contributions. If none, use empty array."),
 
   awards: z.array(z.object({
-    title: z.string().describe("Award title. If not present, use empty string."),
-    date: z.string().describe("Date received. If not present, use empty string."),
-    issuer: z.string().describe("Issuing organization. If not present, use empty string."),
-    description: z.string().describe("Description. If not present, use empty string.")
-  })).describe("Awards. If none, use empty array."),
+    title: z.string().default("").describe("Award title. If not present, use empty string."),
+    date: z.string().default("").describe("Date received. If not present, use empty string."),
+    issuer: z.string().default("").describe("Issuing organization. If not present, use empty string."),
+    description: z.string().default("").describe("Description. If not present, use empty string.")
+  })).default([]).describe("Awards. If none, use empty array."),
 
   publications: z.array(z.object({
-    title: z.string().describe("Publication title. If not present, use empty string."),
-    publisher: z.string().describe("Publisher. If not present, use empty string."),
-    date: z.string().describe("Publication date. If not present, use empty string."),
-    link: z.string().describe("Link to publication. If not present, use empty string."),
-    description: z.string().describe("Description. If not present, use empty string.")
-  })).describe("Publications. If none, use empty array."),
+    title: z.string().default("").describe("Publication title. If not present, use empty string."),
+    publisher: z.string().default("").describe("Publisher. If not present, use empty string."),
+    date: z.string().default("").describe("Publication date. If not present, use empty string."),
+    link: z.string().default("").describe("Link to publication. If not present, use empty string."),
+    description: z.string().default("").describe("Description. If not present, use empty string.")
+  })).default([]).describe("Publications. If none, use empty array."),
 
   volunteers: z.array(z.object({
-    organization: z.string().describe("Organization name. If not present, use empty string."),
-    role: z.string().describe("Role/position. If not present, use empty string."),
-    start_date: z.string().describe("Start date. If not present, use empty string."),
-    end_date: z.string().describe("End date. If not present, use empty string."),
-    description: z.string().describe("Description. If not present, use empty string."),
-    highlights: z.array(z.string()).describe("Key highlights. If none, use empty array.")
-  })).describe("Volunteer experience. If none, use empty array."),
+    organization: z.string().default("").describe("Organization name. If not present, use empty string."),
+    role: z.string().default("").describe("Role/position. If not present, use empty string."),
+    start_date: z.string().default("").describe("Start date. If not present, use empty string."),
+    end_date: z.string().default("").describe("End date. If not present, use empty string."),
+    description: z.string().default("").describe("Description. If not present, use empty string."),
+    highlights: z.array(z.string()).default([]).describe("Key highlights. If none, use empty array.")
+  })).default([]).describe("Volunteer experience. If none, use empty array."),
 
   // Simplified personality assessment
   personality_job_fit: z.object({
     candidate_traits: z.object({
-      realistic: z.boolean().describe("Realistic trait. If uncertain, use false."),
-      investigative: z.boolean().describe("Investigative trait. If uncertain, use false."),
-      artistic: z.boolean().describe("Artistic trait. If uncertain, use false."),
-      social: z.boolean().describe("Social trait. If uncertain, use false."),
-      enterprising: z.boolean().describe("Enterprising trait. If uncertain, use false."),
-      conventional: z.boolean().describe("Conventional trait. If uncertain, use false.")
+      realistic: z.boolean().default(false).describe("Realistic trait. If uncertain, use false."),
+      investigative: z.boolean().default(false).describe("Investigative trait. If uncertain, use false."),
+      artistic: z.boolean().default(false).describe("Artistic trait. If uncertain, use false."),
+      social: z.boolean().default(false).describe("Social trait. If uncertain, use false."),
+      enterprising: z.boolean().default(false).describe("Enterprising trait. If uncertain, use false."),
+      conventional: z.boolean().default(false).describe("Conventional trait. If uncertain, use false.")
     }).describe("Candidate traits based on resume content."),
     
     intelligence_types: z.object({
-      linguistic: z.boolean().describe("Linguistic intelligence. If uncertain, use false."),
-      logical_mathematical: z.boolean().describe("Logical intelligence. If uncertain, use false."),
-      musical: z.boolean().describe("Musical intelligence. If uncertain, use false."),
-      bodily_kinesthetic: z.boolean().describe("Kinesthetic intelligence. If uncertain, use false."),
-      spatial: z.boolean().describe("Spatial intelligence. If uncertain, use false."),
-      interpersonal: z.boolean().describe("Interpersonal intelligence. If uncertain, use false."),
-      intrapersonal: z.boolean().describe("Intrapersonal intelligence. If uncertain, use false."),
-      naturalistic: z.boolean().describe("Naturalistic intelligence. If uncertain, use false.")
+      linguistic: z.boolean().default(false).describe("Linguistic intelligence. If uncertain, use false."),
+      logical_mathematical: z.boolean().default(false).describe("Logical intelligence. If uncertain, use false."),
+      musical: z.boolean().default(false).describe("Musical intelligence. If uncertain, use false."),
+      bodily_kinesthetic: z.boolean().default(false).describe("Kinesthetic intelligence. If uncertain, use false."),
+      spatial: z.boolean().default(false).describe("Spatial intelligence. If uncertain, use false."),
+      interpersonal: z.boolean().default(false).describe("Interpersonal intelligence. If uncertain, use false."),
+      intrapersonal: z.boolean().default(false).describe("Intrapersonal intelligence. If uncertain, use false."),
+      naturalistic: z.boolean().default(false).describe("Naturalistic intelligence. If uncertain, use false.")
     }).describe("Intelligence types based on resume content."),
     
-    personality_type: z.string().describe("Personality type. If uncertain, use empty string."),
-    secondary_alignment: z.string().describe("Secondary alignment. If uncertain, use empty string."),
-    personality_description: z.string().describe("Personality description. If uncertain, use empty string."),
-    tags: z.array(z.string()).describe("Personality tags. If none, use empty array.")
+    personality_type: z.string().default("").describe("Personality type. If uncertain, use empty string."),
+    secondary_alignment: z.string().default("").describe("Secondary alignment. If uncertain, use empty string."),
+    personality_description: z.string().default("").describe("Personality description. If uncertain, use empty string."),
+    tags: z.array(z.string()).default([]).describe("Personality tags. If none, use empty array.")
   }).describe("Personality assessment based on resume content."),
 
   // Simplified relevance scoring

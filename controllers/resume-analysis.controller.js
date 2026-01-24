@@ -471,7 +471,7 @@ export const createResumeController = asyncHandler(async (req, res, next) => {
 
     // Create document record with temporary title (will be updated after parsing)
     const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-    const documentTitle = `Resume Analysis (Pending) - ${timestamp}`;
+    const documentTitle = `Pending Analysis - ${timestamp}`;
     
     let createdDocument;
     let createAnalysis;

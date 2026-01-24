@@ -71,6 +71,13 @@
       "when": 1768647129497,
       "tag": "0009_fix_candidate_analysis_jobid_typo",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1768894500698,
+      "tag": "0010_fearless_reaper",
+      "breakpoints": true
     }
   ]
 }

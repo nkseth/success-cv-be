@@ -101,83 +101,57 @@ try {
 }
 
 /**
- * Generate lightweight post-rewrite summary
- * Shows what issues were resolved and score improvements after AI optimization
- * @param {Object} originalAnalysis - Original analysis data with issues
+ * Generate lightweight post-rewrite summary for user-driven optimization
+ * Shows what was improved based on user's goal
+ * @param {Object} currentContent - Original content before optimization
  * @param {Object} optimizationResult - Result from AI optimization
+ * @param {string} userPrompt - User's optimization goal
  * @param {Object} options - Optimization options used
  * @returns {Object} Lightweight rewrite summary
  */
-function generateRewriteSummary(originalAnalysis, optimizationResult, options = {}) {
+function generateRewriteSummary(currentContent, optimizationResult, userPrompt, options = {}) {
     logger.info('[RESUME_REWRITE] Generating post-rewrite summary');
     
-    const originalIssues = {
-        critical: originalAnalysis?.critical_mistakes || [],
-        major: originalAnalysis?.major_issues || [],
-        minor: originalAnalysis?.minor_improvements || []
-    };
+    // Get summary from optimization result
+    const fixesSummary = optimizationResult?.metadata?.fixesSummary || 
+        `Resume optimized for: ${userPrompt?.substring(0, 100) || 'ATS compatibility'}`;
     
-    // Get fixes summary from optimization result
-    const fixesSummary = optimizationResult?.metadata?.fixesSummary || 'Resume optimized for ATS compatibility';
+    // Get scores from current content (before) and optimization result (after)
+    const beforeScores = currentContent?.currentScores || {};
+    const afterScores = optimizationResult?.scores || {};
     
-    // Count resolved issues (assume AI resolves most issues)
-    const resolvedCounts = {
-        critical: originalIssues.critical.length,
-        major: originalIssues.major.length,
-        minor: Math.ceil(originalIssues.minor.length * 0.7) // 70% of minor issues resolved
-    };
-    
-    const remainingCounts = {
-        critical: 0,
-        major: 0,
-        minor: originalIssues.minor.length - resolvedCounts.minor
-    };
-    
-    // Build new scores from optimization result
-    const newScores = {
-        atsScore: optimizationResult?.scores?.atsScore || options.targetATSScore || 85,
-        contentScore: optimizationResult?.scores?.contentScore || 85,
-        formatScore: optimizationResult?.scores?.formatScore || 85,
-        overallScore: optimizationResult?.scores?.overallScore || optimizationResult?.scores?.atsScore || 85,
-        jobFitScore: optimizationResult?.scores?.jobFitScore || originalAnalysis?.JobFitScore || 0,
-        skillsRelevanceScore: optimizationResult?.scores?.skillsRelevanceScore || originalAnalysis?.relevance?.['Skills Relevance'] || 0,
-        experienceRelevanceScore: optimizationResult?.scores?.experienceRelevanceScore || originalAnalysis?.relevance?.['Work Experience'] || 0,
-        educationRelevanceScore: optimizationResult?.scores?.educationRelevanceScore || originalAnalysis?.relevance?.['Education'] || 0
-    };
-    
-    // Calculate improvement from original
-    const originalAtsScore = originalAnalysis?.resume_quality?.ats_compatibility_score || 0;
-    const scoreImprovement = newScores.atsScore - originalAtsScore;
+    const scoreImprovement = (afterScores.atsScore || 85) - (beforeScores.atsScore || 60);
     
     const rewriteSummary = {
+        // User's original goal
+        userPrompt: userPrompt,
+        
         // Summary of what was improved
         improvementSummary: fixesSummary,
-        
-        // Issue counts for quick reference
-        resolvedCounts,
-        remainingCounts,
-        totalResolved: resolvedCounts.critical + resolvedCounts.major + resolvedCounts.minor,
-        totalRemaining: remainingCounts.critical + remainingCounts.major + remainingCounts.minor,
         
         // Score comparison - lightweight before/after for display
         scoreComparison: {
             before: {
-                atsScore: originalAtsScore,
-                contentScore: originalAnalysis?.resume_quality?.content_quality_score || 0,
-                overallScore: originalAnalysis?.resume_quality?.overall_quality_score || 0
+                atsScore: beforeScores.atsScore || 60,
+                contentScore: beforeScores.contentScore || 60,
+                overallScore: beforeScores.overallScore || 60
             },
             after: {
-                atsScore: newScores.atsScore,
-                contentScore: newScores.contentScore,
-                overallScore: newScores.overallScore
+                atsScore: afterScores.atsScore || 85,
+                contentScore: afterScores.contentScore || 85,
+                overallScore: afterScores.overallScore || 85
             },
             improvement: {
                 atsScore: scoreImprovement,
                 description: scoreImprovement > 0 
                     ? `+${scoreImprovement} point improvement in ATS score`
-                    : 'ATS score maintained'
+                    : 'Resume optimized for your goal'
             }
         },
+        
+        // Optimization type marker
+        optimizationType: 'user-driven',
+        targetATSScore: options.targetATSScore || 90,
         
         // Version marker
         version: `rewrite_v${options.versionNumber || 1}`,
@@ -185,9 +159,9 @@ function generateRewriteSummary(originalAnalysis, optimizationResult, options = 
     };
     
     logger.info('[RESUME_REWRITE] ✅ Post-rewrite summary generated', {
-        resolvedCount: rewriteSummary.totalResolved,
-        remainingCount: rewriteSummary.totalRemaining,
-        scoreImprovement
+        userPrompt: userPrompt?.substring(0, 50),
+        scoreImprovement,
+        estimatedAtsScore: afterScores.atsScore
     });
     
     return rewriteSummary;
@@ -195,8 +169,8 @@ function generateRewriteSummary(originalAnalysis, optimizationResult, options = 
 
 /**
  * Process resume rewrite job
- * Uses the current resume content (which may have been manually edited)
- * as the base for AI optimization
+ * NEW USER-DRIVEN APPROACH: Uses user's prompt to optimize resume
+ * No longer dependent on analysis issues
  * @param {Object} job - BullMQ job object
  * @returns {Promise<Object>} Rewrite result
  */
@@ -206,9 +180,8 @@ async function processResumeRewrite(job) {
         analysisID, 
         userID, 
         resumeContentID,
-        analysisData,
-        rawData,
         currentContent,
+        userPrompt,  // NEW: User's optimization goal
         optimizationOptions,
         userType = userTypeConstants.USER
     } = job.data;
@@ -217,14 +190,15 @@ async function processResumeRewrite(job) {
     const tables = getTablesForUserType(userType);
     const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
     
-    logger.info('[RESUME_REWRITE] Starting job', { 
+    logger.info('[RESUME_REWRITE] Starting user-driven rewrite job', { 
         jobId: job.id,
         rewriteID,
         analysisID,
         userID,
         resumeContentID,
         hasCurrentContent: !!currentContent,
-        currentContentVersion: currentContent?.version,
+        hasUserPrompt: !!userPrompt,
+        userPromptPreview: userPrompt?.substring(0, 50),
         userType
     });
 
@@ -242,18 +216,9 @@ async function processResumeRewrite(job) {
         });
 
         // Step 2: Parse and prepare data
-        let parsedAnalysisData, parsedRawData, parsedCurrentContent;
+        let parsedCurrentContent;
         await executeWithRewriteProgress(job.id, 'PREPARING', async () => {
-            logger.info('[RESUME_REWRITE] Parsing analysis and content data');
-            
-            // Parse original analysis data (for context)
-            parsedAnalysisData = typeof analysisData === 'string' 
-                ? JSON.parse(analysisData) 
-                : analysisData;
-            
-            parsedRawData = typeof rawData === 'string' 
-                ? rawData 
-                : JSON.stringify(rawData);
+            logger.info('[RESUME_REWRITE] Parsing content data');
             
             // Parse current content (this is what we're optimizing FROM)
             parsedCurrentContent = typeof currentContent === 'string'
@@ -261,39 +226,39 @@ async function processResumeRewrite(job) {
                 : currentContent;
             
             logger.info('[RESUME_REWRITE] ✅ Data parsed successfully', {
-                hasAnalysisData: !!parsedAnalysisData,
                 hasCurrentContent: !!parsedCurrentContent,
-                currentContentSections: parsedCurrentContent ? Object.keys(parsedCurrentContent) : []
+                currentContentSections: parsedCurrentContent ? Object.keys(parsedCurrentContent) : [],
+                userPrompt: userPrompt?.substring(0, 50)
             });
         });
 
-        // Step 2.5: Analyze issues from original analysis
+        // Step 2.5: Validate user prompt (safety check)
         await executeWithRewriteProgress(job.id, 'ANALYZING_ISSUES', async () => {
-            logger.info('[RESUME_REWRITE] Analyzing issues from original analysis', {
-                criticalCount: parsedAnalysisData?.critical_mistakes?.length || 0,
-                majorCount: parsedAnalysisData?.major_issues?.length || 0,
-                minorCount: parsedAnalysisData?.minor_improvements?.length || 0
+            logger.info('[RESUME_REWRITE] Validating optimization request', {
+                userPrompt: userPrompt?.substring(0, 100)
             });
+            
+            if (!userPrompt) {
+                throw new Error('User optimization prompt is required');
+            }
         });
 
-        // Step 3: Generate optimized content from current state
+        // Step 3: Generate optimized content based on user's goal
         let optimizationResult;
         
         // Start optimization
         await executeWithRewriteProgress(job.id, 'OPTIMIZING', async () => {
-            logger.info('[RESUME_REWRITE] Starting AI optimization of resume content');
+            logger.info('[RESUME_REWRITE] Starting AI optimization based on user goal', {
+                userPrompt: userPrompt?.substring(0, 100)
+            });
         });
         
-        // Run the actual optimization (this is the long operation)
+        // Run the actual optimization using user prompt (NEW APPROACH)
         optimizationResult = await optimizeResumeContent(
-            parsedCurrentContent || parsedAnalysisData, // Current resume content
-            parsedAnalysisData, // Analysis data with critical_mistakes, major_issues, etc.
+            parsedCurrentContent,
+            userPrompt,  // Pass user's prompt instead of analysis data
             {
-                ...optimizationOptions,
-                // Use issues from analysis for targeted fixes
-                criticalMistakes: parsedAnalysisData?.critical_mistakes || [],
-                majorIssues: parsedAnalysisData?.major_issues || [],
-                minorImprovements: parsedAnalysisData?.minor_improvements || []
+                targetATSScore: optimizationOptions?.targetATSScore || 90
             }
         );
         
@@ -329,11 +294,11 @@ async function processResumeRewrite(job) {
                 scores: optimizationResult.scores || null
             };
             
-            // Generate lightweight rewrite summary
-            // This shows what was fixed in a compact format
+            // Generate lightweight rewrite summary (user-driven approach)
             const rewriteSummary = generateRewriteSummary(
-                parsedAnalysisData,
+                parsedCurrentContent,
                 optimizationResult,
+                userPrompt,
                 optimizationOptions
             );
             
@@ -389,8 +354,32 @@ async function processResumeRewrite(job) {
                     // Check if content was modified
                     const wasModified = currentResumeContent.updatedAt > previousRewrite.appliedAt;
                     
+                    // Get current theme to save with the previous rewrite
+                    const { getUserTheme } = await import('../../models/theme.model.js');
+                    let currentThemeSnapshot = null;
+                    try {
+                        const currentTheme = await getUserTheme(currentResumeContent.id, userID, userType);
+                        if (currentTheme) {
+                            currentThemeSnapshot = {
+                                themeID: currentTheme.themeID,
+                                themeName: currentTheme.themeName,
+                                themeSlug: currentTheme.themeSlug,
+                                themeCategory: currentTheme.themeCategory,
+                                themeConfig: currentTheme.themeConfig,
+                                customOverrides: currentTheme.customOverrides,
+                                sectionVisibility: currentTheme.sectionVisibility,
+                                sectionOrder: currentTheme.sectionOrder,
+                                isATSOptimized: currentTheme.isATSOptimized
+                            };
+                        }
+                    } catch (themeError) {
+                        logger.warn('[RESUME_REWRITE] Could not fetch theme for previous rewrite snapshot', { 
+                            error: themeError.message 
+                        });
+                    }
+                    
                     // Save current resume content to the previous rewrite
-                    // Includes: sections, scores, AND analysisSummary
+                    // Includes: sections, scores, analysisSummary, AND theme
                     const currentSnapshot = {
                         personalInfo: currentResumeContent.personalInfo,
                         summary: currentResumeContent.summary,
@@ -398,7 +387,8 @@ async function processResumeRewrite(job) {
                         education: currentResumeContent.education,
                         skills: currentResumeContent.skills,
                         additionalSections: currentResumeContent.additionalSections,
-                        scores: currentResumeContent.currentScores
+                        scores: currentResumeContent.currentScores,
+                        theme: currentThemeSnapshot
                     };
                     
                     // Also save the current analysisSummary to the previous rewrite as rewriteSummary
@@ -414,11 +404,12 @@ async function processResumeRewrite(job) {
                         })
                         .where(eq(tables.rewritesTable.id, currentResumeContent.activeRewriteID));
                     
-                    logger.info('[RESUME_REWRITE] ✅ Saved current content, scores, and analysisSummary to previous rewrite', {
+                    logger.info('[RESUME_REWRITE] ✅ Saved current content, scores, analysisSummary, and theme to previous rewrite', {
                         previousRewriteID: currentResumeContent.activeRewriteID,
                         wasModified,
                         hasScores: !!currentResumeContent.currentScores,
-                        hasAnalysisSummary: !!currentAnalysisSummary
+                        hasAnalysisSummary: !!currentAnalysisSummary,
+                        hasTheme: !!currentThemeSnapshot
                     });
                 }
             }
@@ -447,7 +438,10 @@ async function processResumeRewrite(job) {
             
             // Get the rewrite summary we just saved to the rewrite
             const [rewriteRecord] = await db
-                .select({ rewriteSummary: tables.rewritesTable.rewriteSummary })
+                .select({ 
+                    rewriteSummary: tables.rewritesTable.rewriteSummary,
+                    sourceContentSnapshot: tables.rewritesTable.sourceContentSnapshot 
+                })
                 .from(tables.rewritesTable)
                 .where(eq(tables.rewritesTable.id, rewriteID))
                 .limit(1);
@@ -472,6 +466,22 @@ async function processResumeRewrite(job) {
                     updatedAt: new Date()
                 })
                 .where(eq(tables.contentTable.id, currentResumeContent.id));
+            
+            // Restore theme from source snapshot if available
+            if (rewriteRecord?.sourceContentSnapshot) {
+                const snapshot = typeof rewriteRecord.sourceContentSnapshot === 'string'
+                    ? JSON.parse(rewriteRecord.sourceContentSnapshot)
+                    : rewriteRecord.sourceContentSnapshot;
+                
+                if (snapshot.theme && snapshot.theme.themeID) {
+                    const { restoreThemeFromSnapshot } = await import('../../models/theme.model.js');
+                    await restoreThemeFromSnapshot(userID, currentResumeContent.id, snapshot.theme, userType);
+                    logger.info('[RESUME_REWRITE] ✅ Theme restored from source snapshot', {
+                        themeID: snapshot.theme.themeID,
+                        themeName: snapshot.theme.themeName
+                    });
+                }
+            }
             
             logger.info('[RESUME_REWRITE] ✅ Rewrite auto-applied to resume content', {
                 contentID: currentResumeContent.id,

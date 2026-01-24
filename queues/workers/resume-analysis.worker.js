@@ -277,7 +277,7 @@ async function processResumeAnalysis(job) {
             // Update document title with candidate name from parsed data
             const candidateName = resumeData.personal_info?.name || 'Unknown Candidate';
             const timestamp = new Date().toISOString().split('T')[0];
-            const updatedTitle = `${candidateName} - Resume Analysis - ${timestamp}`;
+            const updatedTitle = `${candidateName} - ${timestamp}`;
             
             await db.update(tables.documentTable)
                 .set({

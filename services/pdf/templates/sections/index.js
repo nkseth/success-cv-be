@@ -108,7 +108,9 @@ export const renderExperience = (experience, config) => {
             endDate = '',
             current = false,
             description = '',
-            achievements = []
+            achievements = [],
+            website = '',
+            keywords = []
         } = exp;
 
         const dateStr = formatDateRange(startDate, current ? 'Present' : endDate);
@@ -129,12 +131,22 @@ export const renderExperience = (experience, config) => {
             ? `<div class="entry-description">${sanitizeHtml(description)}</div>` 
             : '';
 
+        // Keywords as subtle tags (optional, for ATS visibility)
+        const keywordsHTML = keywords && keywords.length > 0
+            ? `<div class="entry-keywords text-small text-muted">${keywords.map(k => escapeHtml(k)).join(' • ')}</div>`
+            : '';
+
+        // Company with optional website link
+        const companyHTML = website 
+            ? `<a href="${escapeHtml(website)}" class="entry-subtitle">${escapeHtml(company)}</a>`
+            : `<p class="entry-subtitle">${escapeHtml(company)}</p>`;
+
         return `
             <div class="entry-item experience-item">
                 <div class="entry-header">
                     <div class="entry-title-group">
                         <h3 class="entry-title">${escapeHtml(position)}</h3>
-                        <p class="entry-subtitle">${escapeHtml(company)}</p>
+                        ${companyHTML}
                     </div>
                     <div class="entry-meta">
                         <p class="entry-date">${escapeHtml(dateStr)}</p>
@@ -372,18 +384,35 @@ export const renderAdditionalSections = (additionalSections, config) => {
 
 // Helper renderers for additional sections
 const renderProjects = (projects) => {
-    return projects.map(proj => `
-        <div class="additional-item">
+    return projects.map(proj => {
+        const dateStr = formatDateRange(proj.startDate || proj.start_date, proj.endDate || proj.end_date);
+        
+        // Description can contain HTML content, sanitize it
+        const descriptionHTML = proj.description 
+            ? sanitizeHtml(proj.description)
+            : '';
+        
+        // Highlights as bullet points if available
+        const highlightsHTML = proj.highlights && proj.highlights.length > 0
+            ? `<ul class="item-list project-highlights">${proj.highlights.map(h => `<li>${escapeHtml(h)}</li>`).join('')}</ul>`
+            : '';
+        
+        return `
+        <div class="additional-item project-item">
             <div class="entry-header">
                 <span class="additional-item-title">${escapeHtml(proj.name || proj.title || '')}</span>
-                ${proj.link ? `<a href="${escapeHtml(proj.link)}" class="text-small text-primary">View</a>` : ''}
+                <div class="project-links">
+                    ${proj.link ? `<a href="${escapeHtml(proj.link)}" class="text-small text-primary">View</a>` : ''}
+                    ${dateStr ? `<span class="additional-item-meta">${escapeHtml(dateStr)}</span>` : ''}
+                </div>
             </div>
-            ${proj.description ? `<p class="additional-item-description">${escapeHtml(proj.description)}</p>` : ''}
+            ${descriptionHTML ? `<div class="additional-item-description">${descriptionHTML}</div>` : ''}
+            ${highlightsHTML}
             ${proj.technologies && proj.technologies.length > 0 ? `
-                <p class="text-small text-muted mt-4">${proj.technologies.map(t => escapeHtml(t)).join(', ')}</p>
+                <p class="text-small text-muted mt-4"><strong>Technologies:</strong> ${proj.technologies.map(t => escapeHtml(t)).join(', ')}</p>
             ` : ''}
         </div>
-    `).join('');
+    `}).join('');
 };
 
 const renderAwards = (awards) => {

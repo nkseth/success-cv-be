@@ -28,36 +28,38 @@ export const sectionFixSchema = z.object({
  */
 export const optimizedSummarySchema = z.object({
     text: z.string().describe('The optimized professional summary (3-4 impactful sentences)'),
-    keywords: z.array(z.string()).describe('ATS keywords naturally included')
+    keywords: z.array(z.string()).optional().default([]).describe('ATS keywords - keep empty array')
 }).describe('Optimized professional summary');
 
 /**
  * Optimized Experience Entry Schema
- * Matches the structure in resumeContentTable.experience
- * Description can contain HTML content from rich text editors
- * Achievements are optional - content may be in description instead
+ * MUST match the exact structure used in resume analysis for seamless data flow
+ * Uses summary + highlights format (analysis) which gets converted to HTML description on apply
  */
 export const optimizedExperienceSchema = z.object({
-    company: z.string().describe('Company name'),
-    position: z.string().describe('Job title'),
-    location: z.string().nullable().optional().describe('Job location'),
-    startDate: z.string().nullable().optional().describe('Start date'),
-    endDate: z.string().nullable().optional().describe('End date or Present'),
+    id: z.string().describe('Unique identifier for this experience (e.g., "exp_1", "exp_2") - preserve from input'),
+    company: z.string().describe('Company name - preserve exactly as provided'),
+    position: z.string().describe('Job title - can be enhanced for ATS'),
+    location: z.string().nullable().optional().default('').describe('Job location - preserve as provided'),
+    startDate: z.string().nullable().optional().describe('Start date - preserve exactly as provided'),
+    endDate: z.string().nullable().optional().describe('End date or Present - preserve exactly as provided'),
     current: z.boolean().optional().describe('Is current position'),
-    description: z.string().nullable().optional().describe('Role description - can contain HTML content with bullet points, formatted text, etc. Use HTML tags like <ul>, <li>, <p>, <strong> for formatting'),
-    achievements: z.array(z.string()).optional().describe('Achievement bullets with STAR format and metrics - optional if achievements are already in description')
-}).describe('Optimized work experience entry');
+    description: z.string().nullable().optional().default('').describe('HTML formatted content with bullet points: <ul><li>Achievement 1</li><li>Achievement 2</li></ul>. Put ALL bullet points here as HTML list items.'),
+    achievements: z.array(z.string()).optional().default([]).describe('Keep as empty array - all achievements go in description as HTML'),
+    keywords: z.array(z.string()).optional().default([]).describe('ATS keywords for this role'),
+    website: z.string().optional().default('').describe('Company website if available')
+}).describe('Optimized work experience entry - must preserve id, company, dates');
 
 /**
  * Optimized Skills Schema
  * Matches the structure in resumeContentTable.skills
  */
 export const optimizedSkillsSchema = z.object({
-    technical: z.array(z.string()).describe('Technical skills'),
-    soft: z.array(z.string()).describe('Soft skills'),
-    tools: z.array(z.string()).optional().describe('Tools and platforms'),
-    languages: z.array(z.string()).optional().describe('Spoken languages'),
-    certifications: z.array(z.string()).optional().describe('Certifications')
+    technical: z.array(z.string()).describe('Technical skills - prioritized for target role'),
+    soft: z.array(z.string()).describe('Soft skills - relevant to target'),
+    tools: z.array(z.string()).optional().default([]).describe('Tools and platforms'),
+    languages: z.array(z.string()).optional().default([]).describe('Spoken languages'),
+    certifications: z.array(z.any()).optional().default([]).describe('Certifications - preserve structure if objects')
 }).describe('Optimized skills section');
 
 /**
@@ -101,20 +103,19 @@ export const summaryContentSchema = z.object({
 
 /**
  * Experience Entry Schema - matches resumeContentTable.experience array items
- * Description can contain HTML content from rich text editors
- * Achievements are optional - content may be in description instead
+ * Uses HTML description format with all achievements as <ul><li> items
  */
 export const experienceEntrySchema = z.object({
-    id: z.string().optional().describe('Unique identifier for this experience'),
+    id: z.string().optional().describe('Unique identifier for this experience - preserve from input'),
     company: z.string().describe('Company name'),
     position: z.string().describe('Job title'),
-    location: z.string().optional().describe('Job location'),
+    location: z.string().optional().default('').describe('Job location'),
     startDate: z.string().optional().describe('Start date (e.g., "Jan 2020" or "2020-01")'),
     endDate: z.string().optional().describe('End date or "Present" for current role'),
     current: z.boolean().optional().describe('Whether this is the current position'),
-    description: z.string().optional().describe('Role description - can contain HTML content with bullet points, formatted text, etc.'),
-    achievements: z.array(z.string()).optional().describe('Achievement bullets using STAR format with quantifiable metrics - optional if in description'),
-    keywords: z.array(z.string()).optional().describe('ATS keywords for this role')
+    description: z.string().optional().default('').describe('HTML formatted description with ALL bullet points as <ul><li> items. ALL achievements go here.'),
+    achievements: z.array(z.string()).optional().default([]).describe('Keep as empty array - all content goes in description HTML'),
+    keywords: z.array(z.string()).optional().default([]).describe('ATS keywords for this role')
 }).describe('Work experience entry');
 
 /**

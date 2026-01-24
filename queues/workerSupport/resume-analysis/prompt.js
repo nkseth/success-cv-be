@@ -32,6 +32,82 @@ Be realistic, not hypothetical.
 6.  **Calculate accurate job fit scores based on actual requirements and your detailed assessment.**
 7.  **DO NOT skip or omit any schema fields** - include all fields in the response, using appropriate empty values when data is not available.
 
+---
+
+### 🚨 CRITICAL DATA EXTRACTION RULES (READ CAREFULLY):
+
+**PERSONAL INFO EXTRACTION:**
+Extract ALL contact information and social links into personal_info:
+- **name**: Full name of the candidate
+- **email**: Email address from contact section
+- **phone**: Phone number with country code
+- **address**: Full location/address
+- **summary**: The professional summary/objective paragraph (if present)
+- **linkedin**: LinkedIn URL (look in header, footer, contact section)
+- **github**: GitHub URL (look in header, footer, contact section)
+- **website**: Personal website URL
+- **portfolio**: Portfolio URL
+
+**SOCIAL ARRAY EXTRACTION:**
+Also populate the social array with ALL links found:
+- LinkedIn profiles
+- GitHub profiles
+- Twitter/X profiles
+- Personal websites
+- Portfolio links
+- Behance, Dribbble, Medium, etc.
+
+**🚨 EXPERIENCE BULLET POINTS - ABSOLUTELY CRITICAL:**
+For EACH experience entry, you MUST extract EVERY SINGLE bullet point:
+
+1. **summary field**: ONLY use if there's a separate paragraph description (NOT bullet points)
+   - If all content is bullet points → summary = "" (empty string)
+   - NEVER put bullet point content in summary
+
+2. **highlights array**: MUST contain ALL bullet points
+   - Count the bullet points in the resume for each job
+   - The highlights array MUST have the same count
+   - Each bullet point = one array item
+   - Do NOT summarize or skip any bullets
+   - Do NOT combine multiple bullets into one
+
+**Example - Resume shows:**
+~~~
+Software Engineer at TechCo (2020-2023)
+• Built microservices architecture serving 1M+ users
+• Reduced API latency by 40% through optimization
+• Led team of 4 developers on payment integration
+• Implemented CI/CD pipeline with GitHub Actions
+• Mentored 2 junior developers
+~~~
+
+**✅ CORRECT extraction:**
+{
+  "company": "TechCo",
+  "position": "Software Engineer",
+  "start_date": "2020",
+  "end_date": "2023",
+  "summary": "",
+  "highlights": [
+    "Built microservices architecture serving 1M+ users",
+    "Reduced API latency by 40% through optimization",
+    "Led team of 4 developers on payment integration",
+    "Implemented CI/CD pipeline with GitHub Actions",
+    "Mentored 2 junior developers"
+  ]
+}
+
+**❌ WRONG extraction (DO NOT DO THIS):**
+{
+  "summary": "Built microservices architecture serving 1M+ users",
+  "highlights": [
+    "Reduced API latency by 40% through optimization",
+    "Led team of 4 developers on payment integration"
+  ]
+}
+
+---
+
 ### PHONE NUMBER NORMALIZATION:
 **CRITICAL**: For phone numbers, apply intelligent country code normalization:
 - **If phone number already has country code** (starts with +): Keep it as is, DO NOT change
@@ -82,7 +158,22 @@ Be realistic, not hypothetical.
 * **Skills Match % = (Verified Matching Skills / Total Required Skills) × 100**
 * Apply automatic caps if fundamental skill gaps exist
 
-* **If no specific skills are mentioned, provide an empty array but still include the skills section.**
+**📋 SKILLS EXTRACTION REQUIREMENTS (CRITICAL):**
+You MUST populate the 'skills' object with categorized skills extracted from the ENTIRE resume:
+* **skills.technical**: ALL technical/hard skills - programming languages (JavaScript, Python, Java, etc.), frameworks (React, Angular, Node.js, Django, etc.), databases (PostgreSQL, MongoDB, MySQL, etc.), technologies, methodologies (Agile, Scrum), cloud services (AWS, Azure, GCP), etc.
+* **skills.soft**: ALL soft skills - leadership, communication, teamwork, problem-solving, time management, adaptability, project management, collaboration, etc.
+* **skills.tools**: Tools and platforms - Git, Docker, Kubernetes, JIRA, VS Code, Figma, Slack, CI/CD tools, etc.
+* **skills.industry**: Domain-specific knowledge - fintech, healthcare, e-commerce expertise, etc.
+
+**IMPORTANT**: Extract skills from ALL parts of the resume:
+- Dedicated skills section
+- Experience descriptions (technologies used in each role)
+- Project descriptions
+- Summary/objective statements
+- Education (relevant coursework, thesis topics)
+- Certifications and training
+
+If no specific skills are mentioned, provide empty arrays but still include the skills object structure.
 
 **STEP 2: WORK HISTORY ANALYSIS (Second Priority)**
 
@@ -196,6 +287,28 @@ For candidates transitioning between different roles (e.g., QA → Developer):
 1.  **Personal Information**: Extract the candidate's name, email, phone number, address, country, and a concise summary statement. **If any of these are not present in the resume, use empty strings.**
 
 2.  **Experience**: (Enhanced with cruel recruiter perspective above)
+    - For each work experience entry, extract:
+      * company, position, location, website, start_date, end_date
+      * **summary**: LEAVE EMPTY ("") unless the resume has a separate paragraph description that is NOT a bullet point. If all content is bullet points, summary MUST be empty.
+      * **highlights**: ABSOLUTELY CRITICAL - Extract EVERY SINGLE bullet point, achievement, responsibility, and accomplishment as an array of strings
+    
+    **🚨 MANDATORY HIGHLIGHTS EXTRACTION RULES:**
+    - **ALL bullet points MUST go into the highlights array** - no exceptions
+    - **NEVER put bullet point content into the summary field** - summary is ONLY for paragraph text (if any)
+    - If the experience has 5 bullet points, highlights array MUST have 5 items
+    - If the experience has 10 bullet points, highlights array MUST have 10 items
+    - Each array item = exactly one bullet point from the resume
+    - Do NOT summarize or combine multiple bullet points
+    - Do NOT skip any bullet points - extract them ALL
+    - If the resume only has bullet points (no paragraph), summary = "" and all content goes to highlights
+    
+    **✅ CORRECT Example (resume has only bullets):**
+    summary: ""
+    highlights: ["Led team of 5 developers", "Increased performance by 40%", "Managed $500K budget", "Implemented CI/CD pipeline", "Reduced deployment time by 60%"]
+    
+    **❌ WRONG Example (don't do this):**
+    summary: "Led team of 5 developers"
+    highlights: ["Increased performance by 40%", "Managed $500K budget"]
 
 3.  **Education**: (Enhanced with cruel recruiter perspective above)
 

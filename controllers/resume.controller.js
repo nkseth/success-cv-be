@@ -9,6 +9,7 @@ import {
     formatPaginatedResponse 
 } from "../utils/pagination-filter.js";
 import { userTypeConstants } from "../utils/constants.js";
+import { getExamplePrompts } from "../utils/prompt-validator.js";
 
 /**
  * Resume Controller
@@ -28,11 +29,13 @@ import { userTypeConstants } from "../utils/constants.js";
  * Query params:
  * - page: Page number (default: 1)
  * - limit: Items per page (default: 10, max: 100)
- * - q: Search in resume content
+ * - q: Search in document title
+ * - status: Filter by status (completed, pending, failed) - supports multiple: ?status=completed,pending
  * - createdAt: Date range filter ?createdAt=2025-01-01,2025-12-31
  * - updatedAt: Date range filter
+ * - completedAt: Date range filter
  * - isDraft: Filter by draft status - supports multiple: ?isDraft=true,false
- * - sortBy: Sort field (createdAt, updatedAt, version)
+ * - sortBy: Sort field (createdAt, updatedAt, completedAt, version, atsScore)
  * - sortOrder: Sort order (asc, desc)
  */
 export const getAllResumesController = asyncHandler(async (req, res, next) => {
@@ -46,11 +49,13 @@ export const getAllResumesController = asyncHandler(async (req, res, next) => {
         defaultPageSize: 10,
         maxPageSize: 100,
         filterableFields: {
+            status: 'array',
             createdAt: 'dateRange',
             updatedAt: 'dateRange',
+            completedAt: 'dateRange',
             isDraft: 'boolean',
         },
-        sortableFields: ['createdAt', 'updatedAt', 'version'],
+        sortableFields: ['createdAt', 'updatedAt', 'completedAt', 'version', 'atsScore'],
         defaultSort: { field: 'updatedAt', order: 'desc' }
     });
 
@@ -225,18 +230,21 @@ export const publishResumeController = asyncHandler(async (req, res, next) => {
 // ========== REWRITE ENDPOINTS ==========
 
 /**
- * Create a new rewrite job
+ * Create a new rewrite job based on user's optimization prompt
  * POST /api/v1/resumes/:id/rewrites
+ * 
+ * @body {string} prompt - REQUIRED: User's optimization goal (e.g., "Optimize for a Senior Developer role at a tech startup")
+ * @body {string} versionLabel - Optional label for this rewrite version
+ * @body {number} targetATSScore - Target ATS score (default: 90)
  */
 export const createRewriteController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
     const userType = req.type || userTypeConstants.USER;
     const { id } = req.params;
     const { 
+        prompt,         // NEW: User's optimization goal
         versionLabel,
-        targetATSScore,
-        focusAreas,
-        optimizationLevel 
+        targetATSScore
     } = req.body;
 
     const validatedID = validateInteger(id, 'Resume ID');
@@ -244,21 +252,22 @@ export const createRewriteController = asyncHandler(async (req, res, next) => {
     // Get the analysis ID from resume content
     const resume = await resumeService.getResumeByID(validatedID, userID, userType);
 
-    logger.info('[RESUME_CONTROLLER] Creating rewrite', {
+    logger.info('[RESUME_CONTROLLER] Creating user-driven rewrite', {
         userID,
         userType,
         resumeID: validatedID,
-        analysisID: resume.content.analysisID
+        analysisID: resume.content.analysisID,
+        hasPrompt: !!prompt,
+        promptPreview: prompt?.substring(0, 50)
     });
 
     const result = await resumeService.createRewrite(
         userID,
         resume.content.analysisID,
         {
+            userPrompt: prompt,  // Pass user's optimization goal
             versionLabel,
-            targetATSScore: targetATSScore ? parseInt(targetATSScore) : undefined,
-            focusAreas,
-            optimizationLevel,
+            targetATSScore: targetATSScore ? parseInt(targetATSScore) : 90,
             userType
         }
     );
@@ -269,34 +278,38 @@ export const createRewriteController = asyncHandler(async (req, res, next) => {
 /**
  * Create rewrite by analysis ID (alternative endpoint)
  * POST /api/v1/resumes/analysis/:analysisId/rewrites
+ * 
+ * @body {string} prompt - REQUIRED: User's optimization goal (e.g., "Optimize for a Senior Developer role at a tech startup")
+ * @body {string} versionLabel - Optional label for this rewrite version
+ * @body {number} targetATSScore - Target ATS score (default: 90)
  */
 export const createRewriteByAnalysisController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
     const userType = req.type || userTypeConstants.USER;
     const { analysisId } = req.params;
     const { 
+        prompt,         // NEW: User's optimization goal
         versionLabel,
-        targetATSScore,
-        focusAreas,
-        optimizationLevel 
+        targetATSScore
     } = req.body;
 
     const validatedID = validateInteger(analysisId, 'Analysis ID');
 
-    logger.info('[RESUME_CONTROLLER] Creating rewrite by analysis', {
+    logger.info('[RESUME_CONTROLLER] Creating user-driven rewrite by analysis', {
         userID,
         userType,
-        analysisID: validatedID
+        analysisID: validatedID,
+        hasPrompt: !!prompt,
+        promptPreview: prompt?.substring(0, 50)
     });
 
     const result = await resumeService.createRewrite(
         userID,
         validatedID,
         {
+            userPrompt: prompt,  // Pass user's optimization goal
             versionLabel,
-            targetATSScore: targetATSScore ? parseInt(targetATSScore) : undefined,
-            focusAreas,
-            optimizationLevel,
+            targetATSScore: targetATSScore ? parseInt(targetATSScore) : 90,
             userType
         }
     );
@@ -678,6 +691,29 @@ export const updateThemeController = asyncHandler(async (req, res, next) => {
     sendSuccess(res, result, 'Theme updated successfully');
 });
 
+/**
+ * Get example optimization prompts
+ * GET /api/v1/resumes/optimization-examples
+ * 
+ * Returns a list of example prompts users can use or modify
+ */
+export const getOptimizationExamplesController = asyncHandler(async (req, res, next) => {
+    logger.info('[RESUME_CONTROLLER] Getting optimization examples');
+    
+    const examples = getExamplePrompts();
+    
+    sendSuccess(res, {
+        examples,
+        instructions: 'Provide a prompt describing your optimization goal. Be specific about the role, industry, or focus area you want to target.',
+        tips: [
+            'Be specific about the target role (e.g., "Senior Software Engineer")',
+            'Mention the industry if relevant (e.g., "fintech startup")',
+            'Specify any focus areas (e.g., "highlight leadership experience")',
+            'Include company type if applicable (e.g., "FAANG", "enterprise", "startup")'
+        ]
+    }, 'Optimization examples retrieved successfully');
+});
+
 export default {
     // Resume content
     getAllResumesController,
@@ -697,6 +733,7 @@ export default {
     getActiveRewriteController,
     clearActiveRewriteController,
     compareRewriteVersionsController,
+    getOptimizationExamplesController,
     // Themes
     getThemesController,
     getThemeController,

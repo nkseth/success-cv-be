@@ -1,4 +1,4 @@
-import { boolean, integer, pgTable, timestamp, varchar, text, json } from "drizzle-orm/pg-core";
+import { boolean, integer, pgTable, timestamp, varchar, text, json, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { usersTable, candidatesTable } from "./auth.js";
 import { analysisTable, candidateAnalysisTable } from "./analytics-rewrite-schema.js";
 
@@ -110,7 +110,22 @@ export const resumeContentTable = pgTable("resume_content", {
     // Timestamps
     createdAt: timestamp().defaultNow().notNull(),
     updatedAt: timestamp().defaultNow().notNull(),
-});
+}, (table) => [
+    // Index for user resume lookup (very frequent)
+    index("resume_content_user_id_idx").on(table.userID),
+    // Unique index for analysis (1:1 relationship)
+    uniqueIndex("resume_content_analysis_id_idx").on(table.analysisID),
+    // Composite index for user + analysis lookups
+    index("resume_content_user_analysis_idx").on(table.userID, table.analysisID),
+    // Index for last edit type filtering
+    index("resume_content_last_edit_type_idx").on(table.lastEditType),
+    // Index for active rewrite lookups
+    index("resume_content_active_rewrite_idx").on(table.activeRewriteID),
+    // Index for updated_at ordering (recent resumes)
+    index("resume_content_updated_at_idx").on(table.updatedAt),
+    // Index for created_at ordering
+    index("resume_content_created_at_idx").on(table.createdAt),
+]);
 
 // ========== RESUME REWRITES TABLE ==========
 /**
@@ -193,7 +208,28 @@ export const resumeRewritesTable = pgTable("resume_rewrites", {
     createdAt: timestamp().defaultNow().notNull(),
     updatedAt: timestamp().defaultNow().notNull(),
     completedAt: timestamp(),
-});
+}, (table) => [
+    // Index for user rewrites lookup
+    index("resume_rewrites_user_id_idx").on(table.userID),
+    // Index for analysis rewrites lookup
+    index("resume_rewrites_analysis_id_idx").on(table.analysisID),
+    // Index for resume content rewrites lookup
+    index("resume_rewrites_content_id_idx").on(table.resumeContentID),
+    // Index for status filtering (pending, processing, completed, failed)
+    index("resume_rewrites_status_idx").on(table.status),
+    // Index for job ID lookup (queue tracking)
+    index("resume_rewrites_job_id_idx").on(table.jobID),
+    // Composite index for user + status lookups
+    index("resume_rewrites_user_status_idx").on(table.userID, table.status),
+    // Index for active rewrites
+    index("resume_rewrites_active_idx").on(table.isActive),
+    // Composite index for finding active rewrite for a content
+    index("resume_rewrites_content_active_idx").on(table.resumeContentID, table.isActive),
+    // Index for version number ordering
+    index("resume_rewrites_version_idx").on(table.versionNumber),
+    // Index for created_at ordering
+    index("resume_rewrites_created_at_idx").on(table.createdAt),
+]);
 
 // ========== RESUME THEMES TABLE ==========
 /**
@@ -237,7 +273,20 @@ export const resumeThemesTable = pgTable("resume_themes", {
     // Timestamps
     createdAt: timestamp().defaultNow().notNull(),
     updatedAt: timestamp().defaultNow().notNull(),
-});
+}, (table) => [
+    // Index for category-based filtering
+    index("resume_themes_category_idx").on(table.category),
+    // Index for public themes listing
+    index("resume_themes_public_idx").on(table.isPublic),
+    // Index for ATS-optimized themes
+    index("resume_themes_ats_idx").on(table.isATSOptimized),
+    // Composite index for public + category + ATS (common filter combo)
+    index("resume_themes_public_category_ats_idx").on(table.isPublic, table.category, table.isATSOptimized),
+    // Index for system themes
+    index("resume_themes_system_idx").on(table.isSystemTheme),
+    // Index for usage count (popularity)
+    index("resume_themes_usage_count_idx").on(table.usageCount),
+]);
 
 // ========== USER RESUME THEME TABLE ==========
 /**
@@ -266,7 +315,16 @@ export const userResumeThemeTable = pgTable("user_resume_themes", {
     createdAt: timestamp().defaultNow().notNull(),
     updatedAt: timestamp().defaultNow().notNull(),
     publishedAt: timestamp(),
-});
+}, (table) => [
+    // Index for user theme lookup
+    index("user_resume_themes_user_id_idx").on(table.userID),
+    // Unique index for resume content (1:1 relationship)
+    uniqueIndex("user_resume_themes_content_id_idx").on(table.resumeContentID),
+    // Index for theme lookup
+    index("user_resume_themes_theme_id_idx").on(table.themeID),
+    // Index for draft status
+    index("user_resume_themes_draft_idx").on(table.isDraft),
+]);
 
 // ========== CANDIDATE VERSIONS (for B2B) ==========
 
@@ -295,7 +353,20 @@ export const candidateResumeContentTable = pgTable("candidate_resume_content", {
     
     createdAt: timestamp().defaultNow().notNull(),
     updatedAt: timestamp().defaultNow().notNull(),
-});
+}, (table) => [
+    // Index for candidate resume lookup (very frequent)
+    index("candidate_resume_content_candidate_id_idx").on(table.candidateID),
+    // Unique index for analysis (1:1 relationship)
+    uniqueIndex("candidate_resume_content_analysis_id_idx").on(table.analysisID),
+    // Composite index for candidate + analysis lookups
+    index("candidate_resume_content_candidate_analysis_idx").on(table.candidateID, table.analysisID),
+    // Index for last edit type filtering
+    index("candidate_resume_content_last_edit_type_idx").on(table.lastEditType),
+    // Index for active rewrite lookups
+    index("candidate_resume_content_active_rewrite_idx").on(table.activeRewriteID),
+    // Index for updated_at ordering
+    index("candidate_resume_content_updated_at_idx").on(table.updatedAt),
+]);
 
 /**
  * Resume rewrites for candidates (B2B flow)
@@ -324,7 +395,24 @@ export const candidateResumeRewritesTable = pgTable("candidate_resume_rewrites",
     createdAt: timestamp().defaultNow().notNull(),
     updatedAt: timestamp().defaultNow().notNull(),
     completedAt: timestamp(),
-});
+}, (table) => [
+    // Index for candidate rewrites lookup
+    index("candidate_resume_rewrites_candidate_id_idx").on(table.candidateID),
+    // Index for analysis rewrites lookup
+    index("candidate_resume_rewrites_analysis_id_idx").on(table.analysisID),
+    // Index for resume content rewrites lookup
+    index("candidate_resume_rewrites_content_id_idx").on(table.resumeContentID),
+    // Index for status filtering
+    index("candidate_resume_rewrites_status_idx").on(table.status),
+    // Index for job ID lookup
+    index("candidate_resume_rewrites_job_id_idx").on(table.jobID),
+    // Composite index for candidate + status lookups
+    index("candidate_resume_rewrites_candidate_status_idx").on(table.candidateID, table.status),
+    // Index for active rewrites
+    index("candidate_resume_rewrites_active_idx").on(table.isActive),
+    // Composite index for finding active rewrite for a content
+    index("candidate_resume_rewrites_content_active_idx").on(table.resumeContentID, table.isActive),
+]);
 
 /**
  * User resume theme for candidates
@@ -345,4 +433,13 @@ export const candidateResumeThemeTable = pgTable("candidate_resume_themes", {
     createdAt: timestamp().defaultNow().notNull(),
     updatedAt: timestamp().defaultNow().notNull(),
     publishedAt: timestamp(),
-});
+}, (table) => [
+    // Index for candidate theme lookup
+    index("candidate_resume_themes_candidate_id_idx").on(table.candidateID),
+    // Unique index for resume content (1:1 relationship)
+    uniqueIndex("candidate_resume_themes_content_id_idx").on(table.resumeContentID),
+    // Index for theme lookup
+    index("candidate_resume_themes_theme_id_idx").on(table.themeID),
+    // Index for draft status
+    index("candidate_resume_themes_draft_idx").on(table.isDraft),
+]);

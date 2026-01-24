@@ -4,9 +4,10 @@ import resumeModel from "../models/resume.model.js";
 import themeModel from "../models/theme.model.js";
 import { addResumeRewriteJob } from "../queues/resume-rewrite.queue.js";
 import { validateResumeData } from "../utils/resumeSchema.js";
-import { getResumeContentRewritePrompt } from "../queues/workerSupport/resume-rewrite/prompt.js";
+import { getUserDrivenOptimizationPrompt, getUserDrivenSystemPrompt } from "../queues/workerSupport/resume-rewrite/prompt.js";
 import { resumeContentOutputSchema } from "../queues/workerSupport/resume-rewrite/objectSchema.js";
 import { userTypeConstants } from "../utils/constants.js";
+import { validateOptimizationPrompt, getExamplePrompts } from "../utils/prompt-validator.js";
 
 // Lazy-load AI service to avoid circular dependencies
 const getAiService = async () => {
@@ -140,15 +141,16 @@ function extractResumeContent(analysisData) {
     );
 
     // Extract personal info - mapping AI schema fields
+    // Priority: direct personal_info fields > social array extraction > fallback fields
     const personalInfo = {
         fullName: analysisData.personal_info?.name || analysisData.name || '',
         email: analysisData.personal_info?.email || analysisData.email || '',
         phone: analysisData.personal_info?.phone || analysisData.phone || '',
         location: analysisData.personal_info?.address || analysisData.personal_info?.location || analysisData.location || '',
-        linkedin: linkedinProfile?.url || analysisData.personal_info?.linkedin || '',
-        website: websiteProfile?.url || analysisData.personal_info?.website || '',
+        linkedin: analysisData.personal_info?.linkedin || linkedinProfile?.url || '',
+        website: analysisData.personal_info?.website || websiteProfile?.url || '',
         portfolio: analysisData.personal_info?.portfolio || '',
-        github: githubProfile?.url || ''
+        github: analysisData.personal_info?.github || githubProfile?.url || ''
     };
 
     // Extract summary - AI schema has it in personal_info.summary
@@ -158,28 +160,35 @@ function extractResumeContent(analysisData) {
     };
 
     // Extract experiences - mapping AI schema fields
-    // Convert summary and highlights into HTML description format
+    // Convert summary and highlights into HTML description format with achievements
     const experience = (analysisData.experiences || analysisData.work_experience || []).map((exp, idx) => {
-        // Build HTML description from summary and highlights
+        // Build HTML description from summary and highlights/achievements
         const summaryText = exp.summary || exp.description || '';
         const highlights = exp.highlights || exp.achievements || exp.bullet_points || [];
         
         let description = '';
         
-        // Add summary paragraph if present
-        if (summaryText) {
-            description += `<p>${summaryText}</p>`;
+        // Add summary paragraph if present (and not just whitespace)
+        if (summaryText && summaryText.trim()) {
+            description += `<p>${summaryText.trim()}</p>`;
         }
         
-        // Add highlights as bullet list if present
+        // Add highlights/achievements as bullet list
+        // This ensures achievements are always included in the description as HTML
         if (highlights && highlights.length > 0) {
-            description += '<ul>';
-            highlights.forEach(highlight => {
-                if (highlight && highlight.trim()) {
-                    description += `<li>${highlight}</li>`;
-                }
-            });
-            description += '</ul>';
+            const validHighlights = highlights.filter(h => h && h.trim());
+            if (validHighlights.length > 0) {
+                description += '<ul>';
+                validHighlights.forEach(highlight => {
+                    description += `<li>${highlight.trim()}</li>`;
+                });
+                description += '</ul>';
+            }
+        }
+        
+        // If no description was built, use empty string
+        if (!description) {
+            description = '';
         }
         
         return {
@@ -212,22 +221,65 @@ function extractResumeContent(analysisData) {
         achievements: edu.achievements || []
     }));
 
-    // Extract skills from other_skills array and languages
+    // Extract skills - prioritize structured skills field, fall back to other_skills
+    // The AI now provides a structured skills object with technical, soft, tools, industry arrays
+    const structuredSkills = analysisData.skills || {};
     const otherSkills = analysisData.other_skills || [];
-    const technicalSkills = otherSkills
-        .filter(s => s.tags?.some(t => 
-            ['technical', 'programming', 'software', 'technology', 'development'].includes(t.toLowerCase())
-        ) || s.description?.toLowerCase().includes('technical'))
-        .map(s => s.name);
     
-    const softSkills = otherSkills
-        .filter(s => s.tags?.some(t => 
-            ['soft', 'communication', 'leadership', 'management', 'interpersonal'].includes(t.toLowerCase())
-        ))
-        .map(s => s.name);
+    // Extract from structured skills field first (new format)
+    let technicalSkills = [];
+    let softSkills = [];
+    let toolSkills = [];
     
-    // If no categorization found, put all skills as technical
-    const allSkillNames = otherSkills.map(s => s.name).filter(Boolean);
+    // Check if we have the new structured skills format
+    if (structuredSkills.technical && Array.isArray(structuredSkills.technical)) {
+        technicalSkills = structuredSkills.technical.filter(Boolean);
+    }
+    if (structuredSkills.soft && Array.isArray(structuredSkills.soft)) {
+        softSkills = structuredSkills.soft.filter(Boolean);
+    }
+    if (structuredSkills.tools && Array.isArray(structuredSkills.tools)) {
+        toolSkills = structuredSkills.tools.filter(Boolean);
+    }
+    
+    // If structured skills are empty, fall back to other_skills array (legacy format)
+    if (technicalSkills.length === 0 && softSkills.length === 0 && otherSkills.length > 0) {
+        logger.info('[RESUME_SERVICE] Using legacy other_skills extraction');
+        
+        // Try to categorize based on tags
+        const technicalFromTags = otherSkills
+            .filter(s => s.tags?.some(t => 
+                ['technical', 'programming', 'software', 'technology', 'development', 'tool', 'framework', 'database', 'language', 'hard'].includes(t.toLowerCase())
+            ) || s.description?.toLowerCase().includes('technical'))
+            .map(s => s.name)
+            .filter(Boolean);
+        
+        const softFromTags = otherSkills
+            .filter(s => s.tags?.some(t => 
+                ['soft', 'communication', 'leadership', 'management', 'interpersonal', 'teamwork', 'problem-solving'].includes(t.toLowerCase())
+            ) || s.description?.toLowerCase().includes('soft skill'))
+            .map(s => s.name)
+            .filter(Boolean);
+        
+        const toolsFromTags = otherSkills
+            .filter(s => s.tags?.some(t => 
+                ['tool', 'platform', 'ide', 'devops'].includes(t.toLowerCase())
+            ))
+            .map(s => s.name)
+            .filter(Boolean);
+        
+        // If tag-based categorization didn't work, put all as technical
+        const allSkillNames = otherSkills.map(s => s.name).filter(Boolean);
+        
+        technicalSkills = technicalFromTags.length > 0 ? technicalFromTags : allSkillNames;
+        softSkills = softFromTags;
+        toolSkills = toolsFromTags;
+    }
+    
+    // Also include industry skills in technical if present
+    if (structuredSkills.industry && Array.isArray(structuredSkills.industry)) {
+        technicalSkills = [...new Set([...technicalSkills, ...structuredSkills.industry.filter(Boolean)])];
+    }
     
     // Extract languages from the languages array
     const languagesList = (analysisData.languages || []).map(l => 
@@ -245,12 +297,21 @@ function extractResumeContent(analysisData) {
     }));
 
     const skills = {
-        technical: technicalSkills.length > 0 ? technicalSkills : allSkillNames,
-        soft: softSkills.length > 0 ? softSkills : (analysisData.skills?.soft || []),
+        technical: technicalSkills,
+        soft: softSkills,
         languages: languagesList,
-        tools: analysisData.skills?.tools || analysisData.tools || [],
+        tools: toolSkills,
         certifications: certifications
     };
+    
+    logger.info('[RESUME_SERVICE] Skills extraction complete', {
+        technicalCount: skills.technical.length,
+        softCount: skills.soft.length,
+        toolsCount: skills.tools.length,
+        languagesCount: skills.languages.length,
+        certificationsCount: skills.certifications.length,
+        usedStructuredFormat: !!(structuredSkills.technical?.length || structuredSkills.soft?.length)
+    });
 
     // Extract additional sections
     const additionalSections = [];
@@ -766,35 +827,76 @@ function validateSectionData(sectionName, data) {
 // ========== REWRITE OPERATIONS ==========
 
 /**
- * Create a new rewrite job
- * Creates a rewrite based on the CURRENT resume content (which may have been edited)
+ * Create a new rewrite job based on USER'S optimization prompt
+ * 
+ * NEW APPROACH: User provides a prompt describing their optimization goal
+ * (e.g., "Optimize for a Senior Developer role at a tech startup")
+ * We validate the prompt and use it to guide the AI optimization.
+ * 
+ * If no prompt is provided, defaults to general ATS optimization.
+ * Each rewrite works on the CURRENT resume content (which may have been edited or rewritten before).
+ * 
  * @param {number} userID - User ID
  * @param {number} analysisID - Analysis ID
- * @param {Object} options - Optimization options including userType
+ * @param {Object} options - Options including userPrompt and userType
+ * @param {string} options.userPrompt - OPTIONAL: User's optimization goal (defaults to ATS optimization)
+ * @param {string} options.userType - 'user' | 'candidate'
+ * @param {number} options.targetATSScore - Target ATS score (default: 90)
+ * @param {string} options.versionLabel - Optional label for this version
  * @returns {Promise<Object>} Created rewrite with job info
  */
 export const createRewrite = async (userID, analysisID, options = {}) => {
     try {
-        const { userType = userTypeConstants.USER, ...otherOptions } = options;
+        const { 
+            userType = userTypeConstants.USER, 
+            userPrompt,
+            targetATSScore = 90,
+            versionLabel,
+            ...otherOptions 
+        } = options;
+        
+        // Default prompt if none provided - general ATS optimization
+        const DEFAULT_PROMPT = 'Optimize my resume for the best possible ATS score. Improve content clarity, use strong action verbs, and ensure professional formatting.';
+        
+        // Use provided prompt or default to ATS optimization
+        const effectivePrompt = (userPrompt && typeof userPrompt === 'string' && userPrompt.trim().length > 0)
+            ? userPrompt.trim()
+            : DEFAULT_PROMPT;
+        
+        const isDefaultPrompt = effectivePrompt === DEFAULT_PROMPT;
         
         logger.info('[RESUME_SERVICE] Creating rewrite', {
             userID,
             analysisID,
-            options,
+            hasUserPrompt: !!userPrompt,
+            usingDefaultPrompt: isDefaultPrompt,
+            promptPreview: effectivePrompt.substring(0, 50),
             userType
         });
 
+        // Only validate if user provided a custom prompt
+        let sanitizedPrompt = effectivePrompt;
+        if (!isDefaultPrompt) {
+            const { isValid, sanitizedPrompt: validated, error } = validateOptimizationPrompt(effectivePrompt, {
+                throwOnInvalid: false
+            });
+
+            if (!isValid) {
+                throw new AppError(error || 'Invalid optimization prompt', 400);
+            }
+            sanitizedPrompt = validated;
+        }
+
         // Get current resume content - this is what AI will optimize
+        // IMPORTANT: Always fetches the CURRENT state (may have been rewritten before)
         const content = await resumeModel.getResumeContentByAnalysisID(analysisID, userID, userType);
         
         if (!content) {
             throw new AppError('Resume content not found for this analysis', 404);
         }
 
-        // Get analysis data (raw text) for rewrite
-        const analysisData = await resumeModel.getAnalysisDataForRewrite(analysisID, userID, userType);
-
         // Build current content object for snapshot
+        // This captures the current state BEFORE this rewrite
         const currentContent = {
             personalInfo: content.personalInfo,
             summary: content.summary,
@@ -806,6 +908,14 @@ export const createRewrite = async (userID, analysisID, options = {}) => {
             version: content.version
         };
 
+        // Create optimization settings with user prompt
+        const optimizationSettings = {
+            userPrompt: sanitizedPrompt,
+            isDefaultPrompt: isDefaultPrompt,
+            targetATSScore: targetATSScore,
+            optimizationLevel: isDefaultPrompt ? 'ats-focused' : 'user-driven'
+        };
+
         // Create rewrite record with content snapshot
         const rewrite = await resumeModel.createRewrite(
             userID,
@@ -813,37 +923,38 @@ export const createRewrite = async (userID, analysisID, options = {}) => {
             content.id,
             currentContent, // Pass current content for snapshot
             {
-                versionLabel: otherOptions.versionLabel,
-                optimizationSettings: {
-                    targetATSScore: otherOptions.targetATSScore || 90,
-                    focusAreas: otherOptions.focusAreas || ['all'],
-                    optimizationLevel: otherOptions.optimizationLevel || 'comprehensive'
-                }
+                versionLabel: versionLabel || (isDefaultPrompt 
+                    ? 'ATS Optimized' 
+                    : `Optimized: ${sanitizedPrompt.substring(0, 50)}${sanitizedPrompt.length > 50 ? '...' : ''}`),
+                optimizationSettings
             },
             userType
         );
 
-        // Add job to queue with current content (not original analysis)
+        // Add job to queue with current content and user prompt
+        // Each rewrite works on CURRENT content - enabling multiple rewrites
         const job = await addResumeRewriteJob({
             rewriteID: rewrite.id,
             analysisID,
             userID,
             resumeContentID: content.id,
-            analysisData: analysisData.processedData,
-            rawData: analysisData.rawData,
-            currentContent, // AI will optimize from current state
-            optimizationOptions: rewrite.optimizationSettings,
-            userType // Pass userType to worker
+            currentContent,  // Current state - may already be rewritten
+            userPrompt: sanitizedPrompt,
+            isDefaultPrompt: isDefaultPrompt,
+            optimizationOptions: optimizationSettings,
+            userType
         });
 
         // Update rewrite with job ID
         await resumeModel.updateRewrite(rewrite.id, { jobID: job.id }, userType);
 
-        logger.info('[RESUME_SERVICE] ✅ Rewrite job created with content snapshot', {
+        logger.info('[RESUME_SERVICE] ✅ Rewrite job created', {
             rewriteID: rewrite.id,
             jobID: job.id,
             contentVersion: content.version,
             versionNumber: rewrite.versionNumber,
+            isDefaultPrompt,
+            promptPreview: sanitizedPrompt.substring(0, 50),
             userType
         });
 
@@ -854,7 +965,10 @@ export const createRewrite = async (userID, analysisID, options = {}) => {
             versionLabel: rewrite.versionLabel,
             status: 'pending',
             basedOnVersion: content.version,
-            message: 'Rewrite job created and queued'
+            isDefaultOptimization: isDefaultPrompt,
+            message: isDefaultPrompt 
+                ? 'ATS optimization job created and queued' 
+                : 'Rewrite job created and queued'
         };
     } catch (error) {
         logger.error('[RESUME_SERVICE] Failed to create rewrite', {
@@ -888,7 +1002,7 @@ export const getRewrite = async (rewriteID, userID, userType = userTypeConstants
             improvements: rewrite.improvements,
             rewriteSummary: rewrite.rewriteSummary,
             rewrittenContent: rewrite.status === 'completed' ? rewrite.rewrittenContent : null,
-            sourceContentSnapshot: rewrite.sourceContentSnapshot,
+            theme: rewrite.theme,
             createdAt: rewrite.createdAt,
             completedAt: rewrite.completedAt,
             appliedAt: rewrite.appliedAt
@@ -955,14 +1069,19 @@ export const applyRewrite = async (rewriteID, userID, userType = userTypeConstan
 
         const updatedContent = await resumeModel.applyRewrite(rewriteID, userID, userType);
 
-        // Get the rewrite details for response
+        // Get the rewrite details for response (includes theme)
         const rewrite = await resumeModel.getRewriteByID(rewriteID, userID, userType);
+        
+        // Get the current theme after restoration
+        const { getUserTheme } = await import('../models/theme.model.js');
+        const currentTheme = await getUserTheme(updatedContent.id, userID, userType);
 
         logger.info('[RESUME_SERVICE] ✅ Rewrite applied', {
             rewriteID,
             contentID: updatedContent.id,
             newVersion: updatedContent.version,
-            versionNumber: rewrite.versionNumber
+            versionNumber: rewrite.versionNumber,
+            themeRestored: !!currentTheme
         });
 
         return {
@@ -972,8 +1091,10 @@ export const applyRewrite = async (rewriteID, userID, userType = userTypeConstan
                 id: rewrite.id,
                 versionNumber: rewrite.versionNumber,
                 versionLabel: rewrite.versionLabel,
-                isActive: true
+                isActive: true,
+                theme: rewrite.theme
             },
+            theme: currentTheme,
             message: 'Rewrite applied successfully'
         };
     } catch (error) {
@@ -1003,7 +1124,8 @@ export const switchRewriteVersion = async (rewriteID, userID, userType = userTyp
         logger.info('[RESUME_SERVICE] ✅ Rewrite version switched', {
             rewriteID,
             versionNumber: result.rewrite.versionNumber,
-            contentVersion: result.content.version
+            contentVersion: result.content.version,
+            themeRestored: !!result.theme
         });
 
         return {
@@ -1020,6 +1142,7 @@ export const switchRewriteVersion = async (rewriteID, userID, userType = userTyp
                 analysisSummary: result.content.analysisSummary
             },
             activeRewrite: result.rewrite,
+            theme: result.theme,
             message: result.message
         };
     } catch (error) {
@@ -1411,57 +1534,75 @@ function mergeThemeConfig(baseConfig, overrides) {
 // ========== AI OPTIMIZATION OPERATIONS ==========
 
 /**
- * Optimize resume content using AI
+ * Optimize resume content using AI based on USER'S prompt
  * Called by the rewrite worker to generate optimized content
  * 
- * SIMPLIFIED APPROACH: Uses the issues/fixes from analysis to make
- * targeted optimizations instead of generating a complete new structure.
- * This is more reliable and preserves the original format.
+ * NEW USER-DRIVEN APPROACH: 
+ * - User provides their optimization goal (role, industry, focus)
+ * - AI optimizes the resume directly based on that goal
+ * - No dependency on analysis issues - works with current content
  * 
  * @param {Object} currentContent - Current resume content from resumeContentTable
- * @param {Object} analysisData - Analysis data with issues and improvement plan
+ * @param {string} userPrompt - User's optimization goal/prompt
  * @param {Object} options - Optimization options (targetATSScore, etc.)
  * @returns {Promise<Object>} Optimized content ready for direct application
  */
-export const optimizeResumeContent = async (currentContent, analysisData, options = {}) => {
+export const optimizeResumeContent = async (currentContent, userPrompt, options = {}) => {
     try {
-        logger.info('[RESUME_SERVICE] Starting resume optimization', {
+        logger.info('[RESUME_SERVICE] Starting user-driven resume optimization', {
             hasCurrentContent: !!currentContent,
-            hasAnalysisData: !!analysisData,
-            criticalMistakes: analysisData?.critical_mistakes?.length || 0,
-            majorIssues: analysisData?.major_issues?.length || 0,
+            userPrompt: userPrompt?.substring(0, 50),
+            targetATSScore: options.targetATSScore,
             options
         });
+
+        // Validate inputs
+        if (!currentContent) {
+            throw new AppError('Current resume content is required for optimization', 400);
+        }
+
+        if (!userPrompt || typeof userPrompt !== 'string') {
+            throw new AppError('User optimization prompt is required', 400);
+        }
 
         // Get AI service
         const aiService = await getAiService();
 
-        // Build prompt - now uses issues from analysis to make targeted fixes
-        const prompt = getResumeContentRewritePrompt(currentContent, analysisData, options);
+        // Build prompt using the new user-driven approach
+        const prompt = getUserDrivenOptimizationPrompt(currentContent, userPrompt, options);
         
-        const systemPrompt = `You are an expert ATS resume optimizer. Apply the identified fixes to optimize the resume.
-
-CRITICAL RULES:
-1. Apply ALL identified fixes from the analysis
-2. Use strong action verbs: Led, Architected, Spearheaded, Engineered, Optimized
-3. Add quantifiable metrics where possible: percentages (%), dollar amounts ($), scale
-4. Format achievements using STAR method (Situation, Task, Action, Result)
-5. Preserve factual information (company names, dates, roles)
-6. Target ATS Score: ${options.targetATSScore || 85}%
+        // Get the user-driven system prompt
+        const systemPrompt = `${getUserDrivenSystemPrompt()}
 
 EXPERIENCE DESCRIPTION FORMAT:
 - The description field MUST contain bullet points using HTML: <ul><li>Achievement 1</li><li>Achievement 2</li></ul>
 - Always format experience descriptions as bullet points for better readability
-- Each bullet should highlight a key achievement, responsibility, or accomplishment
+- Each bullet should ONLY reword existing achievements from the original description
 - Use 3-6 bullet points per experience entry
 - The achievements array should be EMPTY - put all content in description as HTML bullets
+- NEVER add new achievements, metrics, or responsibilities that weren't in the original
+
+⚠️ CRITICAL DATE PRESERVATION RULES:
+- COPY startDate, endDate, and current fields EXACTLY as provided in input
+- If endDate is a specific date like "2023-05" or "December 2023", keep it EXACTLY
+- If current is false, it MUST remain false - DO NOT change it to true
+- DO NOT set all jobs to "present" or change past jobs to appear current
+- The employment dates are FACTS that must never be altered
 
 OUTPUT FORMAT:
-- summary: { text: "optimized summary", keywords: [] } (keywords should always be empty array)
-- experience: array of { company, position, location, startDate, endDate, current, description (can contain HTML), achievements: [] (optional) }
+- summary: { text: "rewritten summary tailored to user's goal", keywords: [] } (keywords should always be empty array)
+- experience: array of { company, position, location, startDate, endDate, current, description (HTML with bullets), achievements: [] }
+  - startDate, endDate, current: MUST BE COPIED EXACTLY FROM INPUT - NO CHANGES ALLOWED
 - skills: { technical: [], soft: [], tools: [], languages: [], certifications: [] }
-- estimatedAtsScore: number (0-100)
-- fixesSummary: "Brief description of improvements made"`;
+- estimatedAtsScore: number (0-100) - your estimate after optimization
+- fixesSummary: "Brief description of how resume was optimized for user's goal"
+
+⛔ FORBIDDEN ACTIONS:
+- Adding extra experience entries beyond what was provided
+- Changing any dates (startDate, endDate)
+- Changing current field from false to true
+- Inventing new achievements, metrics, or facts
+- Adding content that wasn't in the original resume`;
 
         // Generate optimization using AI with the simplified schema
         const optimizedContent = await aiService.generateAiResponseObject({
@@ -1472,27 +1613,56 @@ OUTPUT FORMAT:
             retries: 3
         });
 
-        logger.info('[RESUME_SERVICE] Resume optimization completed', {
+        logger.info('[RESUME_SERVICE] User-driven optimization completed', {
             hasSummary: !!optimizedContent?.summary,
             experienceCount: optimizedContent?.experience?.length || 0,
             hasSkills: !!optimizedContent?.skills,
             estimatedAtsScore: optimizedContent?.estimatedAtsScore,
-            fixesSummary: optimizedContent?.fixesSummary
+            fixesSummary: optimizedContent?.fixesSummary,
+            userPrompt: userPrompt.substring(0, 50)
         });
 
-        // Get original scores from analysis for reference
-        const originalScores = {
-            atsScore: analysisData?.resume_quality?.ats_compatibility_score || 0,
-            contentScore: analysisData?.resume_quality?.content_quality_score || 0,
-            formatScore: analysisData?.resume_quality?.formatting_design_score || 0,
-            jobFitScore: analysisData?.JobFitScore || 0,
-            skillsRelevanceScore: analysisData?.relevance?.['Skills Relevance'] || 0,
-            experienceRelevanceScore: analysisData?.relevance?.['Work Experience'] || 0,
-            educationRelevanceScore: analysisData?.relevance?.['Education'] || 0,
-            grammarScore: analysisData?.resume_quality?.grammar_language_score || 0,
-            professionalBrandingScore: analysisData?.resume_quality?.professional_branding_score || 0,
-            completenessScore: analysisData?.resume_quality?.completeness_score || 0
-        };
+        // Get original experiences from current content (for ID preservation)
+        const originalExperiences = currentContent?.experience || [];
+        
+        // Post-process experience to ensure critical fields are preserved
+        // This is a safety net - ALWAYS use original dates and factual data
+        // Only allow AI to change: description, position (enhancement), keywords
+        const mergedExperience = (optimizedContent.experience || []).slice(0, originalExperiences.length).map((exp, idx) => {
+            const originalExp = originalExperiences[idx] || {};
+            return {
+                // ALWAYS preserve these fields from original - never use AI values
+                id: originalExp.id || exp.id || `exp_${idx + 1}`,
+                company: originalExp.company || exp.company,
+                location: originalExp.location !== undefined ? originalExp.location : exp.location,
+                startDate: originalExp.startDate, // ALWAYS use original - never change dates
+                endDate: originalExp.endDate,     // ALWAYS use original - never change dates
+                current: originalExp.current,     // ALWAYS use original - never change current status
+                website: originalExp.website || exp.website,
+                // Allow AI to enhance these fields
+                position: exp.position || originalExp.position,
+                description: exp.description || originalExp.description || '',
+                achievements: exp.achievements || [],
+                keywords: exp.keywords || []
+            };
+        });
+
+        // Ensure we don't have more experiences than original (AI should not add extras)
+        if (optimizedContent.experience?.length > originalExperiences.length) {
+            logger.warn('[RESUME_SERVICE] AI returned more experiences than original, trimming to original count', {
+                originalCount: originalExperiences.length,
+                aiReturnedCount: optimizedContent.experience.length
+            });
+        }
+
+        logger.info('[RESUME_SERVICE] Experience fields preserved from original', {
+            originalCount: originalExperiences.length,
+            optimizedCount: mergedExperience.length,
+            preservedIds: mergedExperience.map(e => e.id)
+        });
+
+        // Get original scores from current content (no longer from analysis)
+        const originalScores = currentContent?.currentScores || {};
 
         const estimatedAtsScore = optimizedContent.estimatedAtsScore || options.targetATSScore || 85;
         
@@ -1503,35 +1673,37 @@ OUTPUT FORMAT:
                 personalInfo: currentContent?.personalInfo || currentContent?.personal_info || null,
                 // Ensure keywords are always empty in rewrites
                 summary: optimizedContent.summary ? { ...optimizedContent.summary, keywords: [] } : null,
-                experience: optimizedContent.experience || [],
+                // Use merged experience with preserved IDs
+                experience: mergedExperience,
                 // Education is preserved from original (minimal changes needed)
                 education: currentContent?.education || [],
                 skills: optimizedContent.skills || null,
                 additionalSections: currentContent?.additionalSections || null
             },
-            // Complete scores structure matching resume content format
+            // Scores - AI estimates the new ATS score based on optimization
             scores: {
                 // Core ATS & Quality Scores (improved by rewrite)
                 atsScore: estimatedAtsScore,
-                contentScore: Math.min(95, originalScores.contentScore + 15), // Content improves with rewrite
-                formatScore: Math.min(95, originalScores.formatScore + 10), // Format improves slightly
+                contentScore: Math.min(95, (originalScores.contentScore || 70) + 15),
+                formatScore: Math.min(95, (originalScores.formatScore || 70) + 10),
                 overallScore: estimatedAtsScore,
                 
-                // Job Fit & Relevance Scores (preserved from original analysis)
-                jobFitScore: originalScores.jobFitScore,
-                skillsRelevanceScore: originalScores.skillsRelevanceScore,
-                experienceRelevanceScore: originalScores.experienceRelevanceScore,
-                educationRelevanceScore: originalScores.educationRelevanceScore,
+                // Preserved or estimated scores
+                jobFitScore: originalScores.jobFitScore || 0,
+                skillsRelevanceScore: originalScores.skillsRelevanceScore || 0,
+                experienceRelevanceScore: originalScores.experienceRelevanceScore || 0,
+                educationRelevanceScore: originalScores.educationRelevanceScore || 0,
                 
                 // Additional Quality Scores (improved by rewrite)
-                grammarScore: Math.min(95, originalScores.grammarScore + 10),
-                professionalBrandingScore: Math.min(95, originalScores.professionalBrandingScore + 10),
-                completenessScore: originalScores.completenessScore
+                grammarScore: Math.min(95, (originalScores.grammarScore || 70) + 10),
+                professionalBrandingScore: Math.min(95, (originalScores.professionalBrandingScore || 70) + 10),
+                completenessScore: originalScores.completenessScore || 0
             },
             metadata: {
-                fixesSummary: optimizedContent.fixesSummary || 'Resume optimized for ATS compatibility',
+                userPrompt: userPrompt,
+                fixesSummary: optimizedContent.fixesSummary || `Resume optimized for: ${userPrompt.substring(0, 100)}`,
                 timestamp: new Date().toISOString(),
-                target_ats_score: options.targetATSScore || 85
+                targetATSScore: options.targetATSScore || 85
             }
         };
 
@@ -1542,6 +1714,14 @@ OUTPUT FORMAT:
         });
         throw new AppError(`Resume optimization failed: ${error.message}`, 500);
     }
+};
+
+/**
+ * Get example optimization prompts for users
+ * @returns {Array<string>} Example prompts
+ */
+export const getOptimizationExamples = () => {
+    return getExamplePrompts();
 };
 
 export default {
@@ -1561,6 +1741,7 @@ export default {
     getActiveRewrite,
     clearActiveRewrite,
     compareRewriteVersions,
+    getOptimizationExamples,
     // Theme operations
     getThemes,
     getThemeDetails,

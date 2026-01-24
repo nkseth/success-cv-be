@@ -12,6 +12,7 @@ import { resumeAnalysisRoutes } from "./resume-analysis.route.js";
 import { resumeRoutes } from "./resume.route.js";
 import { adminRoutes } from "./admin.route.js";
 import { profileRoutes } from "./profile.route.js";
+import { dashboardRoutes } from "./dashboard.route.js";
 
 const router = Router();
 
@@ -41,6 +42,7 @@ router.use('/invites', invitesRoutes);
 router.use('/sse', sseRoutes);
 router.use('/upload', uploadRoutes);
 router.use('/admin', adminRoutes);
+router.use('/dashboard', dashboardRoutes);
 
 // Resume routes
 router.use('/resume-analysis', resumeAnalysisRoutes);

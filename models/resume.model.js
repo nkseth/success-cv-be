@@ -301,30 +301,109 @@ export const getAllResumeContents = async (userID, options = {}) => {
         // Build order by
         const orderByClause = buildOrderBy(sort, tables.contentTable, { asc, desc });
 
-        // Fetch paginated contents
-        const contents = await db
-            .select({
-                id: tables.contentTable.id,
-                analysisID: tables.contentTable.analysisID,
-                personalInfo: tables.contentTable.personalInfo,
-                currentScores: tables.contentTable.currentScores,
-                version: tables.contentTable.version,
-                lastEditType: tables.contentTable.lastEditType,
-                createdAt: tables.contentTable.createdAt,
-                updatedAt: tables.contentTable.updatedAt,
-                documentID: tables.documentTable.id,
-                documentTitle: tables.documentTable.title
-            })
-            .from(tables.contentTable)
-            .innerJoin(tables.analysisTable, eq(tables.contentTable.analysisID, tables.analysisTable.id))
-            .innerJoin(tables.documentTable, eq(tables.analysisTable.documentID, tables.documentTable.id))
-            .where(and(...whereConditions))
-            .orderBy(...orderByClause)
-            .limit(pagination.limit)
-            .offset(pagination.offset);
+        // Check if sorting by atsScore (which is in JSON currentScores field)
+        const sortingByAtsScore = sort.field === 'atsScore';
+        
+        let contents;
+        if (sortingByAtsScore) {
+            // Fetch all matching records for in-memory sorting
+            contents = await db
+                .select({
+                    id: tables.contentTable.id,
+                    analysisID: tables.contentTable.analysisID,
+                    personalInfo: tables.contentTable.personalInfo,
+                    currentScores: tables.contentTable.currentScores,
+                    version: tables.contentTable.version,
+                    lastEditType: tables.contentTable.lastEditType,
+                    createdAt: tables.contentTable.createdAt,
+                    updatedAt: tables.contentTable.updatedAt,
+                    documentID: tables.documentTable.id,
+                    documentTitle: tables.documentTable.title,
+                    analysisStatus: tables.analysisTable.status,
+                    analysisCompletedAt: tables.analysisTable.completedAt
+                })
+                .from(tables.contentTable)
+                .innerJoin(tables.analysisTable, eq(tables.contentTable.analysisID, tables.analysisTable.id))
+                .innerJoin(tables.documentTable, eq(tables.analysisTable.documentID, tables.documentTable.id))
+                .where(and(...whereConditions));
+        } else {
+            // Fetch paginated contents with SQL sorting
+            contents = await db
+                .select({
+                    id: tables.contentTable.id,
+                    analysisID: tables.contentTable.analysisID,
+                    personalInfo: tables.contentTable.personalInfo,
+                    currentScores: tables.contentTable.currentScores,
+                    version: tables.contentTable.version,
+                    lastEditType: tables.contentTable.lastEditType,
+                    createdAt: tables.contentTable.createdAt,
+                    updatedAt: tables.contentTable.updatedAt,
+                    documentID: tables.documentTable.id,
+                    documentTitle: tables.documentTable.title,
+                    analysisStatus: tables.analysisTable.status,
+                    analysisCompletedAt: tables.analysisTable.completedAt
+                })
+                .from(tables.contentTable)
+                .innerJoin(tables.analysisTable, eq(tables.contentTable.analysisID, tables.analysisTable.id))
+                .innerJoin(tables.documentTable, eq(tables.analysisTable.documentID, tables.documentTable.id))
+                .where(and(...whereConditions))
+                .orderBy(...orderByClause)
+                .limit(pagination.limit)
+                .offset(pagination.offset);
+        }
 
-        logger.info('[RESUME_MODEL] ✅ Fetched resume contents', { count: contents.length, totalCount, userType });
-        return { resumes: contents, totalCount };
+        // Format the results to extract scores and add status/completedAt
+        const formattedContents = contents.map(content => {
+            let scores = null;
+            let atsScore = null;
+            
+            if (content.currentScores) {
+                scores = typeof content.currentScores === 'string' 
+                    ? JSON.parse(content.currentScores) 
+                    : content.currentScores;
+                atsScore = scores?.atsScore || null;
+            }
+            
+            return {
+                id: content.id,
+                analysisID: content.analysisID,
+                personalInfo: content.personalInfo,
+                scores, // Parsed scores object
+                atsScore, // Extracted for sorting/filtering
+                version: content.version,
+                lastEditType: content.lastEditType,
+                createdAt: content.createdAt,
+                updatedAt: content.updatedAt,
+                completedAt: content.analysisCompletedAt,
+                status: content.analysisStatus,
+                document: {
+                    id: content.documentID,
+                    title: content.documentTitle
+                }
+            };
+        });
+
+        // If sorting by atsScore, sort in memory and apply pagination
+        let paginatedContents = formattedContents;
+        if (sortingByAtsScore) {
+            // Sort by atsScore (handle null values by placing them at the end)
+            paginatedContents.sort((a, b) => {
+                const scoreA = a.atsScore ?? -Infinity;
+                const scoreB = b.atsScore ?? -Infinity;
+                
+                if (sort.order === 'asc') {
+                    return scoreA === -Infinity ? 1 : scoreB === -Infinity ? -1 : scoreA - scoreB;
+                } else {
+                    return scoreB === -Infinity ? 1 : scoreA === -Infinity ? -1 : scoreB - scoreA;
+                }
+            });
+
+            // Apply pagination after sorting
+            paginatedContents = paginatedContents.slice(pagination.offset, pagination.offset + pagination.limit);
+        }
+
+        logger.info('[RESUME_MODEL] ✅ Fetched resume contents', { count: paginatedContents.length, totalCount, userType });
+        return { resumes: paginatedContents, totalCount };
     } catch (error) {
         logger.error('[RESUME_MODEL] Failed to fetch resume contents', {
             error: error.message,
@@ -1252,6 +1331,139 @@ export const getAnalysisDataForRewrite = async (analysisID, userID, userType = u
     }
 };
 
+/**
+ * Get ONLY analysis issues for rewrites (optimized - excludes resume content)
+ * This is a lightweight fetch that only retrieves the analysis results
+ * (mistakes, issues, scores) without duplicating resume content that
+ * already exists in resume_content table.
+ * 
+ * @param {number} analysisID - Analysis ID
+ * @param {number} userID - User ID
+ * @param {string} userType - 'user' | 'candidate'
+ * @returns {Promise<Object>} Analysis issues only (no resume content)
+ */
+export const getAnalysisIssuesForRewrite = async (analysisID, userID, userType = userTypeConstants.USER) => {
+    try {
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+        
+        logger.info('[RESUME_MODEL] Fetching analysis issues for rewrite (optimized)', { analysisID, userID, userType });
+
+        const analysisData = await db
+            .select({
+                analysisID: tables.analysisTable.id,
+                analysisStatus: tables.analysisTable.status,
+                processedData: tables.processedDataTable.processedData
+            })
+            .from(tables.analysisTable)
+            .innerJoin(tables.processedDataTable, eq(tables.analysisTable.id, tables.processedDataTable.analysisID))
+            .where(
+                and(
+                    eq(tables.analysisTable.id, analysisID),
+                    eq(tables.analysisTable[entityIDField], userID)
+                )
+            )
+            .limit(1);
+
+        if (!analysisData || analysisData.length === 0) {
+            throw new AppError('Analysis not found or unauthorized', 404);
+        }
+
+        if (analysisData[0].analysisStatus !== 'completed') {
+            throw new AppError('Analysis must be completed before rewriting', 400);
+        }
+
+        // Parse processedData and extract ONLY analysis-related fields
+        const fullData = typeof analysisData[0].processedData === 'string'
+            ? JSON.parse(analysisData[0].processedData)
+            : analysisData[0].processedData;
+
+        // Extract only analysis issues and scores (NOT resume content)
+        const analysisIssues = {
+            // Issues identified by AI
+            critical_mistakes: fullData.critical_mistakes || [],
+            major_issues: fullData.major_issues || [],
+            minor_improvements: fullData.minor_improvements || [],
+            optimization_opportunities: fullData.optimization_opportunities || [],
+            
+            // Scores and quality metrics
+            relevance: fullData.relevance || {},
+            resume_quality: fullData.resume_quality || {},
+            JobFitScore: fullData.JobFitScore || 0,
+            
+            // Recommendations
+            recommendations: fullData.recommendations || [],
+            improvement_suggestions: fullData.improvement_suggestions || []
+        };
+
+        logger.info('[RESUME_MODEL] ✅ Analysis issues fetched (optimized)', {
+            criticalCount: analysisIssues.critical_mistakes.length,
+            majorCount: analysisIssues.major_issues.length,
+            minorCount: analysisIssues.minor_improvements.length,
+            userType
+        });
+
+        return analysisIssues;
+    } catch (error) {
+        logger.error('[RESUME_MODEL] Failed to fetch analysis issues', {
+            error: error.message,
+            analysisID,
+            userType
+        });
+        if (error instanceof AppError) throw error;
+        throw new AppError(`Failed to fetch analysis issues: ${error.message}`, 500);
+    }
+};
+
+/**
+ * Get raw text data for rewrite context (when AI needs original text)
+ * @param {number} analysisID - Analysis ID
+ * @param {number} userID - User ID
+ * @param {string} userType - 'user' | 'candidate'
+ * @returns {Promise<string>} Raw extracted text
+ */
+export const getRawDataForRewrite = async (analysisID, userID, userType = userTypeConstants.USER) => {
+    try {
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+        
+        logger.info('[RESUME_MODEL] Fetching raw data for rewrite', { analysisID, userID, userType });
+
+        const data = await db
+            .select({
+                rawData: tables.processedDataTable.rawData
+            })
+            .from(tables.analysisTable)
+            .innerJoin(tables.processedDataTable, eq(tables.analysisTable.id, tables.processedDataTable.analysisID))
+            .where(
+                and(
+                    eq(tables.analysisTable.id, analysisID),
+                    eq(tables.analysisTable[entityIDField], userID)
+                )
+            )
+            .limit(1);
+
+        if (!data || data.length === 0) {
+            throw new AppError('Analysis not found or unauthorized', 404);
+        }
+
+        logger.info('[RESUME_MODEL] ✅ Raw data fetched', { 
+            dataLength: data[0].rawData?.length || 0,
+            userType 
+        });
+
+        return data[0].rawData;
+    } catch (error) {
+        logger.error('[RESUME_MODEL] Failed to fetch raw data', {
+            error: error.message,
+            analysisID,
+            userType
+        });
+        if (error instanceof AppError) throw error;
+        throw new AppError(`Failed to fetch raw data: ${error.message}`, 500);
+    }
+};
+
 export default {
     // Content operations
     createResumeContent,
@@ -1270,5 +1482,8 @@ export default {
     switchRewriteVersion,
     getActiveRewrite,
     clearActiveRewrite,
-    getAnalysisDataForRewrite
+    // Analysis data fetching (original + optimized)
+    getAnalysisDataForRewrite,      // Full fetch (legacy)
+    getAnalysisIssuesForRewrite,    // Optimized: issues only
+    getRawDataForRewrite            // Optimized: raw text only
 };

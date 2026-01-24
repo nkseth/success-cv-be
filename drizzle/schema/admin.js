@@ -1,4 +1,4 @@
-import { boolean, integer, pgTable, timestamp, varchar, text, jsonb } from "drizzle-orm/pg-core";
+import { boolean, integer, pgTable, timestamp, varchar, text, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { usersTable, candidatesTable } from "./auth.js";
 
 // Admin users table - stores admin accounts
@@ -13,7 +13,14 @@ export const adminUsersTable = pgTable("admin_users", {
     createdAt: timestamp().defaultNow().notNull(),
     updatedAt: timestamp().defaultNow().notNull(),
     deletedAt: timestamp(), // Soft delete
-});
+}, (table) => [
+    // Index for soft-delete queries (most queries filter by deletedAt IS NULL)
+    index("admin_users_deleted_at_idx").on(table.deletedAt),
+    // Index for role-based filtering
+    index("admin_users_role_idx").on(table.role),
+    // Composite index for active admin lookups
+    index("admin_users_active_deleted_idx").on(table.isActive, table.deletedAt),
+]);
 
 // System settings table - stores configurable system settings
 export const systemSettingsTable = pgTable("system_settings", {
@@ -28,7 +35,14 @@ export const systemSettingsTable = pgTable("system_settings", {
     updatedBy: integer("updatedBy").references(() => adminUsersTable.id),
     createdAt: timestamp().defaultNow().notNull(),
     updatedAt: timestamp().defaultNow().notNull(),
-});
+}, (table) => [
+    // Index for category-based filtering
+    index("system_settings_category_idx").on(table.category),
+    // Index for public settings lookup
+    index("system_settings_public_idx").on(table.isPublic),
+    // Composite index for category + public lookups
+    index("system_settings_category_public_idx").on(table.category, table.isPublic),
+]);
 
 // Resume templates table - stores admin-uploaded resume templates with theme configuration
 export const resumeTemplatesTable = pgTable("resume_templates", {
@@ -63,7 +77,24 @@ export const resumeTemplatesTable = pgTable("resume_templates", {
     createdAt: timestamp().defaultNow().notNull(),
     updatedAt: timestamp().defaultNow().notNull(),
     deletedAt: timestamp(), // Soft delete
-});
+}, (table) => [
+    // Index for soft-delete queries
+    index("resume_templates_deleted_at_idx").on(table.deletedAt),
+    // Index for active templates listing
+    index("resume_templates_active_idx").on(table.isActive),
+    // Index for category-based filtering
+    index("resume_templates_category_idx").on(table.category),
+    // Index for template type filtering
+    index("resume_templates_type_idx").on(table.templateType),
+    // Composite index for active + category + ATS (common filter combo)
+    index("resume_templates_active_category_ats_idx").on(table.isActive, table.category, table.isATSOptimized),
+    // Composite index for premium filtering
+    index("resume_templates_premium_active_idx").on(table.isPremium, table.isActive),
+    // Index for sorting by usage (popularity)
+    index("resume_templates_usage_count_idx").on(table.usageCount),
+    // Index for sortOrder (manual ordering)
+    index("resume_templates_sort_order_idx").on(table.sortOrder),
+]);
 
 // Blocked users table - tracks blocked users and candidates
 export const blockedUsersTable = pgTable("blocked_users", {
@@ -79,7 +110,20 @@ export const blockedUsersTable = pgTable("blocked_users", {
     isActive: boolean().default(true).notNull(), // false means unblocked
     createdAt: timestamp().defaultNow().notNull(),
     updatedAt: timestamp().defaultNow().notNull(),
-});
+}, (table) => [
+    // Index for user lookups
+    index("blocked_users_user_id_idx").on(table.userID),
+    // Index for candidate lookups
+    index("blocked_users_candidate_id_idx").on(table.candidateID),
+    // Index for active blocks filtering
+    index("blocked_users_active_idx").on(table.isActive),
+    // Composite index for checking if a user is blocked
+    index("blocked_users_user_active_idx").on(table.userID, table.isActive),
+    // Composite index for checking if a candidate is blocked
+    index("blocked_users_candidate_active_idx").on(table.candidateID, table.isActive),
+    // Index for user type filtering
+    index("blocked_users_type_idx").on(table.userType),
+]);
 
 // Admin activity log - tracks admin actions for audit purposes
 export const adminActivityLogTable = pgTable("admin_activity_logs", {
@@ -92,4 +136,15 @@ export const adminActivityLogTable = pgTable("admin_activity_logs", {
     ipAddress: varchar({ length: 45 }),
     userAgent: text(),
     createdAt: timestamp().defaultNow().notNull(),
-});
+}, (table) => [
+    // Index for admin-specific activity lookup
+    index("admin_activity_logs_admin_id_idx").on(table.adminId),
+    // Index for action type filtering
+    index("admin_activity_logs_action_idx").on(table.action),
+    // Index for resource lookups
+    index("admin_activity_logs_resource_idx").on(table.resourceType, table.resourceId),
+    // Index for chronological queries (recent activity)
+    index("admin_activity_logs_created_at_idx").on(table.createdAt),
+    // Composite index for admin + action + time (audit queries)
+    index("admin_activity_logs_admin_action_time_idx").on(table.adminId, table.action, table.createdAt),
+]);
