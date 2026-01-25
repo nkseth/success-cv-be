@@ -13,7 +13,11 @@
     "worker": "node queues/workers/resume-analysis.worker.js",
     "worker:dev": "nodemon queues/workers/resume-analysis.worker.js",
     "worker:rewrite": "node queues/workers/resume-rewrite.worker.js",
-    "worker:rewrite:dev": "nodemon queues/workers/resume-rewrite.worker.js"
+    "worker:rewrite:dev": "nodemon queues/workers/resume-rewrite.worker.js",
+    "seed:themes": "node drizzle/seeds/themes.seed.js",
+    "seed:themes:images": "node drizzle/seeds/themes-with-images.seed.js",
+    "seed:themes:full": "node drizzle/seeds/themes-with-images.seed.js --generate-images",
+    "generate:theme-images": "node drizzle/seeds/theme-image-downloader.js"
   },
   "keywords": [],
   "author": "",
