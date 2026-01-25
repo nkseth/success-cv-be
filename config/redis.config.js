@@ -1,5 +1,9 @@
 import Redis from 'ioredis';
 import logger from '../middleware/logger.js';
+import dotenv from 'dotenv';
+
+// Load environment variables first
+dotenv.config();
 
 // Redis Configuration
 const REDIS_HOST = process.env.REDIS_HOST || 'localhost';

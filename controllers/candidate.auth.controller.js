@@ -1,11 +1,12 @@
 import jwt from 'jsonwebtoken';
 import { AppError, asyncHandler } from "../middleware/error.js";
-import { sendPasswordResetEmail } from "../services/email/emailTrigger.js";
+import { addPasswordResetEmailJob } from "../queues/email.queue.js";
 import { sendSuccess } from "../utils/apiHelpers.js";
 import { userTypeConstants } from "../utils/constants.js";
 import { validateEmail, validateString } from "../utils/validate-helper.js";
 import { comparePassword } from '../utils/security-helper.js';
 import { createCandidate, createCandidatesBulk, forgotpasswordTokenGenerationCandidate, getCandidateByEmail, resetPasswordUsingToken, verifyCandidateByToken } from '../models/candidate.model.js';
+import logger from '../middleware/logger.js';
 
 export const registerSingleController = asyncHandler(async (req, res, next) => {
     if (!req.body || typeof req.body !== 'object') {
@@ -106,8 +107,16 @@ export const forgotPasswordController = asyncHandler(async (req, res, next) => {
     if (!resetToken) {
         return next(new AppError('Failed to generate password reset token', 500));
     }
-    // Send password reset email
-    await sendPasswordResetEmail(email, user.fullname, `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`);
+    
+    // Queue the password reset email for non-blocking delivery
+    addPasswordResetEmailJob({
+        to: email,
+        name: user.fullname,
+        resetUrl: `${process.env.FRONTEND_URL}/auth/reset-password?token=${resetToken}`
+    }).catch(error => {
+        // Log error but don't fail the request
+        logger.error('Failed to queue password reset email', { error: error.message, email });
+    });
 
     sendSuccess(res, null, 'Password reset link has been sent to your email', 200);
 

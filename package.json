@@ -14,6 +14,10 @@
     "worker:dev": "nodemon queues/workers/resume-analysis.worker.js",
     "worker:rewrite": "node queues/workers/resume-rewrite.worker.js",
     "worker:rewrite:dev": "nodemon queues/workers/resume-rewrite.worker.js",
+    "worker:email": "node queues/workers/email.worker.js",
+    "worker:email:dev": "nodemon queues/workers/email.worker.js",
+    "workers": "concurrently \"npm run worker\" \"npm run worker:rewrite\" \"npm run worker:email\"",
+    "workers:dev": "concurrently \"npm run worker:dev\" \"npm run worker:rewrite:dev\" \"npm run worker:email:dev\"",
     "seed:themes": "node drizzle/seeds/themes.seed.js",
     "seed:themes:images": "node drizzle/seeds/themes-with-images.seed.js",
     "seed:themes:full": "node drizzle/seeds/themes-with-images.seed.js --generate-images",
@@ -50,6 +54,7 @@
     "zod": "^4.3.5"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "drizzle-kit": "^0.31.5",
     "nodemon": "^3.1.10"
   }

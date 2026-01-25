@@ -194,9 +194,11 @@ const server = app.listen(PORT, async () => {
     try {
         await initializeServices();
     } catch (error) {
-        logger.error('Failed to initialize services, shutting down...', { 
+        logger.error('Failed to initialize services (Redis/Queues)', { 
             error: error.message 
         });
-        process.exit(1);
+        logger.warn('⚠️  Server is running without Redis - queue and caching features disabled');
+        logger.warn('⚠️  Email sending, resume analysis, and other background jobs will not work');
+        // Don't crash the server - let it run in degraded mode
     }
 });

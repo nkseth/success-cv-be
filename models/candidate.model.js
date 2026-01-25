@@ -8,8 +8,9 @@ import { hashPassword, excludeFields } from "../utils/security-helper.js";
 import { userTypeConstants } from "../utils/constants.js";
 import crypto from 'crypto';
 import { forgotpasswordTokenValidation } from "./auth.model.js";
-import { sendCandidateVerificationEmail } from "../services/email/emailTrigger.js";
+import { addCandidateVerificationEmailJob } from "../queues/email.queue.js";
 import { getOrgByID } from "./organisation.model.js";
+import logger from '../middleware/logger.js';
 
 /**
  * Create a single candidate
@@ -572,17 +573,26 @@ export const sendCandidateVerificationEmailWithToken = async (candidate, passwor
         // Build verification URL with subdomain
         const verificationUrl = `https://${orgSlug}.${process.env.FRONTEND_URL}/auth/verify?token=${verificationToken.id}`;
         
-        // Send verification email
-        await sendCandidateVerificationEmail(
-            candidate.email,
-            candidate.fullname,
-            password,
-            verificationUrl
-        );
+        // Queue the candidate verification email for non-blocking delivery
+        await addCandidateVerificationEmailJob({
+            to: candidate.email,
+            name: candidate.fullname,
+            password: password,
+            verificationUrl: verificationUrl
+        }).catch(error => {
+            // Log error but don't fail
+            logger.error('Failed to queue candidate verification email', { 
+                error: error.message, 
+                email: candidate.email 
+            });
+        });
 
         return { success: true, tokenId: verificationToken.id };
     } catch (error) {
-        console.error(`Failed to send verification email to ${candidate.email}:`, error);
+        logger.error(`Failed to send verification email to ${candidate.email}:`, { 
+            error: error.message, 
+            stack: error.stack 
+        });
         // Don't throw - we don't want email failure to break registration
         return { success: false, error: error.message };
     }

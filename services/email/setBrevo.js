@@ -3,7 +3,7 @@ import axios from 'axios';
 /**
  * Send email using Brevo HTTP API
  */
-export const sendEmail = async (to, subject, htmlContent, from = { email: "ritwikfullstack@gmail.com" }) => {
+export const sendEmail = async (to, subject, htmlContent, from = { email: process.env.BREVO_SENDER_EMAIL }) => {
     // Validate API key
     if (!process.env.BREVO_API_KEY) {
         const error = "BREVO_API_KEY is not configured in environment variables";
@@ -47,7 +47,11 @@ export const sendEmail = async (to, subject, htmlContent, from = { email: "ritwi
             messageId: response.data.messageId
         });
 
-        return { success: true, response: response.data };
+        return { 
+            success: true, 
+            messageId: response.data.messageId,
+            response: response.data 
+        };
     } catch (error) {
         console.error("Brevo API Error:", {
             to,
@@ -75,7 +79,7 @@ export const sendBulkEmail = async (
     recipients,
     subject,
     htmlContent,
-    from = { email: "ritwikfullstack@gmail.com", name: "Resume Project" }
+    from = { email: process.env.BREVO_SENDER_EMAIL , name: "Resume Project" }
 ) => {
     // Validate inputs
     if (!Array.isArray(recipients) || recipients.length === 0) {

@@ -54,4 +54,9 @@ router.post('/forgot-password/:token', (req, res, next) => {
     next();
 }, resetPasswordController);
 
+router.post('/reset-password/:token', (req, res, next) => {
+    logger.info("Reset password endpoint hit");
+    next();
+}, resetPasswordController);
+
 export const authRoutes = router;
