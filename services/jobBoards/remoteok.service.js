@@ -101,6 +101,109 @@ function isValidJob(job) {
 }
 
 /**
+ * Parse RemoteOK date format
+ * RemoteOK can return dates in various formats:
+ * - Unix timestamp (seconds)
+ * - ISO date string
+ * - Date object
+ */
+function parseRemoteOKDate(dateValue, epochValue) {
+    try {
+        // If no date, use current time
+        if (!dateValue && !epochValue) {
+            return new Date();
+        }
+
+        // Try epoch first (Unix timestamp in seconds)
+        if (epochValue && typeof epochValue === 'number' && epochValue > 0) {
+            const date = new Date(epochValue * 1000);
+            if (!isNaN(date.getTime())) {
+                return date;
+            }
+        }
+
+        // Try date field
+        if (dateValue) {
+            // If it's already a Date object
+            if (dateValue instanceof Date) {
+                return dateValue;
+            }
+
+            // If it's a Unix timestamp (number)
+            if (typeof dateValue === 'number') {
+                // Check if it's in seconds or milliseconds
+                const date = dateValue > 10000000000 
+                    ? new Date(dateValue)           // milliseconds
+                    : new Date(dateValue * 1000);   // seconds
+                
+                if (!isNaN(date.getTime())) {
+                    return date;
+                }
+            }
+
+            // Try parsing as ISO string
+            const date = new Date(dateValue);
+            if (!isNaN(date.getTime())) {
+                return date;
+            }
+        }
+
+        // Fallback to current time if parsing fails
+        logger.warn('Failed to parse RemoteOK date, using current time', {
+            dateValue,
+            epochValue
+        });
+        return new Date();
+
+    } catch (error) {
+        logger.error('Error parsing RemoteOK date', { error: error.message, dateValue, epochValue });
+        return new Date(); // Fallback to current time
+    }
+}
+
+/**
+ * Parse requirements from job data
+ */
+function parseRequirements(job) {
+    if (!job.requirements) return [];
+    
+    if (Array.isArray(job.requirements)) {
+        return job.requirements;
+    }
+    
+    if (typeof job.requirements === 'string') {
+        // Split by newlines or bullet points
+        return job.requirements
+            .split(/\n|•|\-/)
+            .map(r => r.trim())
+            .filter(r => r.length > 0);
+    }
+    
+    return [];
+}
+
+/**
+ * Parse benefits from job data
+ */
+function parseBenefits(job) {
+    if (!job.benefits) return [];
+    
+    if (Array.isArray(job.benefits)) {
+        return job.benefits;
+    }
+    
+    if (typeof job.benefits === 'string') {
+        // Split by newlines or bullet points
+        return job.benefits
+            .split(/\n|•|\-/)
+            .map(b => b.trim())
+            .filter(b => b.length > 0);
+    }
+    
+    return [];
+}
+
+/**
  * Normalize RemoteOK job to our schema format
  */
 function normalizeJob(job) {
@@ -116,15 +219,8 @@ function normalizeJob(job) {
     
     const description = descriptionParts.join('') || 'No description provided';
     
-    // Extract skills from tags
-    const skillsRequired = {
-        required: job.tags || [],
-        preferred: [],
-        technical: job.tags ? job.tags.filter(tag => 
-            ['javascript', 'python', 'java', 'typescript', 'react', 'node', 'golang', 'rust', 'ruby'].includes(tag.toLowerCase())
-        ) : [],
-        soft: []
-    };
+    // Extract skills from tags - convert to array of strings for database
+    const skillsRequired = job.tags || [];
     
     // Determine experience level from tags or title
     const experienceLevel = determineExperienceLevel(job);
@@ -148,9 +244,9 @@ function normalizeJob(job) {
         
         // Content
         description,
-        requirements: job.requirements || null,
+        requirements: parseRequirements(job),
         responsibilities: null,
-        benefits: job.benefits || null,
+        benefits: parseBenefits(job),
         
         // Skills
         skillsRequired,
@@ -164,8 +260,8 @@ function normalizeJob(job) {
         url: job.url,
         applyUrl: job.apply_url || job.url,
         
-        // Dates
-        postedDate: new Date(job.date * 1000), // RemoteOK uses Unix timestamp
+        // Dates - handle various date formats from RemoteOK
+        postedDate: parseRemoteOKDate(job.date, job.epoch),
         expiresAt: null,
         
         // Status

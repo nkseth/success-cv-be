@@ -3,7 +3,7 @@ import { bullMQConnection } from '../../config/redis.config.js';
 import logger from '../../middleware/logger.js';
 import { JOB_SCRAPING_TYPES } from '../job-scraping.queue.js';
 import jobBoardsService from '../../services/jobBoards/index.js';
-import db from '../../config/db.js';
+import { db } from '../../config/db.js';
 import { jobsTable, jobScrapingLogsTable } from '../../drizzle/schema.js';
 import { eq, and, lt, sql } from 'drizzle-orm';
 

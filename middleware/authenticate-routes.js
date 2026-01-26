@@ -83,6 +83,11 @@ export function authenticateUser(req, res, next) {
         console.log('[AUTH SUCCESS] User authenticated:', decoded.id);
         req.userID = decoded.id;
         req.type = decoded.type;
+        req.user = {
+            id: decoded.id,
+            email: decoded.email,
+            userType: decoded.type
+        };
         next();
     } catch (err) {
         console.log('[AUTH ERROR] User token verification failed:', err.message);

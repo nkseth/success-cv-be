@@ -129,8 +129,8 @@ export async function getUserJobMatches(req, res, next) {
             sortOrder = 'desc'
         } = req.query;
 
-        const userId = req.user.id;
-        const userType = req.user.userType || 'user';
+        const userId = req.userID;
+        const userType = req.type || 'user';
 
         logger.info('Fetching job matches for user', {
             userId,
@@ -161,7 +161,7 @@ export async function getUserJobMatches(req, res, next) {
         });
     } catch (error) {
         logger.error('Error fetching job matches', {
-            userId: req.user?.id,
+            userId: req.userID,
             error: error.message
         });
         next(error);
@@ -215,7 +215,7 @@ export async function generateJobMatches(req, res, next) {
         });
     } catch (error) {
         logger.error('Error triggering job matching', {
-            userId: req.user?.id,
+            userId: req.userID,
             analysisId: req.body.analysisId,
             error: error.message
         });
@@ -268,7 +268,7 @@ export async function regenerateJobMatches(req, res, next) {
         });
     } catch (error) {
         logger.error('Error re-triggering job matching', {
-            userId: req.user?.id,
+            userId: req.userID,
             analysisId: req.body.analysisId,
             error: error.message
         });
@@ -325,7 +325,7 @@ export async function updateJobMatch(req, res, next) {
         });
     } catch (error) {
         logger.error('Error updating job match', {
-            userId: req.user?.id,
+            userId: req.userID,
             matchId: req.params.id,
             error: error.message
         });
@@ -362,7 +362,7 @@ export async function getJobMatchById(req, res, next) {
         });
     } catch (error) {
         logger.error('Error fetching job match', {
-            userId: req.user?.id,
+            userId: req.userID,
             matchId: req.params.id,
             error: error.message
         });
@@ -398,7 +398,7 @@ export async function deleteJobMatch(req, res, next) {
         });
     } catch (error) {
         logger.error('Error deleting job match', {
-            userId: req.user?.id,
+            userId: req.userID,
             matchId: req.params.id,
             error: error.message
         });
@@ -420,8 +420,8 @@ export async function rewriteResumeForJob(req, res, next) {
             throw new AppError('Resume ID is required', 400);
         }
 
-        const userId = req.user.id;
-        const userType = req.user.userType || 'user';
+        const userId = req.userID;
+        const userType = req.type || 'user';
 
         logger.info('Triggering job-aware resume rewrite', {
             userId,
@@ -483,7 +483,7 @@ export async function rewriteResumeForJob(req, res, next) {
         });
     } catch (error) {
         logger.error('Error triggering job-aware resume rewrite', {
-            userId: req.user?.id,
+            userId: req.userID,
             jobMatchId: req.params.jobMatchId,
             resumeId: req.body.resumeId,
             error: error.message
@@ -498,8 +498,8 @@ export async function rewriteResumeForJob(req, res, next) {
  */
 export async function getUserJobPreferences(req, res, next) {
     try {
-        const userId = req.user.id;
-        const userType = req.user.userType || 'user';
+        const userId = req.userID;
+        const userType = req.type || 'user';
 
         logger.info('Fetching job preferences', {
             userId,
@@ -515,7 +515,7 @@ export async function getUserJobPreferences(req, res, next) {
         });
     } catch (error) {
         logger.error('Error fetching job preferences', {
-            userId: req.user?.id,
+            userId: req.userID,
             error: error.message
         });
         next(error);
@@ -529,8 +529,8 @@ export async function getUserJobPreferences(req, res, next) {
  */
 export async function updateUserJobPreferences(req, res, next) {
     try {
-        const userId = req.user.id;
-        const userType = req.user.userType || 'user';
+        const userId = req.userID;
+        const userType = req.type || 'user';
         const {
             preferredTitles,
             preferredLocations,
@@ -572,7 +572,7 @@ export async function updateUserJobPreferences(req, res, next) {
         });
     } catch (error) {
         logger.error('Error updating job preferences', {
-            userId: req.user?.id,
+            userId: req.userID,
             error: error.message
         });
         next(error);
