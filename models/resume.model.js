@@ -842,6 +842,64 @@ export const getRewritesByAnalysisID = async (analysisID, userID, options = {}) 
 };
 
 /**
+ * Get all rewrites for a user across all analyses
+ * @param {number} userID - User ID
+ * @param {Object} options - Options including pagination, filters, sort, userType
+ * @returns {Promise<Object>} Object with rewrites array and totalCount
+ */
+export const getRewritesByUserID = async (userID, options = {}) => {
+    try {
+        const {
+            pagination = { limit: 10, offset: 0 },
+            filters = {},
+            sort = { field: 'createdAt', order: 'desc' },
+            userType = userTypeConstants.USER
+        } = options;
+
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+
+        logger.info('[RESUME_MODEL] Fetching rewrites for user', { userID, options, userType });
+
+        const whereConditions = [
+            eq(tables.rewritesTable[entityIDField], userID)
+        ];
+
+        const filterConditions = buildWhereConditions(
+            filters,
+            tables.rewritesTable,
+            { eq, inArray, gte, lte, or, and }
+        );
+        whereConditions.push(...filterConditions);
+
+        const [{ totalCount }] = await db
+            .select({ totalCount: count() })
+            .from(tables.rewritesTable)
+            .where(and(...whereConditions));
+
+        const orderByClause = buildOrderBy(sort, tables.rewritesTable, { asc, desc });
+
+        const rewrites = await db
+            .select()
+            .from(tables.rewritesTable)
+            .where(and(...whereConditions))
+            .orderBy(...orderByClause)
+            .limit(pagination.limit)
+            .offset(pagination.offset);
+
+        logger.info('[RESUME_MODEL] ✅ Fetched user rewrites', { count: rewrites.length, totalCount, userType });
+        return { rewrites, totalCount };
+    } catch (error) {
+        logger.error('[RESUME_MODEL] Failed to fetch user rewrites', {
+            error: error.message,
+            userID,
+            userType
+        });
+        throw new AppError(`Failed to fetch rewrites: ${error.message}`, 500);
+    }
+};
+
+/**
  * Update rewrite status and content
  * @param {number} rewriteID - Rewrite ID
  * @param {Object} updates - Fields to update
@@ -1581,6 +1639,7 @@ export default {
     createRewrite,
     getRewriteByID,
     getRewritesByAnalysisID,
+    getRewritesByUserID,
     updateRewrite,
     applyRewrite,
     switchRewriteVersion,

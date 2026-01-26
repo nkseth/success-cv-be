@@ -338,6 +338,55 @@ export const createRewriteByAnalysisController = asyncHandler(async (req, res, n
 });
 
 /**
+ * Get all rewrites for authenticated user across resumes
+ * GET /api/v1/resumes/rewrites
+ * Query params:
+ * - page: Page number (default: 1)
+ * - limit: Items per page (default: 10, max: 100)
+ * - status: Filter by status (pending, processing, completed, failed) - supports multiple
+ * - isActive: Filter by active status
+ * - createdAt: Date range filter
+ * - completedAt: Date range filter
+ * - sortBy: Sort field (createdAt, updatedAt, completedAt, versionNumber)
+ * - sortOrder: Sort order (asc, desc)
+ */
+export const getUserRewritesController = asyncHandler(async (req, res, next) => {
+    const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
+
+    logger.info('[RESUME_CONTROLLER] Fetching user rewrites', {
+        userID,
+        userType,
+        query: req.query
+    });
+
+    const { pagination, filters, sort } = parseQueryParams(req.query, {
+        defaultPageSize: 10,
+        maxPageSize: 100,
+        filterableFields: {
+            status: 'array',
+            isActive: 'boolean',
+            createdAt: 'dateRange',
+            completedAt: 'dateRange',
+        },
+        sortableFields: ['createdAt', 'updatedAt', 'completedAt', 'versionNumber'],
+        defaultSort: { field: 'createdAt', order: 'desc' }
+    });
+
+    const { rewrites, totalCount } = await resumeService.getUserRewrites(userID, {
+        pagination,
+        filters,
+        sort,
+        userType
+    });
+
+    const paginationMeta = getPaginationMeta(totalCount, pagination);
+    const response = formatPaginatedResponse(rewrites, paginationMeta, filters);
+
+    sendSuccess(res, response, 'Rewrites fetched successfully', 200);
+});
+
+/**
  * Get all rewrites for a resume
  * GET /api/v1/resumes/:id/rewrites
  * Query params:

@@ -11,17 +11,25 @@
  * - Section styles customize headings, bullets, etc.
  */
 
+import { PAGE_SIZES, pointsToPixels } from "../constants.js";
 import { getThemeCSSVariables, mergeThemeConfig } from "../theme-merger.js";
-import { 
-    renderPersonalInfo, 
-    renderSummary, 
-    renderExperience, 
-    renderEducation, 
-    renderSkills, 
-    renderAdditionalSections 
+import {
+    renderPersonalInfo,
+    renderSummary,
+    renderExperience,
+    renderEducation,
+    renderSkills,
+    renderAdditionalSections
 } from "./sections/index.js";
 import { getBaseStyles } from "./styles/base-styles.js";
 import { getPrintStyles, getPageSafeStyles } from "./styles/print-styles.js";
+
+// PDF/page sizing helpers (96 DPI target)
+const PX_PER_INCH = 96;
+const toPxFromInches = (inches) => Number((inches * PX_PER_INCH).toFixed(3));
+const toPxFromPoints = (points) => Number(pointsToPixels(points || 0).toFixed(3));
+const DEFAULT_PAGE_WIDTH_PX = Math.round((PAGE_SIZES.A4?.widthIn || 8.27) * PX_PER_INCH);
+const DEFAULT_PAGE_HEIGHT_PX = Math.round((PAGE_SIZES.A4?.heightIn || 11.69) * PX_PER_INCH);
 
 /**
  * Generate complete resume HTML
@@ -75,6 +83,9 @@ export const generateResumeHTML = (resumeContent, themeConfig, options = {}) => 
         
         /* Section Styles */
         ${sectionStyles}
+
+        /* Frontend preview parity */
+        ${buildFrontendPreviewStyles(config)}
     </style>
 </head>
 <body>
@@ -113,6 +124,253 @@ const getFontUrl = (fontFamily) => {
 };
 
 /**
+ * Map backend theme config to the CSS custom properties used by the
+ * frontend resume preview so PDF output matches the on-screen design.
+ * Values are converted to pixels to mirror browser rendering.
+ */
+const buildFrontendVariableBlock = (config) => {
+        const typography = config.typography || {};
+        const sizes = typography.sizes || {};
+        const weights = typography.weights || {};
+        const spacing = config.layout?.spacing || {};
+        const margins = config.layout?.margins || {};
+        const colors = config.colors || {};
+
+        const fontFamily = typography.fontFamily || "'Montserrat', sans-serif";
+        const headerFontFamily = typography.headerFontFamily || fontFamily;
+
+        return `
+:root {
+    --rp-color-primary: ${colors.primary || '#6c5ce7'};
+    --rp-color-secondary: ${colors.secondary || '#6c5ce7'};
+    --rp-color-accent: ${colors.accent || '#fd79a8'};
+    --rp-color-text: ${colors.text || '#2d3436'};
+    --rp-color-text-light: ${colors.textLight || '#666666'};
+    --rp-color-background: ${colors.background || '#ffffff'};
+    --rp-color-border: ${colors.border || '#dddddd'};
+    --rp-color-header-bg: ${colors.headerBg || '#f5f5f5'};
+
+    --rp-font-family: ${fontFamily};
+    --rp-font-family-header: ${headerFontFamily};
+    --rp-font-size-name: ${toPxFromPoints(sizes.name || 24)}px;
+    --rp-font-size-title: ${toPxFromPoints(sizes.title || 14)}px;
+    --rp-font-size-section: ${toPxFromPoints(sizes.sectionHeading || 12)}px;
+    --rp-font-size-subheading: ${toPxFromPoints(sizes.subheading || 11)}px;
+    --rp-font-size-body: ${toPxFromPoints(sizes.body || 10)}px;
+    --rp-font-size-small: ${toPxFromPoints(sizes.small || 9)}px;
+    --rp-font-weight-light: ${weights.light || 300};
+    --rp-font-weight-regular: ${weights.regular || 400};
+    --rp-font-weight-medium: ${weights.medium || 500};
+    --rp-font-weight-semibold: ${weights.semibold || 600};
+    --rp-font-weight-bold: ${weights.bold || 700};
+    --rp-line-height: ${typography.lineHeight || 1.5};
+
+    --rp-spacing-section: ${toPxFromPoints(spacing.section || 16)}px;
+    --rp-spacing-item: ${toPxFromPoints(spacing.item || 10)}px;
+    --rp-spacing-line: ${toPxFromPoints(spacing.line || 4)}px;
+    --rp-spacing-paragraph: ${toPxFromPoints(spacing.paragraph || 6)}px;
+
+    --rp-margin-top: ${toPxFromInches(margins.top || 0.5)}px;
+    --rp-margin-right: ${toPxFromInches(margins.right || 0.5)}px;
+    --rp-margin-bottom: ${toPxFromInches(margins.bottom || 0.5)}px;
+    --rp-margin-left: ${toPxFromInches(margins.left || 0.5)}px;
+
+    --rp-border-radius: ${(config.style?.borderRadius ?? 8)}px;
+    --rp-divider-width: ${(config.style?.dividerWidth ?? 1)}px;
+}
+`;
+};
+
+/**
+ * Frontend-style CSS overrides so Puppeteer/Playwright output matches the
+ * on-screen preview (colors, spacing, typography, layout).
+ */
+const buildFrontendPreviewStyles = (config) => {
+        const pageSizeKey = config.layout?.pageSize || 'A4';
+        const page = PAGE_SIZES[pageSizeKey] || PAGE_SIZES.A4;
+        const pageWidthPx = Math.round((page.widthIn || page.width / 72) * PX_PER_INCH) || DEFAULT_PAGE_WIDTH_PX;
+        const pageHeightPx = Math.round((page.heightIn || page.height / 72) * PX_PER_INCH) || DEFAULT_PAGE_HEIGHT_PX;
+
+        return `
+${buildFrontendVariableBlock(config)}
+
+@page {
+    size: ${page.name || pageSizeKey};
+    margin: 0;
+}
+
+body {
+    margin: 0;
+    color: var(--rp-color-text);
+    font-family: var(--rp-font-family);
+    font-size: var(--rp-font-size-body);
+    line-height: var(--rp-line-height);
+    background: var(--rp-color-background);
+}
+
+.resume-container {
+    width: ${pageWidthPx}px;
+    min-height: ${pageHeightPx}px;
+    background-color: var(--rp-color-background);
+    padding: var(--rp-margin-top) var(--rp-margin-right) var(--rp-margin-bottom) var(--rp-margin-left);
+    border-radius: var(--rp-border-radius);
+    position: relative;
+    overflow: hidden;
+    color: var(--rp-color-text);
+}
+
+@media screen {
+    .resume-container {
+        margin: 0 auto;
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
+    }
+}
+
+@media print {
+    .resume-container {
+        box-shadow: none;
+    }
+}
+
+a {
+    color: var(--rp-color-primary);
+    text-decoration: none;
+}
+
+a:hover { text-decoration: underline; }
+
+.section {
+    margin-bottom: var(--rp-spacing-section);
+}
+
+.section:last-child {
+    margin-bottom: calc(var(--rp-spacing-section) / 2);
+}
+
+.section-title {
+    font-size: var(--rp-font-size-section);
+    font-weight: var(--rp-font-weight-semibold);
+    color: var(--rp-color-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background-color: var(--rp-color-header-bg);
+    padding: 6px 8px;
+    margin: 0 0 var(--rp-spacing-item);
+    border-radius: 4px;
+    border-left: 3px solid var(--rp-color-primary);
+}
+
+.header {
+    padding-bottom: var(--rp-spacing-item);
+    margin-bottom: var(--rp-spacing-item);
+    border-bottom: 2px solid var(--rp-color-primary);
+}
+
+.header-name {
+    font-size: var(--rp-font-size-name);
+    font-family: var(--rp-font-family-header);
+    font-weight: var(--rp-font-weight-bold);
+    color: var(--rp-color-secondary);
+    margin: 0 0 6px;
+}
+
+.header-title {
+    font-size: var(--rp-font-size-title);
+    font-weight: var(--rp-font-weight-medium);
+    color: var(--rp-color-primary);
+    margin: 0 0 8px;
+}
+
+.contact-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    font-size: var(--rp-font-size-small);
+    color: var(--rp-color-text-light);
+}
+
+.contact-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.contact-item svg {
+    width: 12px;
+    height: 12px;
+    color: var(--rp-color-text-light);
+}
+
+.summary-text,
+.section-content,
+.entry-description {
+    font-size: var(--rp-font-size-body);
+    line-height: var(--rp-line-height);
+    color: var(--rp-color-text);
+}
+
+.entry-title {
+    font-size: var(--rp-font-size-subheading);
+    font-weight: var(--rp-font-weight-semibold);
+    color: var(--rp-color-primary);
+    margin: 0;
+}
+
+.entry-subtitle {
+    font-size: var(--rp-font-size-body);
+    font-weight: var(--rp-font-weight-medium);
+    color: var(--rp-color-secondary);
+    margin: 2px 0 0;
+}
+
+.entry-meta {
+    font-size: var(--rp-font-size-small);
+    color: var(--rp-color-text-light);
+    text-align: right;
+}
+
+.entry-description ul,
+.entry-description ol {
+    padding-left: 18px;
+    margin: 4px 0;
+}
+
+.entry-description li {
+    margin: 2px 0;
+}
+
+.entry-description strong,
+.entry-description b {
+    font-weight: var(--rp-font-weight-semibold);
+}
+
+.skills-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 8px;
+}
+
+.skill-pill {
+    display: inline-block;
+    padding: 6px 10px;
+    font-size: var(--rp-font-size-small);
+    font-weight: var(--rp-font-weight-medium);
+    background-color: var(--rp-color-header-bg);
+    border: 1px solid var(--rp-color-border);
+    border-radius: var(--rp-border-radius);
+    color: var(--rp-color-primary);
+}
+
+.section-divider {
+    border: none;
+    border-top: var(--rp-divider-width) solid var(--rp-color-border);
+    margin: var(--rp-spacing-section) 0;
+}
+`;
+};
+
+/**
  * Escape HTML to prevent XSS
  * @param {string} str - String to escape
  * @returns {string} Escaped string
@@ -139,6 +397,14 @@ const renderSections = (content, config, options) => {
         'personalInfo', 'summary', 'experience', 'education', 'skills', 'additionalSections'
     ];
     const visibility = config.sections?.visibility || {};
+    const columns = Number(config.layout?.columns || 1);
+
+    const ensureArray = (value, fallback) =>
+        Array.isArray(value) && value.length > 0 ? value : fallback;
+
+    const fullWidthSections = ensureArray(config.layout?.fullWidthSections, ['personalInfo', 'summary']);
+    const sidebarSections = ensureArray(config.layout?.sidebarSections, ['skills', 'additionalSections']);
+    const mainSections = ensureArray(config.layout?.mainSections, ['experience', 'education']);
 
     const sectionRenderers = {
         personalInfo: () => renderPersonalInfo(content.personalInfo, config),
@@ -149,14 +415,60 @@ const renderSections = (content, config, options) => {
         additionalSections: () => renderAdditionalSections(content.additionalSections, config)
     };
 
-    return sectionOrder
+    const renderedSections = sectionOrder
         .filter(section => visibility[section] !== false)
         .map(section => {
             const renderer = sectionRenderers[section];
-            if (!renderer) return '';
-            return renderer();
+            if (!renderer) return null;
+            const html = renderer();
+            if (!html) return null;
+            return { name: section, html };
         })
-        .join('\n');
+        .filter(Boolean);
+
+    if (columns === 2) {
+        const fullWidthHTML = [];
+        const sidebarHTML = [];
+        const mainHTML = [];
+
+        for (const section of renderedSections) {
+            if (fullWidthSections.includes(section.name)) {
+                fullWidthHTML.push(section.html);
+                continue;
+            }
+
+            if (sidebarSections.includes(section.name)) {
+                sidebarHTML.push(section.html);
+                continue;
+            }
+
+            // Default to main column when not explicitly mapped
+            mainHTML.push(section.html);
+        }
+
+        const sidebarBlock = sidebarHTML.length
+            ? `<div class="resume-sidebar">${sidebarHTML.join('\n')}</div>`
+            : '';
+        const mainBlock = mainHTML.length
+            ? `<div class="resume-main">${mainHTML.join('\n')}</div>`
+            : '';
+
+        const twoColumnBlock = (sidebarBlock || mainBlock)
+            ? `
+        <div class="resume-two-column">
+            ${sidebarBlock}
+            ${mainBlock}
+        </div>
+        `.trim()
+            : '';
+
+        return [
+            ...fullWidthHTML,
+            twoColumnBlock
+        ].filter(Boolean).join('\n');
+    }
+
+    return renderedSections.map(section => section.html).join('\n');
 };
 
 /**
@@ -169,36 +481,33 @@ const getLayoutStyles = (config) => {
     
     if (columns === 2) {
         return `
-            .resume-container {
+            .resume-two-column {
                 display: grid;
-                grid-template-columns: 1fr 2fr;
+                grid-template-columns: minmax(220px, 1fr) minmax(340px, 2fr);
                 gap: var(--spacing-section);
+                align-items: start;
             }
-            
-            .section-personal-info {
-                grid-column: 1 / -1;
+
+            .resume-sidebar,
+            .resume-main {
+                display: flex;
+                flex-direction: column;
+                gap: var(--spacing-section);
+                min-width: 0;
             }
-            
+
+            /* Avoid double spacing inside grid columns */
+            .resume-two-column .section {
+                margin-bottom: 0;
+            }
+
+            .resume-two-column .section:last-child {
+                margin-bottom: 0;
+            }
+
+            .section-personal-info,
             .section-summary {
-                grid-column: 1 / -1;
-            }
-            
-            .sidebar-section {
-                grid-column: 1;
-            }
-            
-            .main-section {
-                grid-column: 2;
-            }
-            
-            .section-skills,
-            .section-additional {
-                grid-column: 1;
-            }
-            
-            .section-experience,
-            .section-education {
-                grid-column: 2;
+                width: 100%;
             }
         `;
     }

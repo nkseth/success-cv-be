@@ -15,6 +15,7 @@ import {
     // Rewrite endpoints
     createRewriteController,
     createRewriteByAnalysisController,
+    getUserRewritesController,
     getRewritesController,
     getRewriteController,
     applyRewriteController,
@@ -111,6 +112,22 @@ router.get('/by-analysis/:analysisId', getResumeByAnalysisController);
 router.get('/analysis/:analysisId/download', downloadResumeByAnalysisController);
 
 /**
+ * @route GET /api/v1/resumes/rewrites
+ * @desc Get all rewrites for authenticated user
+ * @access Private
+ * @query page, limit, status, isActive, createdAt, completedAt, sortBy, sortOrder
+ */
+router.get('/rewrites', getUserRewritesController);
+
+/**
+ * @route GET /api/v1/resumes/optimization-examples
+ * @desc Get example optimization prompts for users
+ * @access Private
+ * @returns { examples: string[], instructions: string, tips: string[] }
+ */
+router.get('/optimization-examples', getOptimizationExamplesController);
+
+/**
  * @route GET /api/v1/resumes/:id
  * @desc Get resume by ID with full details
  * @access Private
@@ -148,14 +165,6 @@ router.patch('/:id/sections', updateSectionsController);
 router.post('/:id/publish', publishResumeController);
 
 // ========== REWRITE ROUTES ==========
-
-/**
- * @route GET /api/v1/resumes/optimization-examples
- * @desc Get example optimization prompts for users
- * @access Private
- * @returns { examples: string[], instructions: string, tips: string[] }
- */
-router.get('/optimization-examples', getOptimizationExamplesController);
 
 /**
  * @route POST /api/v1/resumes/:id/rewrites

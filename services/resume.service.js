@@ -1219,6 +1219,44 @@ export const getRewritesByAnalysis = async (analysisID, userID, options = {}) =>
 };
 
 /**
+ * Get all rewrites for a user across all resumes/analyses
+ * @param {number} userID - User ID
+ * @param {Object} options - Options including pagination, filters, sort, userType
+ * @returns {Promise<Object>} Object with rewrites array and totalCount
+ */
+export const getUserRewrites = async (userID, options = {}) => {
+    try {
+        const { userType = userTypeConstants.USER, ...otherOptions } = options;
+        const { rewrites, totalCount } = await resumeModel.getRewritesByUserID(userID, { ...otherOptions, userType });
+
+        const formattedRewrites = rewrites.map(r => ({
+            id: r.id,
+            resumeId: r.resumeContentID,
+            analysisId: r.analysisID,
+            status: r.status,
+            versionNumber: r.versionNumber,
+            versionLabel: r.versionLabel,
+            isActive: r.isActive,
+            wasModifiedAfterApply: r.wasModifiedAfterApply,
+            improvements: r.improvements,
+            rewriteSummary: r.rewriteSummary,
+            scores: r.rewrittenContent?.scores || null,
+            createdAt: r.createdAt,
+            completedAt: r.completedAt,
+            appliedAt: r.appliedAt
+        }));
+
+        return { rewrites: formattedRewrites, totalCount };
+    } catch (error) {
+        logger.error('[RESUME_SERVICE] Failed to fetch user rewrites', {
+            error: error.message,
+            userID
+        });
+        throw error;
+    }
+};
+
+/**
  * Apply a completed rewrite to resume content
  * @param {number} rewriteID - Rewrite ID
  * @param {number} userID - User ID
@@ -1899,6 +1937,7 @@ export default {
     createRewrite,
     getRewrite,
     getRewritesByAnalysis,
+    getUserRewrites,
     applyRewrite,
     switchRewriteVersion,
     getActiveRewrite,

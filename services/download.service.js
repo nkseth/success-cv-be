@@ -378,8 +378,11 @@ const buildCacheKey = (type, id, options = {}) => {
     const optionsHash = JSON.stringify({
         showPageNumbers: options.showPageNumbers,
         themeOverrides: options.themeOverrides,
+        themeUpdatedAt: options.themeUpdatedAt,
+        themeCustomOverrides: options.themeCustomOverrides,
         sectionVisibility: options.sectionVisibility,
-        sectionOrder: options.sectionOrder
+        sectionOrder: options.sectionOrder,
+        userType: options.userType
     });
     
     // Simple hash function

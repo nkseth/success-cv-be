@@ -575,6 +575,115 @@
 
 /**
  * @swagger
+ * /api/v1/resumes/rewrites:
+ *   get:
+ *     summary: Get all rewrites for authenticated user
+ *     description: Returns all rewrite jobs across all resumes/analyses for the current user with pagination, filtering, and sorting.
+ *     tags: [Resumes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *           maximum: 100
+ *         description: Items per page
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *         description: Filter by status (pending, processing, completed, failed). Supports comma-separated values.
+ *       - in: query
+ *         name: isActive
+ *         schema:
+ *           type: boolean
+ *         description: Filter by active rewrite status
+ *       - in: query
+ *         name: createdAt
+ *         schema:
+ *           type: string
+ *           example: "2025-01-01,2025-12-31"
+ *         description: Date range filter (start,end)
+ *       - in: query
+ *         name: completedAt
+ *         schema:
+ *           type: string
+ *           example: "2025-01-01,2025-12-31"
+ *         description: Date range filter (start,end)
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *           enum: [createdAt, updatedAt, completedAt, versionNumber]
+ *         description: Sort field
+ *       - in: query
+ *         name: sortOrder
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *           default: desc
+ *         description: Sort order
+ *     responses:
+ *       200:
+ *         description: Paginated list of user rewrites
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 message:
+ *                   type: string
+ *                   example: "Rewrites fetched successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/Rewrite'
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         currentPage:
+ *                           type: integer
+ *                         pageSize:
+ *                           type: integer
+ *                         totalCount:
+ *                           type: integer
+ *                         totalPages:
+ *                           type: integer
+ *                         hasNextPage:
+ *                           type: boolean
+ *                         hasPrevPage:
+ *                           type: boolean
+ *                         nextPage:
+ *                           type: integer
+ *                           nullable: true
+ *                         prevPage:
+ *                           type: integer
+ *                           nullable: true
+ *                     filters:
+ *                       type: object
+ *                       nullable: true
+ *       401:
+ *         description: Unauthorized - authentication required
+ *       500:
+ *         description: Internal server error
+ */
+
+/**
+ * @swagger
  * /api/v1/resumes/{id}/rewrites:
  *   post:
  *     summary: Create a new AI rewrite job
