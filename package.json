@@ -41,19 +41,17 @@
     "bcrypt": "^6.0.0",
     "bullmq": "^5.63.0",
     "cors": "^2.8.5",
-    "crypto": "^1.0.1",
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.44.6",
-    "express": "^5.1.0",
+    "express": "^5.2.1",
     "formdata-node": "^6.0.3",
     "helmet": "^8.1.0",
     "ioredis": "^5.8.2",
-    "jsonwebtoken": "^9.0.2",
+    "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
     "node-fetch": "^3.3.2",
     "postgres": "^3.4.7",
-    "psql": "^0.0.1",
-    "puppeteer": "^24.34.0",
+    "puppeteer": "^24.36.0",
     "razorpay": "^2.9.6",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
@@ -63,7 +61,7 @@
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
-    "drizzle-kit": "^0.31.5",
+    "drizzle-kit": "^0.31.8",
     "nodemon": "^3.1.10"
   }
 }

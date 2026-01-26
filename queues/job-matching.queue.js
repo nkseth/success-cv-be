@@ -49,7 +49,7 @@ export async function addMatchJobsForUserJob(userId, analysisId, userType = 'use
         options: {
             minScore: options.minScore || 50,
             maxResults: options.maxResults || 50,
-            replaceExisting: options.replaceExisting !== false
+            replaceExisting: options.replaceExisting === true
         }
     };
 

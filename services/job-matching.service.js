@@ -1,8 +1,8 @@
 import logger from '../middleware/logger.js';
 import { getJobByID, getJobs, bulkCreateJobMatches, deleteJobMatchesForUser, getUserJobPreferences } from '../models/job.model.js';
 import db from '../config/db.js';
-import { analysisTable, candidateAnalysisTable, processedAndRawDataTable, candidateProcessedAndRawDataTable } from '../drizzle/schema.js';
-import { eq } from 'drizzle-orm';
+import { analysisTable, candidateAnalysisTable, processedAndRawDataTable, candidateProcessedAndRawDataTable, jobMatchesTable } from '../drizzle/schema.js';
+import { and, eq } from 'drizzle-orm';
 
 /**
  * Job Matching Service
@@ -38,7 +38,7 @@ export async function matchJobsForUser(userId, analysisId, userType = 'user', op
     const {
         minScore = 50,
         maxResults = 50,
-        replaceExisting = true
+        replaceExisting = false
     } = options;
 
     logger.info('Starting job matching for user', { 
@@ -85,7 +85,7 @@ export async function matchJobsForUser(userId, analysisId, userType = 'user', op
 
         // Apply preference filters if available
         if (userPreferences) {
-            if (userPreferences.remotePreference) {
+            if (userPreferences.remotePreference && userPreferences.remotePreference !== 'no_preference') {
                 jobQueryOptions.remoteType = userPreferences.remotePreference;
             }
             if (userPreferences.minSalary) {
@@ -95,6 +95,11 @@ export async function matchJobsForUser(userId, analysisId, userType = 'user', op
         }
 
         const { data: jobs } = await getJobs(jobQueryOptions);
+
+        // 2.5. Fetch existing matches if we are not replacing
+        const existingMatchJobIds = replaceExisting
+            ? new Set()
+            : await getExistingMatchJobIds(userId, analysisId, userType);
 
         logger.info('Fetched jobs for matching', { 
             jobCount: jobs.length,
@@ -106,6 +111,9 @@ export async function matchJobsForUser(userId, analysisId, userType = 'user', op
         // 3. Calculate match scores for each job with preference boosting
         const matches = [];
         for (const job of jobs) {
+            if (existingMatchJobIds.has(job.id)) {
+                continue;
+            }
             const matchScore = calculateJobMatch(resumeData, job, userPreferences);
             
             // Only include jobs above minimum score
@@ -599,10 +607,43 @@ async function getResumeAnalysisData(analysisId, userType) {
 
     if (!analysis) return null;
 
+    let processedData = analysis.processedData?.processedData || {};
+    if (typeof processedData === 'string') {
+        try {
+            processedData = JSON.parse(processedData);
+        } catch (error) {
+            logger.warn('Failed to parse processed resume data, using empty object', {
+                analysisId,
+                error: error.message
+            });
+            processedData = {};
+        }
+    }
+
     return {
         ...analysis.analysis,
-        processedData: analysis.processedData?.processedData || {}
+        processedData
     };
+}
+
+async function getExistingMatchJobIds(userId, analysisId, userType) {
+    if (!analysisId) return new Set();
+
+    const isCandidate = userType === 'candidate';
+    const conditions = [
+        eq(jobMatchesTable.userType, userType),
+        isCandidate ? eq(jobMatchesTable.candidateID, userId) : eq(jobMatchesTable.userID, userId),
+        isCandidate
+            ? eq(jobMatchesTable.candidateAnalysisID, analysisId)
+            : eq(jobMatchesTable.analysisID, analysisId)
+    ];
+
+    const rows = await db
+        .select({ jobID: jobMatchesTable.jobID })
+        .from(jobMatchesTable)
+        .where(and(...conditions));
+
+    return new Set(rows.map(row => row.jobID));
 }
 
 /**

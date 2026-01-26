@@ -1,5 +1,17 @@
 import express from 'express';
-import * as jobController from '../../controllers/job.controller.js';
+import {
+    getJobsController,
+    getJobByIdController,
+    getUserJobMatchesController,
+    getJobMatchByIdController,
+    generateJobMatchesController,
+    regenerateJobMatchesController,
+    updateJobMatchController,
+    deleteJobMatchController,
+    rewriteResumeForJobController,
+    getUserJobPreferencesController,
+    updateUserJobPreferencesController
+} from '../../controllers/job.controller.js';
 import { authenticateUser } from '../../middleware/authenticate-routes.js';
 
 const router = express.Router();
@@ -17,45 +29,45 @@ router.use(authenticateUser);
  * Job browsing routes
  */
 
-// GET /api/v1/jobs - Browse all jobs with filtering
-router.get('/jobs', jobController.getJobs);
+// GET /api/v1/jobs - Browse all jobs with filtering (uses saved preferences if no filters)
+router.get('/jobs', getJobsController);
 
 // GET /api/v1/jobs/:id - Get specific job details
-router.get('/jobs/:id', jobController.getJobById);
+router.get('/jobs/:id', getJobByIdController);
 
 /**
  * Job matching routes
  */
 
 // GET /api/v1/job-matches - Get user's job matches
-router.get('/job-matches', jobController.getUserJobMatches);
+router.get('/job-matches', getUserJobMatchesController);
 
 // GET /api/v1/job-matches/:id - Get specific job match
-router.get('/job-matches/:id', jobController.getJobMatchById);
+router.get('/job-matches/:id', getJobMatchByIdController);
 
 // POST /api/v1/job-matches/generate - Trigger job matching
-router.post('/job-matches/generate', jobController.generateJobMatches);
+router.post('/job-matches/generate', generateJobMatchesController);
 
 // POST /api/v1/job-matches/regenerate - Re-trigger job matching
-router.post('/job-matches/regenerate', jobController.regenerateJobMatches);
+router.post('/job-matches/regenerate', regenerateJobMatchesController);
 
 // PUT /api/v1/job-matches/:id - Update job match (save, apply, reject)
-router.put('/job-matches/:id', jobController.updateJobMatch);
+router.put('/job-matches/:id', updateJobMatchController);
 
 // DELETE /api/v1/job-matches/:id - Delete job match
-router.delete('/job-matches/:id', jobController.deleteJobMatch);
+router.delete('/job-matches/:id', deleteJobMatchController);
 
 // POST /api/v1/job-matches/:jobMatchId/rewrite - Job-aware resume rewrite
-router.post('/job-matches/:jobMatchId/rewrite', jobController.rewriteResumeForJob);
+router.post('/job-matches/:jobMatchId/rewrite', rewriteResumeForJobController);
 
 /**
  * Job preferences routes
  */
 
 // GET /api/v1/job-preferences - Get user's job preferences
-router.get('/job-preferences', jobController.getUserJobPreferences);
+router.get('/job-preferences', getUserJobPreferencesController);
 
 // PUT /api/v1/job-preferences - Update user's job preferences
-router.put('/job-preferences', jobController.updateUserJobPreferences);
+router.put('/job-preferences', updateUserJobPreferencesController);
 
 export default router;

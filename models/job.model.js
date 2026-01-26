@@ -500,6 +500,7 @@ export const bulkCreateJobMatches = async (matches) => {
 
         const createdMatches = await db.insert(jobMatchesTable)
             .values(matchesWithTimestamps)
+            .onConflictDoNothing()
             .returning();
 
         logger.info('Job matches bulk created', { count: createdMatches.length });
