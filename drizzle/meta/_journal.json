@@ -55,14 +55,14 @@
       "idx": 7,
       "version": "7",
       "when": 1767198431100,
-      "tag": "0007_fix-tables",
+      "tag": "0007_admin_system",
       "breakpoints": true
     },
     {
       "idx": 8,
       "version": "7",
       "when": 1767871784040,
-      "tag": "0008_thick_nuke",
+      "tag": "0008_analysis_report_embedding",
       "breakpoints": true
     },
     {
@@ -77,6 +77,34 @@
       "version": "7",
       "when": 1768894500698,
       "tag": "0010_fearless_reaper",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1769378544402,
+      "tag": "0011_job_matching_system",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1769378600000,
+      "tag": "0012_resume_template_theme_config",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1769378700000,
+      "tag": "0013_analysis_summary_refactor",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1769378800000,
+      "tag": "0014_database_optimizations",
       "breakpoints": true
     }
   ]

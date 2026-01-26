@@ -412,6 +412,29 @@ async function processResumeAnalysis(job) {
             analysisID
         });
 
+        // Trigger job matching after successful analysis
+        try {
+            const { triggerMatchingAfterAnalysis } = await import('../job-matching.queue.js');
+            await triggerMatchingAfterAnalysis(
+                job.data.userID || job.data.candidateID,
+                analysisID,
+                job.data.userType || 'user',
+                true // auto-match enabled
+            );
+            logger.info('[RESUME_ANALYSIS] 🎯 Job matching triggered', {
+                jobId: job.id,
+                analysisID,
+                userType: job.data.userType || 'user'
+            });
+        } catch (matchError) {
+            logger.error('[RESUME_ANALYSIS] ⚠️ Job matching trigger failed (non-critical)', {
+                jobId: job.id,
+                analysisID,
+                error: matchError.message
+            });
+            // Don't fail the job if matching fails
+        }
+
         return {
             success: true,
             analysisID,

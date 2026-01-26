@@ -283,6 +283,173 @@
 
 /**
  * @swagger
+ * /api/v1/resumes/blank:
+ *   post:
+ *     summary: Create a blank resume from scratch
+ *     description: Creates a new resume with empty sections for manual editing. No file upload required.
+ *     tags: [Resumes]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 description: Resume name (optional, defaults to "Untitled Resume")
+ *                 maxLength: 255
+ *                 example: "Software Engineer Resume"
+ *     responses:
+ *       201:
+ *         description: Blank resume created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 message:
+ *                   type: string
+ *                   example: "Blank resume created successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                       description: Resume content ID
+ *                       example: 123
+ *                     userID:
+ *                       type: integer
+ *                       example: 456
+ *                     analysisID:
+ *                       type: integer
+ *                       description: Associated analysis ID (status: completed)
+ *                       example: 789
+ *                     documentID:
+ *                       type: integer
+ *                       description: Associated document ID
+ *                       example: 101
+ *                     themeID:
+ *                       type: integer
+ *                       description: Default theme ID
+ *                       example: 1
+ *                     name:
+ *                       type: string
+ *                       example: "Software Engineer Resume"
+ *                     description:
+ *                       type: string
+ *                       nullable: true
+ *                       example: null
+ *                     customConfig:
+ *                       type: object
+ *                       nullable: true
+ *                       example: null
+ *                     isLocked:
+ *                       type: boolean
+ *                       example: false
+ *                     isDraft:
+ *                       type: boolean
+ *                       description: Always true for new resumes
+ *                       example: true
+ *                     publishedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *                       example: null
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2026-01-26T10:00:00Z"
+ *                     updatedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2026-01-26T10:00:00Z"
+ *                     deletedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *                       example: null
+ *                     sections:
+ *                       type: array
+ *                       description: Array of empty sections ready to be filled
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           sectionName:
+ *                             type: string
+ *                             enum: [personal_info, summary, experience, education, skills]
+ *                           content:
+ *                             oneOf:
+ *                               - type: object
+ *                               - type: array
+ *                           isVisible:
+ *                             type: boolean
+ *                           displayOrder:
+ *                             type: integer
+ *                       example:
+ *                         - sectionName: "personal_info"
+ *                           content: {}
+ *                           isVisible: true
+ *                           displayOrder: 1
+ *                         - sectionName: "summary"
+ *                           content: {}
+ *                           isVisible: true
+ *                           displayOrder: 2
+ *                         - sectionName: "experience"
+ *                           content: []
+ *                           isVisible: true
+ *                           displayOrder: 3
+ *                         - sectionName: "education"
+ *                           content: []
+ *                           isVisible: true
+ *                           displayOrder: 4
+ *                         - sectionName: "skills"
+ *                           content: {}
+ *                           isVisible: true
+ *                           displayOrder: 5
+ *       400:
+ *         description: Bad request (invalid name)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Resume name: Must be a valid string"
+ *                 statusCode:
+ *                   type: integer
+ *                   example: 400
+ *       401:
+ *         description: Unauthorized - authentication required
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to create blank resume: [error details]"
+ *                 statusCode:
+ *                   type: integer
+ *                   example: 500
+ */
+
+/**
+ * @swagger
  * /api/v1/resumes:
  *   get:
  *     summary: Get all resumes for authenticated user

@@ -1464,6 +1464,107 @@ export const getRawDataForRewrite = async (analysisID, userID, userType = userTy
     }
 };
 
+/**
+ * Create a blank document for manual resume creation
+ * @param {number} userID - User ID
+ * @param {string} title - Document title
+ * @param {string} userType - 'user' | 'candidate'
+ * @returns {Promise<Object>} Created document
+ */
+export const createBlankDocument = async (userID, title, userType = userTypeConstants.USER) => {
+    try {
+        const isCandidate = userType === userTypeConstants.CANDIDATE;
+        const documentTable = isCandidate ? candidateDocumentTable : userDocumentTable;
+        const entityIDField = isCandidate ? 'candidateID' : 'userID';
+
+        logger.info('[RESUME_MODEL] Creating blank document', {
+            userID,
+            title,
+            userType
+        });
+
+        const [document] = await db
+            .insert(documentTable)
+            .values({
+                [entityIDField]: userID,
+                title,
+                fileURL: '', // No file for blank resumes
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                meta: JSON.stringify({ source: 'blank', createdManually: true })
+            })
+            .returning();
+
+        logger.info('[RESUME_MODEL] ✅ Blank document created', {
+            documentID: document.id,
+            userType
+        });
+
+        return document;
+    } catch (error) {
+        logger.error('[RESUME_MODEL] Failed to create blank document', {
+            error: error.message,
+            userID,
+            title,
+            userType
+        });
+        if (error instanceof AppError) throw error;
+        throw new AppError(`Failed to create blank document: ${error.message}`, 500);
+    }
+};
+
+/**
+ * Create a blank analysis for manual resume creation
+ * Status is "completed" since there's nothing to analyze
+ * @param {number} userID - User ID
+ * @param {number} documentID - Document ID
+ * @param {string} userType - 'user' | 'candidate'
+ * @returns {Promise<Object>} Created analysis
+ */
+export const createBlankAnalysis = async (userID, documentID, userType = userTypeConstants.USER) => {
+    try {
+        const isCandidate = userType === userTypeConstants.CANDIDATE;
+        const analysisTableToUse = isCandidate ? candidateAnalysisTable : analysisTable;
+        const entityIDField = isCandidate ? 'candidateID' : 'userID';
+
+        logger.info('[RESUME_MODEL] Creating blank analysis', {
+            userID,
+            documentID,
+            userType
+        });
+
+        const now = new Date();
+        const [analysis] = await db
+            .insert(analysisTableToUse)
+            .values({
+                [entityIDField]: userID,
+                documentID,
+                status: 'completed', // No analysis needed for blank resumes
+                createdAt: now,
+                updatedAt: now,
+                completedAt: now,
+                meta: JSON.stringify({ source: 'blank', createdManually: true })
+            })
+            .returning();
+
+        logger.info('[RESUME_MODEL] ✅ Blank analysis created', {
+            analysisID: analysis.id,
+            userType
+        });
+
+        return analysis;
+    } catch (error) {
+        logger.error('[RESUME_MODEL] Failed to create blank analysis', {
+            error: error.message,
+            userID,
+            documentID,
+            userType
+        });
+        if (error instanceof AppError) throw error;
+        throw new AppError(`Failed to create blank analysis: ${error.message}`, 500);
+    }
+};
+
 export default {
     // Content operations
     createResumeContent,
@@ -1473,6 +1574,9 @@ export default {
     updateResumeSection,
     updateMultipleSections,
     updateResumeScores,
+    // Blank resume operations
+    createBlankDocument,
+    createBlankAnalysis,
     // Rewrite operations
     createRewrite,
     getRewriteByID,

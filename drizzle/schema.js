@@ -47,3 +47,11 @@ export {
     blockedUsersTable,
     adminActivityLogTable
 } from './schema/admin.js';
+
+// Job matching system tables
+export {
+    jobsTable,
+    jobMatchesTable,
+    jobScrapingLogsTable,
+    userJobPreferencesTable
+} from './schema/jobs.schema.js';

@@ -101,6 +101,31 @@ try {
 }
 
 /**
+ * Format skills object for display in job-aware prompt
+ * @param {Object} skills - Skills object
+ * @returns {string} Formatted skills string
+ */
+function formatSkills(skills) {
+    if (!skills || typeof skills !== 'object') return 'Not specified';
+    
+    const sections = [];
+    if (skills.required && skills.required.length > 0) {
+        sections.push(`Required: ${skills.required.join(', ')}`);
+    }
+    if (skills.technical && skills.technical.length > 0) {
+        sections.push(`Technical: ${skills.technical.join(', ')}`);
+    }
+    if (skills.preferred && skills.preferred.length > 0) {
+        sections.push(`Preferred: ${skills.preferred.join(', ')}`);
+    }
+    if (skills.soft && skills.soft.length > 0) {
+        sections.push(`Soft Skills: ${skills.soft.join(', ')}`);
+    }
+    
+    return sections.length > 0 ? sections.join('\n') : 'Not specified';
+}
+
+/**
  * Generate lightweight post-rewrite summary for user-driven optimization
  * Shows what was improved based on user's goal
  * @param {Object} currentContent - Original content before optimization
@@ -183,12 +208,18 @@ async function processResumeRewrite(job) {
         currentContent,
         userPrompt,  // NEW: User's optimization goal
         optimizationOptions,
+        targetJobID,  // NEW: Job-aware rewrite
+        sourceResumeID,  // NEW: Source resume for job-aware rewrite
+        jobMetadata,  // NEW: Job details for context
         userType = userTypeConstants.USER
     } = job.data;
     
     // Get appropriate tables based on userType
     const tables = getTablesForUserType(userType);
     const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+    
+    // Detect if this is a job-aware rewrite
+    const isJobAwareRewrite = !!(targetJobID && jobMetadata);
     
     logger.info('[RESUME_REWRITE] Starting user-driven rewrite job', { 
         jobId: job.id,
@@ -198,6 +229,9 @@ async function processResumeRewrite(job) {
         resumeContentID,
         hasCurrentContent: !!currentContent,
         hasUserPrompt: !!userPrompt,
+        isJobAwareRewrite,
+        targetJobID,
+        jobTitle: jobMetadata?.title,
         userPromptPreview: userPrompt?.substring(0, 50),
         userType
     });
@@ -235,30 +269,74 @@ async function processResumeRewrite(job) {
         // Step 2.5: Validate user prompt (safety check)
         await executeWithRewriteProgress(job.id, 'ANALYZING_ISSUES', async () => {
             logger.info('[RESUME_REWRITE] Validating optimization request', {
-                userPrompt: userPrompt?.substring(0, 100)
+                userPrompt: userPrompt?.substring(0, 100),
+                isJobAwareRewrite
             });
             
-            if (!userPrompt) {
-                throw new Error('User optimization prompt is required');
+            if (!userPrompt && !isJobAwareRewrite) {
+                throw new Error('User optimization prompt is required for standard rewrites');
             }
         });
 
-        // Step 3: Generate optimized content based on user's goal
+        // Step 3: Generate optimized content based on user's goal or job requirements
         let optimizationResult;
+        let effectivePrompt = userPrompt;
+        
+        // For job-aware rewrites, build enhanced prompt with job context
+        if (isJobAwareRewrite) {
+            const jobContext = `
+IMPORTANT: This resume is being tailored for a specific job posting. Optimize it to match these requirements:
+
+**Target Job:**
+- Title: ${jobMetadata.title}
+- Company: ${jobMetadata.company}
+- Experience Level: ${jobMetadata.experienceLevel || 'Not specified'}
+- Education Required: ${jobMetadata.educationLevel || 'Not specified'}
+
+**Required Skills:**
+${formatSkills(jobMetadata.skillsRequired)}
+
+**Job Description:**
+${jobMetadata.description || 'No description provided'}
+
+**Optimization Instructions:**
+1. Incorporate relevant skills from the job requirements naturally throughout the resume
+2. Align experience descriptions to match the job's experience level and requirements
+3. Highlight achievements that demonstrate capabilities needed for this role
+4. Use keywords from the job description while maintaining authenticity
+5. Ensure the resume shows clear fit for this specific position
+6. Maintain ATS optimization while tailoring for this job
+
+${userPrompt || 'Tailor this resume to maximize match with the target job requirements.'}
+`.trim();
+            
+            effectivePrompt = jobContext;
+            
+            logger.info('[RESUME_REWRITE] Job-aware rewrite prompt prepared', {
+                jobTitle: jobMetadata.title,
+                company: jobMetadata.company,
+                skillsCount: Object.values(jobMetadata.skillsRequired || {}).flat().length
+            });
+        }
         
         // Start optimization
         await executeWithRewriteProgress(job.id, 'OPTIMIZING', async () => {
-            logger.info('[RESUME_REWRITE] Starting AI optimization based on user goal', {
-                userPrompt: userPrompt?.substring(0, 100)
+            logger.info('[RESUME_REWRITE] Starting AI optimization', {
+                isJobAwareRewrite,
+                effectivePrompt: effectivePrompt?.substring(0, 100)
             });
         });
         
-        // Run the actual optimization using user prompt (NEW APPROACH)
+        // Run the actual optimization
         optimizationResult = await optimizeResumeContent(
             parsedCurrentContent,
-            userPrompt,  // Pass user's prompt instead of analysis data
+            effectivePrompt,  // Use job-aware prompt if applicable
             {
-                targetATSScore: optimizationOptions?.targetATSScore || 90
+                targetATSScore: optimizationOptions?.targetATSScore || 90,
+                isJobAwareRewrite,
+                targetJobID
+            }
+        );
             }
         );
         
@@ -298,22 +376,37 @@ async function processResumeRewrite(job) {
             const rewriteSummary = generateRewriteSummary(
                 parsedCurrentContent,
                 optimizationResult,
-                userPrompt,
+                effectivePrompt,  // Use effective prompt (includes job context if applicable)
                 optimizationOptions
             );
             
+            // Prepare update data
+            const updateData = {
+                rewrittenContent: rewrittenContent,
+                improvements: optimizationResult.metadata,
+                rewriteSummary: rewriteSummary,
+                status: 'completed',
+                completedAt: new Date(),
+                updatedAt: new Date()
+            };
+            
+            // Add job-aware fields if applicable
+            if (targetJobID) {
+                updateData.targetJobID = targetJobID;
+            }
+            if (sourceResumeID) {
+                updateData.sourceResumeID = sourceResumeID;
+            }
+            
             await db.update(tables.rewritesTable)
-                .set({
-                    rewrittenContent: rewrittenContent,
-                    improvements: optimizationResult.metadata,
-                    rewriteSummary: rewriteSummary,
-                    status: 'completed',
-                    completedAt: new Date(),
-                    updatedAt: new Date()
-                })
+                .set(updateData)
                 .where(eq(tables.rewritesTable.id, rewriteID));
             
-            logger.info('[RESUME_REWRITE] ✅ Optimized content saved with rewrite summary');
+            logger.info('[RESUME_REWRITE] ✅ Optimized content saved with rewrite summary', {
+                isJobAwareRewrite,
+                targetJobID,
+                sourceResumeID
+            });
         });
 
         // Step 5: AUTO-APPLY the rewrite to resume content

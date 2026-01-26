@@ -36,6 +36,168 @@ const getAiService = async () => {
 // ========== RESUME CONTENT OPERATIONS ==========
 
 /**
+ * Create a blank resume from scratch
+ * Creates document, analysis (completed status), and empty resume content
+ * @param {number} userID - User ID
+ * @param {string} name - Resume name
+ * @param {string} userType - 'user' | 'candidate'
+ * @returns {Promise<Object>} Created resume with empty sections
+ */
+export const createBlankResume = async (userID, name, userType = userTypeConstants.USER) => {
+    try {
+        logger.info('[RESUME_SERVICE] Creating blank resume', {
+            userID,
+            name,
+            userType
+        });
+
+        // Create blank document
+        const document = await resumeModel.createBlankDocument(userID, name, userType);
+
+        // Create blank analysis (completed status since nothing to analyze)
+        const analysis = await resumeModel.createBlankAnalysis(userID, document.id, userType);
+
+        // Create resume content with empty sections
+        const blankContent = getBlankResumeContent();
+        const content = await resumeModel.createResumeContent(
+            userID,
+            analysis.id,
+            blankContent,
+            null, // No analysis summary for blank resumes
+            userType
+        );
+
+        // Apply default theme
+        let defaultTheme = null;
+        try {
+            defaultTheme = await themeModel.getDefaultTheme();
+            if (defaultTheme) {
+                await themeModel.applyTheme(userID, content.id, defaultTheme.id, null, userType);
+                logger.info('[RESUME_SERVICE] ✅ Default theme applied', {
+                    contentID: content.id,
+                    themeID: defaultTheme.id
+                });
+            }
+        } catch (themeError) {
+            logger.error('[RESUME_SERVICE] Failed to apply default theme', {
+                error: themeError.message,
+                contentID: content.id
+            });
+        }
+
+        // Format response to match API spec
+        const response = {
+            id: content.id,
+            userID: content.userID || content.candidateID,
+            analysisID: content.analysisID,
+            documentID: document.id,
+            themeID: defaultTheme?.id || 1,
+            name: document.title,
+            description: null,
+            customConfig: null,
+            isLocked: false,
+            isDraft: true,
+            publishedAt: null,
+            createdAt: content.createdAt,
+            updatedAt: content.updatedAt,
+            deletedAt: null,
+            // Include scores explicitly set to 0 for blank resumes
+            currentScores: content.currentScores || {
+                atsScore: 0,
+                contentScore: 0,
+                formatScore: 0,
+                overallScore: 0,
+                jobFitScore: 0,
+                skillsRelevanceScore: 0,
+                experienceRelevanceScore: 0,
+                educationRelevanceScore: 0,
+                grammarScore: 0,
+                professionalBrandingScore: 0,
+                completenessScore: 0
+            },
+            sections: [
+                {
+                    sectionName: 'personal_info',
+                    content: content.personalInfo || {},
+                    isVisible: true,
+                    displayOrder: 1
+                },
+                {
+                    sectionName: 'summary',
+                    content: content.summary || {},
+                    isVisible: true,
+                    displayOrder: 2
+                },
+                {
+                    sectionName: 'experience',
+                    content: content.experience || [],
+                    isVisible: true,
+                    displayOrder: 3
+                },
+                {
+                    sectionName: 'education',
+                    content: content.education || [],
+                    isVisible: true,
+                    displayOrder: 4
+                },
+                {
+                    sectionName: 'skills',
+                    content: content.skills || {},
+                    isVisible: true,
+                    displayOrder: 5
+                }
+            ]
+        };
+
+        logger.info('[RESUME_SERVICE] ✅ Blank resume created', {
+            contentID: content.id,
+            documentID: document.id,
+            analysisID: analysis.id,
+            userType
+        });
+
+        return response;
+    } catch (error) {
+        logger.error('[RESUME_SERVICE] Failed to create blank resume', {
+            error: error.message,
+            userID,
+            name,
+            userType
+        });
+        throw error;
+    }
+};
+
+/**
+ * Get blank resume content structure
+ * Returns empty sections matching the expected schema
+ */
+function getBlankResumeContent() {
+    return {
+        personalInfo: {},
+        summary: {},
+        experience: [],
+        education: [],
+        skills: {},
+        additionalSections: [],
+        scores: {
+            // All scores start at 0 for blank resumes
+            atsScore: 0,
+            contentScore: 0,
+            formatScore: 0,
+            overallScore: 0,
+            jobFitScore: 0,
+            skillsRelevanceScore: 0,
+            experienceRelevanceScore: 0,
+            educationRelevanceScore: 0,
+            grammarScore: 0,
+            professionalBrandingScore: 0,
+            completenessScore: 0
+        }
+    };
+}
+
+/**
  * Create resume content from completed analysis
  * Called by the analysis worker after AI processing
  * @param {number} userID - User ID
@@ -1727,6 +1889,7 @@ export const getOptimizationExamples = () => {
 export default {
     // Content operations
     createResumeFromAnalysis,
+    createBlankResume,
     getResumeByID,
     getResumeByAnalysisID,
     getAllResumes,

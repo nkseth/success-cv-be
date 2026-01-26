@@ -7,6 +7,7 @@ import {
     getAllResumesController,
     getResumeController,
     getResumeByAnalysisController,
+    createBlankResumeController,
     updateSectionController,
     updateSectionsController,
     getResumeForRenderController,
@@ -78,6 +79,14 @@ router.get('/themes/:themeId', getThemeController);
 router.use(commonAuthenticate);
 
 // ========== RESUME CONTENT ROUTES ==========
+
+/**
+ * @route POST /api/v1/resumes/blank
+ * @desc Create a blank resume from scratch
+ * @access Private
+ * @body { name?: string }
+ */
+router.post('/blank', createBlankResumeController);
 
 /**
  * @route GET /api/v1/resumes

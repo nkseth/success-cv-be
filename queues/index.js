@@ -1,5 +1,7 @@
 import queueService from '../services/queue.service.js';
 import { resumeAnalysisQueue } from './resume-analysis.queue.js';
+import { jobScrapingQueue } from './job-scraping.queue.js';
+import { getJobMatchingQueue } from './job-matching.queue.js';
 
 /**
  * Central export for all queues
@@ -27,7 +29,12 @@ export {
 // Queue registry
 export const queues = {
     resumeAnalysis: resumeAnalysisQueue,
+    jobScraping: jobScrapingQueue,
+    jobMatching: getJobMatchingQueue(),
 };
+
+// Export job matching queue
+export { getJobMatchingQueue, addMatchJobsForUserJob, addRematchJobsForUserJob, triggerMatchingAfterAnalysis } from './job-matching.queue.js';
 
 // Close all queues using the queue service
 export async function closeAllQueues() {

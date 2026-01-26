@@ -12,6 +12,7 @@ import { connectRedis, disconnectRedis, bullMQConnection } from "./config/redis.
 import { closeAllQueues } from "./queues/index.js";
 import pubSubService from "./services/pubsub.service.js";
 import sseService from "./services/sse.service.js";
+import { schedulePeriodicScraping } from "./queues/job-scraping.queue.js";
 
 // Load environment variables
 dotenv.config();
@@ -128,6 +129,9 @@ async function initializeServices() {
             db: parseInt(process.env.REDIS_DB_CACHE) || 0,
             tls: process.env.REDIS_TLS === 'true'
         });
+        
+        // Schedule periodic job scraping (every 6 hours)
+        await schedulePeriodicScraping();
         
         logger.info('All services initialized successfully');
     } catch (error) {

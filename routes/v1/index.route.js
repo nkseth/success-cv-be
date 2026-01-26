@@ -13,6 +13,7 @@ import { resumeRoutes } from "./resume.route.js";
 import { adminRoutes } from "./admin.route.js";
 import { profileRoutes } from "./profile.route.js";
 import { dashboardRoutes } from "./dashboard.route.js";
+import jobRoutes from "./job.route.js";
 
 const router = Router();
 
@@ -48,4 +49,8 @@ router.use('/dashboard', dashboardRoutes);
 router.use('/resume-analysis', resumeAnalysisRoutes);
 router.use('/resumes', resumeRoutes);
 
+// Job routes
+router.use('/', jobRoutes);
+
+export default router;
 export const v1Routes = router;

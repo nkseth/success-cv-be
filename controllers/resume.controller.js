@@ -24,6 +24,26 @@ import { getExamplePrompts } from "../utils/prompt-validator.js";
 // ========== RESUME CONTENT ENDPOINTS ==========
 
 /**
+ * Create blank resume from scratch
+ * POST /api/v1/resumes/blank
+ * Body: { name?: string }
+ */
+export const createBlankResumeController = asyncHandler(async (req, res, next) => {
+    const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
+    const { name } = req.body;
+
+    logger.info('[RESUME_CONTROLLER] Creating blank resume', { userID, userType, name });
+
+    // Validate name if provided
+    const resumeName = name ? validateString(name, 'Resume name', { maxLength: 255 }) : 'Untitled Resume';
+
+    const resume = await resumeService.createBlankResume(userID, resumeName, userType);
+
+    sendSuccess(res, resume, 'Blank resume created successfully', 201);
+});
+
+/**
  * Get all resumes for authenticated user
  * GET /api/v1/resumes
  * Query params:

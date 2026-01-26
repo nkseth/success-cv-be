@@ -152,6 +152,20 @@ export const resumeRewritesTable = pgTable("resume_rewrites", {
     analysisID: integer("analysisID").references(() => analysisTable.id, { onDelete: 'cascade' }).notNull(),
     resumeContentID: integer("resumeContentID").references(() => resumeContentTable.id, { onDelete: 'cascade' }),
     
+    // Job-aware rewrite support (NEW for job matching feature)
+    /**
+     * Reference to the job this rewrite is tailored for.
+     * When null: General rewrite for ATS optimization
+     * When set: Resume is specifically optimized for this job posting
+     */
+    targetJobID: integer("target_job_id"), // FK to jobs table (added via migration)
+    
+    /**
+     * Reference to the original resume this rewrite is based on.
+     * Useful for tracking which resume was used as the source.
+     */
+    sourceResumeID: integer("source_resume_id").references(() => resumeContentTable.id),
+    
     // Rewrite job info
     jobID: varchar({ length: 255 }), // BullMQ job ID
     status: varchar({ length: 50 }).default("pending").notNull(), // pending, processing, completed, failed
@@ -219,6 +233,11 @@ export const resumeRewritesTable = pgTable("resume_rewrites", {
     index("resume_rewrites_status_idx").on(table.status),
     // Index for job ID lookup (queue tracking)
     index("resume_rewrites_job_id_idx").on(table.jobID),
+    // Index for job-aware rewrites (NEW)
+    index("resume_rewrites_target_job_id_idx").on(table.targetJobID),
+    index("resume_rewrites_source_resume_id_idx").on(table.sourceResumeID),
+    // Composite index for user + job rewrites
+    index("resume_rewrites_user_target_job_idx").on(table.userID, table.targetJobID),
     // Composite index for user + status lookups
     index("resume_rewrites_user_status_idx").on(table.userID, table.status),
     // Index for active rewrites
@@ -378,6 +397,20 @@ export const candidateResumeRewritesTable = pgTable("candidate_resume_rewrites",
     analysisID: integer("analysisID").references(() => candidateAnalysisTable.id, { onDelete: 'cascade' }).notNull(),
     resumeContentID: integer("resumeContentID").references(() => candidateResumeContentTable.id, { onDelete: 'cascade' }),
     
+    // Job-aware rewrite support (NEW for job matching feature)
+    /**
+     * Reference to the job this rewrite is tailored for.
+     * When null: General rewrite for ATS optimization
+     * When set: Resume is specifically optimized for this job posting
+     */
+    targetJobID: integer("target_job_id"), // FK to jobs table (added via migration)
+    
+    /**
+     * Reference to the original resume this rewrite is based on.
+     * Useful for tracking which resume was used as the source.
+     */
+    sourceResumeID: integer("source_resume_id").references(() => candidateResumeContentTable.id),
+    
     jobID: varchar({ length: 255 }),
     status: varchar({ length: 50 }).default("pending").notNull(),
     
@@ -406,6 +439,11 @@ export const candidateResumeRewritesTable = pgTable("candidate_resume_rewrites",
     index("candidate_resume_rewrites_status_idx").on(table.status),
     // Index for job ID lookup
     index("candidate_resume_rewrites_job_id_idx").on(table.jobID),
+    // Index for job-aware rewrites (NEW)
+    index("candidate_resume_rewrites_target_job_id_idx").on(table.targetJobID),
+    index("candidate_resume_rewrites_source_resume_id_idx").on(table.sourceResumeID),
+    // Composite index for candidate + job rewrites
+    index("candidate_resume_rewrites_candidate_target_job_idx").on(table.candidateID, table.targetJobID),
     // Composite index for candidate + status lookups
     index("candidate_resume_rewrites_candidate_status_idx").on(table.candidateID, table.status),
     // Index for active rewrites
