@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Redis Configuration
+const REDIS_URL = process.env.REDIS_URL || '';
 const REDIS_HOST = process.env.REDIS_HOST || 'localhost';
 const REDIS_PORT = parseInt(process.env.REDIS_PORT || '6379');
 const REDIS_PASSWORD = process.env.REDIS_PASSWORD || '';
@@ -17,17 +18,47 @@ const REDIS_TLS = process.env.REDIS_TLS === 'true';
 const REDIS_MAX_RETRIES = parseInt(process.env.REDIS_MAX_RETRIES || '3');
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
+function parseRedisUrl(redisUrl) {
+    if (!redisUrl) return null;
+
+    try {
+        const url = new URL(redisUrl);
+        const tls = url.protocol === 'rediss:';
+        const username = url.username || REDIS_USERNAME;
+        const password = url.password || REDIS_PASSWORD || undefined;
+        const port = url.port ? parseInt(url.port) : REDIS_PORT;
+
+        return {
+            host: url.hostname,
+            port,
+            username,
+            password,
+            tls
+        };
+    } catch (error) {
+        logger.error('Invalid REDIS_URL provided', { error: error.message });
+        return null;
+    }
+}
+
+const redisUrlConfig = parseRedisUrl(REDIS_URL);
+const RESOLVED_REDIS_HOST = redisUrlConfig?.host || REDIS_HOST;
+const RESOLVED_REDIS_PORT = redisUrlConfig?.port || REDIS_PORT;
+const RESOLVED_REDIS_USERNAME = redisUrlConfig?.username || REDIS_USERNAME;
+const RESOLVED_REDIS_PASSWORD = redisUrlConfig?.password || (REDIS_PASSWORD || undefined);
+const RESOLVED_REDIS_TLS = redisUrlConfig?.tls ?? REDIS_TLS;
+
 // Base Redis configuration (for standalone mode)
 const baseConfig = {
-    host: REDIS_HOST,
-    port: REDIS_PORT,
-    username: REDIS_USERNAME,
-    password: REDIS_PASSWORD || undefined,
+    host: RESOLVED_REDIS_HOST,
+    port: RESOLVED_REDIS_PORT,
+    username: RESOLVED_REDIS_USERNAME,
+    password: RESOLVED_REDIS_PASSWORD,
     lazyConnect: true,
     showFriendlyErrorStack: NODE_ENV === 'development',
     enableOfflineQueue: true,
     maxRetriesPerRequest: REDIS_MAX_RETRIES,
-    ...(REDIS_TLS && {
+    ...(RESOLVED_REDIS_TLS && {
         tls: {
             rejectUnauthorized: false
         }
@@ -54,16 +85,16 @@ const baseConfig = {
 // Cluster configuration (if cluster mode is enabled)
 const clusterNodes = REDIS_CLUSTER_MODE ? [
     {
-        host: REDIS_HOST,
-        port: REDIS_PORT
+        host: RESOLVED_REDIS_HOST,
+        port: RESOLVED_REDIS_PORT
     }
 ] : [];
 
 const clusterConfig = {
     redisOptions: {
-        username: REDIS_USERNAME,
-        password: REDIS_PASSWORD || undefined,
-        ...(REDIS_TLS && {
+        username: RESOLVED_REDIS_USERNAME,
+        password: RESOLVED_REDIS_PASSWORD,
+        ...(RESOLVED_REDIS_TLS && {
             tls: {
                 rejectUnauthorized: false
             }
@@ -83,144 +114,189 @@ const clusterConfig = {
     }
 };
 
-// Create Redis connections based on mode
+// Create Redis connections based on mode (lazy initialization)
 let cacheRedis;
 let queueRedis;
 
-if (REDIS_CLUSTER_MODE) {
-    // Cluster Mode
-    logger.info('Initializing Redis in CLUSTER mode', { 
-        host: REDIS_HOST, 
-        port: REDIS_PORT 
+function createCacheRedis() {
+    if (REDIS_CLUSTER_MODE) {
+        logger.info('Initializing Redis cache in CLUSTER mode', { 
+            host: RESOLVED_REDIS_HOST, 
+            port: RESOLVED_REDIS_PORT 
+        });
+        
+        return new Redis.Cluster(clusterNodes, {
+            ...clusterConfig,
+            redisOptions: {
+                ...clusterConfig.redisOptions,
+                connectionName: 'app:cache'
+            },
+            keyPrefix: 'cache:'
+        });
+    }
+
+    logger.info('Initializing Redis cache in STANDALONE mode', { 
+        host: RESOLVED_REDIS_HOST, 
+        port: RESOLVED_REDIS_PORT,
+        cacheDB: REDIS_DB_CACHE
     });
     
-    cacheRedis = new Redis.Cluster(clusterNodes, {
-        ...clusterConfig,
-        keyPrefix: 'cache:'
-    });
-    
-    queueRedis = new Redis.Cluster(clusterNodes, {
-        ...clusterConfig,
-        maxRetriesPerRequest: null // Important for BullMQ
-    });
-} else {
-    // Standalone Mode
-    logger.info('Initializing Redis in STANDALONE mode', { 
-        host: REDIS_HOST, 
-        port: REDIS_PORT,
-        cacheDB: REDIS_DB_CACHE,
-        queueDB: REDIS_DB_QUEUE
-    });
-    
-    cacheRedis = new Redis({
+    return new Redis({
         ...baseConfig,
         db: REDIS_DB_CACHE,
         keyPrefix: 'cache:',
         enableReadyCheck: true,
-        keepAlive: 30000
+        keepAlive: 30000,
+        connectionName: 'app:cache'
+    });
+}
+
+function createQueueRedis() {
+    if (REDIS_CLUSTER_MODE) {
+        logger.info('Initializing Redis queue in CLUSTER mode', { 
+            host: RESOLVED_REDIS_HOST, 
+            port: RESOLVED_REDIS_PORT 
+        });
+        
+        return new Redis.Cluster(clusterNodes, {
+            ...clusterConfig,
+            redisOptions: {
+                ...clusterConfig.redisOptions,
+                connectionName: 'app:queue'
+            },
+            maxRetriesPerRequest: null // Important for BullMQ
+        });
+    }
+
+    logger.info('Initializing Redis queue in STANDALONE mode', { 
+        host: RESOLVED_REDIS_HOST, 
+        port: RESOLVED_REDIS_PORT,
+        queueDB: REDIS_DB_QUEUE
     });
     
-    queueRedis = new Redis({
+    return new Redis({
         ...baseConfig,
         db: REDIS_DB_QUEUE,
         maxRetriesPerRequest: null, // Important for BullMQ
         enableReadyCheck: true,
-        keepAlive: 30000
+        keepAlive: 30000,
+        connectionName: 'app:queue'
     });
 }
 
-export { cacheRedis, queueRedis };
-
-// Event handlers for Cache Redis
-cacheRedis.on('connect', () => {
-    logger.info('Cache Redis: Connecting...', { 
-        mode: REDIS_CLUSTER_MODE ? 'cluster' : 'standalone',
-        host: REDIS_HOST, 
-        port: REDIS_PORT,
-        db: REDIS_CLUSTER_MODE ? 'N/A' : REDIS_DB_CACHE
+function setupCacheRedisListeners(client) {
+    client.on('connect', () => {
+        logger.info('Cache Redis: Connecting...', { 
+            mode: REDIS_CLUSTER_MODE ? 'cluster' : 'standalone',
+            host: RESOLVED_REDIS_HOST, 
+            port: RESOLVED_REDIS_PORT,
+            db: REDIS_CLUSTER_MODE ? 'N/A' : REDIS_DB_CACHE
+        });
     });
-});
 
-cacheRedis.on('ready', () => {
-    logger.info('Cache Redis: Connected and ready', { 
-        mode: REDIS_CLUSTER_MODE ? 'cluster' : 'standalone',
-        db: REDIS_CLUSTER_MODE ? 'N/A' : REDIS_DB_CACHE
+    client.on('ready', () => {
+        logger.info('Cache Redis: Connected and ready', { 
+            mode: REDIS_CLUSTER_MODE ? 'cluster' : 'standalone',
+            db: REDIS_CLUSTER_MODE ? 'N/A' : REDIS_DB_CACHE
+        });
     });
-});
 
-cacheRedis.on('error', (err) => {
-    logger.error('Cache Redis: Connection error', { 
-        error: err.message,
-        mode: REDIS_CLUSTER_MODE ? 'cluster' : 'standalone'
+    client.on('error', (err) => {
+        logger.error('Cache Redis: Connection error', { 
+            error: err.message,
+            mode: REDIS_CLUSTER_MODE ? 'cluster' : 'standalone'
+        });
     });
-});
 
-cacheRedis.on('close', () => {
-    logger.warn('Cache Redis: Connection closed', {
-        mode: REDIS_CLUSTER_MODE ? 'cluster' : 'standalone'
+    client.on('close', () => {
+        logger.warn('Cache Redis: Connection closed', {
+            mode: REDIS_CLUSTER_MODE ? 'cluster' : 'standalone'
+        });
     });
-});
 
-cacheRedis.on('reconnecting', (delay) => {
-    logger.info('Cache Redis: Reconnecting...', { 
-        delay,
-        mode: REDIS_CLUSTER_MODE ? 'cluster' : 'standalone'
+    client.on('reconnecting', (delay) => {
+        logger.info('Cache Redis: Reconnecting...', { 
+            delay,
+            mode: REDIS_CLUSTER_MODE ? 'cluster' : 'standalone'
+        });
     });
-});
+}
 
-// Event handlers for Queue Redis
-queueRedis.on('connect', () => {
-    logger.info('Queue Redis: Connecting...', { 
-        mode: REDIS_CLUSTER_MODE ? 'cluster' : 'standalone',
-        host: REDIS_HOST, 
-        port: REDIS_PORT,
-        db: REDIS_CLUSTER_MODE ? 'N/A' : REDIS_DB_QUEUE
+function setupQueueRedisListeners(client) {
+    client.on('connect', () => {
+        logger.info('Queue Redis: Connecting...', { 
+            mode: REDIS_CLUSTER_MODE ? 'cluster' : 'standalone',
+            host: RESOLVED_REDIS_HOST, 
+            port: RESOLVED_REDIS_PORT,
+            db: REDIS_CLUSTER_MODE ? 'N/A' : REDIS_DB_QUEUE
+        });
     });
-});
 
-queueRedis.on('ready', () => {
-    logger.info('Queue Redis: Connected and ready', { 
-        mode: REDIS_CLUSTER_MODE ? 'cluster' : 'standalone',
-        db: REDIS_CLUSTER_MODE ? 'N/A' : REDIS_DB_QUEUE
+    client.on('ready', () => {
+        logger.info('Queue Redis: Connected and ready', { 
+            mode: REDIS_CLUSTER_MODE ? 'cluster' : 'standalone',
+            db: REDIS_CLUSTER_MODE ? 'N/A' : REDIS_DB_QUEUE
+        });
     });
-});
 
-queueRedis.on('error', (err) => {
-    logger.error('Queue Redis: Connection error', { 
-        error: err.message,
-        mode: REDIS_CLUSTER_MODE ? 'cluster' : 'standalone'
+    client.on('error', (err) => {
+        logger.error('Queue Redis: Connection error', { 
+            error: err.message,
+            mode: REDIS_CLUSTER_MODE ? 'cluster' : 'standalone'
+        });
     });
-});
 
-queueRedis.on('close', () => {
-    logger.warn('Queue Redis: Connection closed', {
-        mode: REDIS_CLUSTER_MODE ? 'cluster' : 'standalone'
+    client.on('close', () => {
+        logger.warn('Queue Redis: Connection closed', {
+            mode: REDIS_CLUSTER_MODE ? 'cluster' : 'standalone'
+        });
     });
-});
 
-queueRedis.on('reconnecting', (delay) => {
-    logger.info('Queue Redis: Reconnecting...', { 
-        delay,
-        mode: REDIS_CLUSTER_MODE ? 'cluster' : 'standalone'
+    client.on('reconnecting', (delay) => {
+        logger.info('Queue Redis: Reconnecting...', { 
+            delay,
+            mode: REDIS_CLUSTER_MODE ? 'cluster' : 'standalone'
+        });
     });
-});
+}
+
+export function getCacheRedis() {
+    if (!cacheRedis) {
+        cacheRedis = createCacheRedis();
+        setupCacheRedisListeners(cacheRedis);
+    }
+    return cacheRedis;
+}
+
+export function getQueueRedis() {
+    if (!queueRedis) {
+        queueRedis = createQueueRedis();
+        setupQueueRedisListeners(queueRedis);
+    }
+    return queueRedis;
+}
 
 // Initialize connections
 export async function connectRedis() {
     try {
         logger.info('Initializing Redis connections...');
-        
-        // Connect cache Redis
-        await cacheRedis.connect();
-        await cacheRedis.ping();
+
+        const cache = getCacheRedis();
+        const queue = getQueueRedis();
+
+        if (cache.status === 'wait') {
+            await cache.connect();
+        }
+        await cache.ping();
         logger.info('Cache Redis connection established');
 
-        // Connect queue Redis
-        await queueRedis.connect();
-        await queueRedis.ping();
+        if (queue.status === 'wait') {
+            await queue.connect();
+        }
+        await queue.ping();
         logger.info('Queue Redis connection established');
 
-        return { cache: cacheRedis, queue: queueRedis };
+        return { cache, queue };
     } catch (error) {
         logger.error('Failed to connect to Redis', { error: error.message });
         throw error;
@@ -231,21 +307,22 @@ export async function connectRedis() {
 export async function disconnectRedis() {
     try {
         logger.info('Disconnecting Redis connections...');
-        
-        await Promise.all([
-            cacheRedis.quit(),
-            queueRedis.quit()
-        ]);
+
+        const disconnects = [];
+        if (cacheRedis) disconnects.push(cacheRedis.quit());
+        if (queueRedis) disconnects.push(queueRedis.quit());
+
+        await Promise.all(disconnects);
 
         logger.info('All Redis connections closed gracefully');
     } catch (error) {
         logger.error('Error disconnecting Redis', { error: error.message });
         
         // Force close if graceful shutdown fails
-        await Promise.all([
-            cacheRedis.disconnect(),
-            queueRedis.disconnect()
-        ]);
+        const forceDisconnects = [];
+        if (cacheRedis) forceDisconnects.push(cacheRedis.disconnect());
+        if (queueRedis) forceDisconnects.push(queueRedis.disconnect());
+        await Promise.all(forceDisconnects);
     }
 }
 
@@ -264,10 +341,13 @@ export async function checkRedisHealth() {
         }
     };
 
+    const cache = getCacheRedis();
+    const queue = getQueueRedis();
+
     // Check cache Redis
     try {
         const startCache = Date.now();
-        await cacheRedis.ping();
+        await cache.ping();
         health.cache.connected = true;
         health.cache.latency = Date.now() - startCache;
     } catch (error) {
@@ -277,7 +357,7 @@ export async function checkRedisHealth() {
     // Check queue Redis
     try {
         const startQueue = Date.now();
-        await queueRedis.ping();
+        await queue.ping();
         health.queue.connected = true;
         health.queue.latency = Date.now() - startQueue;
     } catch (error) {
@@ -294,13 +374,14 @@ export const bullMQConnection = REDIS_CLUSTER_MODE ? {
         nodes: clusterNodes,
         options: {
             redisOptions: {
-                username: REDIS_USERNAME,
-                password: REDIS_PASSWORD || undefined,
-                ...(REDIS_TLS && {
+                username: RESOLVED_REDIS_USERNAME,
+                password: RESOLVED_REDIS_PASSWORD,
+                ...(RESOLVED_REDIS_TLS && {
                     tls: {
                         rejectUnauthorized: false
                     }
-                })
+                }),
+                connectionName: 'bullmq:cluster'
             },
             maxRetriesPerRequest: null,
             enableOfflineQueue: true
@@ -309,27 +390,41 @@ export const bullMQConnection = REDIS_CLUSTER_MODE ? {
     prefix: 'bull' // Prefix for queue keys to separate from cache
 } : {
     // Standalone mode configuration
-    host: REDIS_HOST,
-    port: REDIS_PORT,
-    username: REDIS_USERNAME,
-    password: REDIS_PASSWORD || undefined,
+    host: RESOLVED_REDIS_HOST,
+    port: RESOLVED_REDIS_PORT,
+    username: RESOLVED_REDIS_USERNAME,
+    password: RESOLVED_REDIS_PASSWORD,
     db: REDIS_DB_QUEUE,
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
     enableOfflineQueue: true,
     prefix: 'bull', // Prefix for queue keys to separate from cache
-    ...(REDIS_TLS && {
+    connectionName: 'bullmq:queue',
+    ...(RESOLVED_REDIS_TLS && {
         tls: {
             rejectUnauthorized: false
         }
     })
 };
 
+export function getRedisConnectionConfig({ db, connectionName } = {}) {
+    return {
+        host: RESOLVED_REDIS_HOST,
+        port: RESOLVED_REDIS_PORT,
+        username: RESOLVED_REDIS_USERNAME,
+        password: RESOLVED_REDIS_PASSWORD,
+        db: typeof db === 'number' ? db : REDIS_DB_CACHE,
+        tls: RESOLVED_REDIS_TLS,
+        connectionName
+    };
+}
+
 export default {
-    cacheRedis,
-    queueRedis,
+    getCacheRedis,
+    getQueueRedis,
     connectRedis,
     disconnectRedis,
     checkRedisHealth,
-    bullMQConnection
+    bullMQConnection,
+    getRedisConnectionConfig
 };

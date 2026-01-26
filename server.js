@@ -8,7 +8,7 @@ import dotenv from "dotenv";
 import v1Routes from "./routes/v1/index.route.js";
 import swaggerUi from "swagger-ui-express";
 import { swaggerSpec } from "./config/swagger.config.js";
-import { connectRedis, disconnectRedis, bullMQConnection } from "./config/redis.config.js";
+import { connectRedis, disconnectRedis, bullMQConnection, getRedisConnectionConfig } from "./config/redis.config.js";
 import { closeAllQueues } from "./queues/index.js";
 import pubSubService from "./services/pubsub.service.js";
 import sseService from "./services/sse.service.js";
@@ -131,14 +131,16 @@ async function initializeServices() {
         await connectRedis();
         
         // Initialize PubSub service with Redis configuration
-        await pubSubService.initialize({
-            host: process.env.REDIS_HOST || 'localhost',
-            port: parseInt(process.env.REDIS_PORT) || 6379,
-            username: process.env.REDIS_USERNAME || 'default',
-            password: process.env.REDIS_PASSWORD || undefined,
-            db: parseInt(process.env.REDIS_DB_CACHE) || 0,
-            tls: process.env.REDIS_TLS === 'true'
-        });
+        await pubSubService.initialize(
+            getRedisConnectionConfig({
+                db: parseInt(process.env.REDIS_DB_CACHE) || 0,
+                connectionName: 'pubsub:api'
+            }),
+            {
+                mode: 'both',
+                connectionNamePrefix: 'pubsub:api'
+            }
+        );
         
         // Schedule periodic job scraping (every 6 hours)
         await schedulePeriodicScraping();

@@ -39,7 +39,7 @@ const __dirname = dirname(__filename);
 dotenv.config({ path: join(__dirname, '../../.env') });
 
 // Dynamic import to ensure env vars are loaded before redis config
-const { bullMQConnection } = await import('../../config/redis.config.js');
+const { bullMQConnection, getRedisConnectionConfig } = await import('../../config/redis.config.js');
 const pubSubService = (await import('../../services/pubsub.service.js')).default;
 
 // Debug: Log Redis configuration
@@ -54,19 +54,18 @@ logger.info('Rewrite Worker starting with Redis config', {
  * Initialize PubSub service with retry logic
  */
 async function initPubSubService(maxRetries = 3, delayMs = 2000) {
-    const redisConfig = {
-        host: process.env.REDIS_HOST || 'localhost',
-        port: parseInt(process.env.REDIS_PORT) || 6379,
-        username: process.env.REDIS_USERNAME || 'default',
-        password: process.env.REDIS_PASSWORD || undefined,
+    const redisConfig = getRedisConnectionConfig({
         db: parseInt(process.env.REDIS_DB_CACHE) || 0,
-        tls: process.env.REDIS_TLS === 'true'
-    };
+        connectionName: 'pubsub:worker:resume-rewrite'
+    });
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             logger.info(`Initializing PubSub service in rewrite worker (attempt ${attempt}/${maxRetries})`, redisConfig);
-            await pubSubService.initialize(redisConfig);
+            await pubSubService.initialize(redisConfig, {
+                mode: 'publisher',
+                connectionNamePrefix: 'pubsub:worker:resume-rewrite'
+            });
             logger.info('✅ PubSub service initialized successfully in rewrite worker');
             return true;
         } catch (error) {
@@ -335,8 +334,6 @@ ${userPrompt || 'Tailor this resume to maximize match with the target job requir
                 targetATSScore: optimizationOptions?.targetATSScore || 90,
                 isJobAwareRewrite,
                 targetJobID
-            }
-        );
             }
         );
         

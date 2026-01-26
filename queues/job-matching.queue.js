@@ -1,5 +1,6 @@
 import queueService from '../services/queue.service.js';
 import logger from '../middleware/logger.js';
+import { JOB_MATCHING_ENABLED } from '../config/featureFlags.js';
 
 /**
  * Job Matching Queue
@@ -23,6 +24,10 @@ export const JOB_TYPES = {
  * Get job matching queue instance
  */
 export function getJobMatchingQueue() {
+    if (!JOB_MATCHING_ENABLED) {
+        logger.warn('Job matching is disabled - queue access blocked');
+        return null;
+    }
     return queueService.getQueue(QUEUE_NAME);
 }
 
@@ -39,7 +44,14 @@ export function getJobMatchingQueue() {
  * @returns {Promise<Object>} Job object
  */
 export async function addMatchJobsForUserJob(userId, analysisId, userType = 'user', options = {}) {
+    if (!JOB_MATCHING_ENABLED) {
+        logger.info('Job matching is disabled - skipping match job creation', { userId, analysisId, userType });
+        return null;
+    }
     const queue = getJobMatchingQueue();
+    if (!queue) {
+        return null;
+    }
     
     const jobData = {
         type: JOB_TYPES.MATCH_FOR_USER,
@@ -87,7 +99,14 @@ export async function addMatchJobsForUserJob(userId, analysisId, userType = 'use
  * @returns {Promise<Object>} Job object
  */
 export async function addRematchJobsForUserJob(userId, analysisId, userType = 'user', options = {}) {
+    if (!JOB_MATCHING_ENABLED) {
+        logger.info('Job matching is disabled - skipping rematch job creation', { userId, analysisId, userType });
+        return null;
+    }
     const queue = getJobMatchingQueue();
+    if (!queue) {
+        return null;
+    }
     
     const jobData = {
         type: JOB_TYPES.REMATCH_FOR_USER,
@@ -132,7 +151,14 @@ export async function addRematchJobsForUserJob(userId, analysisId, userType = 'u
  * @returns {Promise<Object>} Job object
  */
 export async function addBatchMatchJob(users, options = {}) {
+    if (!JOB_MATCHING_ENABLED) {
+        logger.info('Job matching is disabled - skipping batch match job creation', { userCount: users.length });
+        return null;
+    }
     const queue = getJobMatchingQueue();
+    if (!queue) {
+        return null;
+    }
     
     const jobData = {
         type: JOB_TYPES.BATCH_MATCH,
@@ -175,6 +201,10 @@ export async function addBatchMatchJob(users, options = {}) {
  * @param {boolean} autoMatch - Whether to auto-match (default: true)
  */
 export async function triggerMatchingAfterAnalysis(userId, analysisId, userType, autoMatch = true) {
+    if (!JOB_MATCHING_ENABLED) {
+        logger.info('Job matching is disabled - skipping trigger', { userId, analysisId, userType });
+        return;
+    }
     if (!autoMatch) {
         logger.info('Auto-matching disabled for analysis', { userId, analysisId });
         return;

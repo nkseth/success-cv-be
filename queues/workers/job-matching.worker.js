@@ -3,8 +3,14 @@ import queueService from '../../services/queue.service.js';
 import logger from '../../middleware/logger.js';
 import { matchJobsForUser } from '../../services/job-matching.service.js';
 import { JOB_TYPES } from '../job-matching.queue.js';
+import { JOB_MATCHING_ENABLED } from '../../config/featureFlags.js';
 
 const QUEUE_NAME = 'job-matching';
+
+if (!JOB_MATCHING_ENABLED) {
+    logger.warn('Job matching is disabled - worker will not start');
+    process.exit(0);
+}
 
 /**
  * Job Matching Worker

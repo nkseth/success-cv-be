@@ -19,26 +19,12 @@ class PubSubService {
      * Initialize Redis Pub/Sub connections
      * @param {Object} redisConfig - Redis connection configuration
      */
-    async initialize(redisConfig) {
+    async initialize(redisConfig, options = {}) {
         try {
-            // Create separate connections for publishing and subscribing
-            // ioredis connects automatically, no need to call connect()
-            this.publisher = new Redis({
-                host: redisConfig.host,
-                port: redisConfig.port,
-                username: redisConfig.username,
-                password: redisConfig.password,
-                db: redisConfig.db || 0,
-                maxRetriesPerRequest: null,
-                enableReadyCheck: false,
-                ...(redisConfig.tls && {
-                    tls: {
-                        rejectUnauthorized: false
-                    }
-                })
-            });
+            const mode = options.mode || 'both';
+            const connectionNamePrefix = options.connectionNamePrefix || 'pubsub';
 
-            this.subscriber = new Redis({
+            const baseOptions = {
                 host: redisConfig.host,
                 port: redisConfig.port,
                 username: redisConfig.username,
@@ -51,30 +37,52 @@ class PubSubService {
                         rejectUnauthorized: false
                     }
                 })
-            });
+            };
+
+            // Create connections based on mode
+            if (mode === 'both' || mode === 'publisher') {
+                this.publisher = new Redis({
+                    ...baseOptions,
+                    connectionName: `${connectionNamePrefix}:publisher`
+                });
+            }
+
+            if (mode === 'both' || mode === 'subscriber') {
+                this.subscriber = new Redis({
+                    ...baseOptions,
+                    connectionName: `${connectionNamePrefix}:subscriber`
+                });
+            }
 
             // Set up event listeners
             this.setupEventListeners();
 
-            // Wait for both connections to be ready
-            await Promise.all([
-                new Promise((resolve, reject) => {
+            const readinessChecks = [];
+
+            if (this.publisher) {
+                readinessChecks.push(new Promise((resolve, reject) => {
                     if (this.publisher.status === 'ready') {
                         resolve();
                     } else {
                         this.publisher.once('ready', resolve);
                         this.publisher.once('error', reject);
                     }
-                }),
-                new Promise((resolve, reject) => {
+                }));
+            }
+
+            if (this.subscriber) {
+                readinessChecks.push(new Promise((resolve, reject) => {
                     if (this.subscriber.status === 'ready') {
                         resolve();
                     } else {
                         this.subscriber.once('ready', resolve);
                         this.subscriber.once('error', reject);
                     }
-                })
-            ]);
+                }));
+            }
+
+            // Wait for required connections to be ready
+            await Promise.all(readinessChecks);
 
             this.isConnected = true;
             logger.info('PubSub Service: Initialized successfully');
@@ -88,46 +96,48 @@ class PubSubService {
      * Setup event listeners for Redis connections
      */
     setupEventListeners() {
-        // Publisher events
-        this.publisher.on('connect', () => {
-            logger.info('PubSub Publisher: Connected');
-        });
+        if (this.publisher) {
+            this.publisher.on('connect', () => {
+                logger.info('PubSub Publisher: Connected');
+            });
 
-        this.publisher.on('ready', () => {
-            logger.info('PubSub Publisher: Ready');
-        });
+            this.publisher.on('ready', () => {
+                logger.info('PubSub Publisher: Ready');
+            });
 
-        this.publisher.on('error', (error) => {
-            logger.error('PubSub Publisher: Error', { error: error.message });
-        });
+            this.publisher.on('error', (error) => {
+                logger.error('PubSub Publisher: Error', { error: error.message });
+            });
 
-        this.publisher.on('close', () => {
-            logger.warn('PubSub Publisher: Connection closed');
-            this.isConnected = false;
-        });
+            this.publisher.on('close', () => {
+                logger.warn('PubSub Publisher: Connection closed');
+                this.isConnected = false;
+            });
+        }
 
-        // Subscriber events
-        this.subscriber.on('connect', () => {
-            logger.info('PubSub Subscriber: Connected');
-        });
+        if (this.subscriber) {
+            this.subscriber.on('connect', () => {
+                logger.info('PubSub Subscriber: Connected');
+            });
 
-        this.subscriber.on('ready', () => {
-            logger.info('PubSub Subscriber: Ready');
-        });
+            this.subscriber.on('ready', () => {
+                logger.info('PubSub Subscriber: Ready');
+            });
 
-        this.subscriber.on('error', (error) => {
-            logger.error('PubSub Subscriber: Error', { error: error.message });
-        });
+            this.subscriber.on('error', (error) => {
+                logger.error('PubSub Subscriber: Error', { error: error.message });
+            });
 
-        this.subscriber.on('close', () => {
-            logger.warn('PubSub Subscriber: Connection closed');
-            this.isConnected = false;
-        });
+            this.subscriber.on('close', () => {
+                logger.warn('PubSub Subscriber: Connection closed');
+                this.isConnected = false;
+            });
 
-        // Message handler
-        this.subscriber.on('message', (channel, message) => {
-            this.handleMessage(channel, message);
-        });
+            // Message handler
+            this.subscriber.on('message', (channel, message) => {
+                this.handleMessage(channel, message);
+            });
+        }
     }
 
     /**
@@ -140,6 +150,10 @@ class PubSubService {
         try {
             if (!this.isConnected) {
                 throw new Error('PubSub service not connected');
+            }
+
+            if (!this.publisher) {
+                throw new Error('PubSub publisher not initialized');
             }
 
             const message = JSON.stringify(data);
@@ -172,6 +186,10 @@ class PubSubService {
                 throw new Error('PubSub service not connected');
             }
 
+            if (!this.subscriber) {
+                throw new Error('PubSub subscriber not initialized');
+            }
+
             await this.subscriber.subscribe(channel);
 
             // Store callbacks for this channel
@@ -197,6 +215,10 @@ class PubSubService {
      */
     async unsubscribe(channel, callback = null) {
         try {
+            if (!this.subscriber) {
+                return;
+            }
+
             if (!this.channels.has(channel)) {
                 return;
             }
@@ -357,7 +379,9 @@ class PubSubService {
             // Unsubscribe from all channels
             const channels = Array.from(this.channels.keys());
             for (const channel of channels) {
-                await this.subscriber.unsubscribe(channel);
+                if (this.subscriber) {
+                    await this.subscriber.unsubscribe(channel);
+                }
             }
             this.channels.clear();
 

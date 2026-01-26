@@ -1,4 +1,4 @@
-import { cacheRedis } from '../config/redis.config.js';
+import { getCacheRedis } from '../config/redis.config.js';
 import logger from '../middleware/logger.js';
 
 /**
@@ -6,7 +6,7 @@ import logger from '../middleware/logger.js';
  */
 class CacheService {
     constructor() {
-        this.redis = cacheRedis;
+        this.redis = getCacheRedis();
         this.defaultTTL = 3600; // 1 hour default TTL
     }
 

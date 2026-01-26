@@ -1,6 +1,6 @@
 import logger from '../middleware/logger.js';
 import { getJobByID, getJobs, bulkCreateJobMatches, deleteJobMatchesForUser, getUserJobPreferences } from '../models/job.model.js';
-import db from '../config/db.js';
+import { db } from '../config/db.js';
 import { analysisTable, candidateAnalysisTable, processedAndRawDataTable, candidateProcessedAndRawDataTable, jobMatchesTable } from '../drizzle/schema.js';
 import { and, eq } from 'drizzle-orm';
 

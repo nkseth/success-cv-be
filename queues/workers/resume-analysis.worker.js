@@ -13,7 +13,7 @@ import { Worker } from 'bullmq';
 import logger from '../../middleware/logger.js';
 
 // Dynamic import to ensure env vars are loaded before redis config
-const { bullMQConnection } = await import('../../config/redis.config.js');
+const { bullMQConnection, getRedisConnectionConfig } = await import('../../config/redis.config.js');
 const pubSubService = (await import('../../services/pubsub.service.js')).default;
 
 // Debug: Log Redis configuration
@@ -29,19 +29,18 @@ logger.info('Worker starting with Redis config', {
  * Initialize PubSub service with retry logic
  */
 async function initPubSubService(maxRetries = 3, delayMs = 2000) {
-    const redisConfig = {
-        host: process.env.REDIS_HOST || 'localhost',
-        port: parseInt(process.env.REDIS_PORT) || 6379,
-        username: process.env.REDIS_USERNAME || 'default',
-        password: process.env.REDIS_PASSWORD || undefined,
+    const redisConfig = getRedisConnectionConfig({
         db: parseInt(process.env.REDIS_DB_CACHE) || 0,
-        tls: process.env.REDIS_TLS === 'true'
-    };
+        connectionName: 'pubsub:worker:resume-analysis'
+    });
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             logger.info(`Initializing PubSub service in worker (attempt ${attempt}/${maxRetries})`, redisConfig);
-            await pubSubService.initialize(redisConfig);
+            await pubSubService.initialize(redisConfig, {
+                mode: 'publisher',
+                connectionNamePrefix: 'pubsub:worker:resume-analysis'
+            });
             logger.info('✅ PubSub service initialized successfully in worker');
             return true;
         } catch (error) {
@@ -412,20 +411,29 @@ async function processResumeAnalysis(job) {
             analysisID
         });
 
-        // Trigger job matching after successful analysis
+        // Trigger job matching after successful analysis (if enabled)
         try {
-            const { triggerMatchingAfterAnalysis } = await import('../job-matching.queue.js');
-            await triggerMatchingAfterAnalysis(
-                job.data.userID || job.data.candidateID,
-                analysisID,
-                job.data.userType || 'user',
-                true // auto-match enabled
-            );
-            logger.info('[RESUME_ANALYSIS] 🎯 Job matching triggered', {
-                jobId: job.id,
-                analysisID,
-                userType: job.data.userType || 'user'
-            });
+            const { JOB_MATCHING_ENABLED } = await import('../../config/featureFlags.js');
+
+            if (JOB_MATCHING_ENABLED) {
+                const { triggerMatchingAfterAnalysis } = await import('../job-matching.queue.js');
+                await triggerMatchingAfterAnalysis(
+                    job.data.userID || job.data.candidateID,
+                    analysisID,
+                    job.data.userType || 'user',
+                    true // auto-match enabled
+                );
+                logger.info('[RESUME_ANALYSIS] 🎯 Job matching triggered', {
+                    jobId: job.id,
+                    analysisID,
+                    userType: job.data.userType || 'user'
+                });
+            } else {
+                logger.info('[RESUME_ANALYSIS] Job matching disabled, skipping trigger', {
+                    jobId: job.id,
+                    analysisID
+                });
+            }
         } catch (matchError) {
             logger.error('[RESUME_ANALYSIS] ⚠️ Job matching trigger failed (non-critical)', {
                 jobId: job.id,
