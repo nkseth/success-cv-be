@@ -50,6 +50,7 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
     "node-fetch": "^3.3.2",
+    "opossum": "^9.0.0",
     "postgres": "^3.4.7",
     "puppeteer": "^24.36.0",
     "razorpay": "^2.9.6",

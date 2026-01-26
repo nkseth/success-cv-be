@@ -229,59 +229,98 @@ async function scrapeAllSources(jobId, data) {
 /**
  * Upsert jobs into database with deduplication
  * Returns counts of new and updated jobs
+ * 
+ * Uses batch upsert with ON CONFLICT for performance:
+ * - 300 jobs: 1 query instead of 600-900 queries
+ * - Wrapped in transaction for atomicity
  */
 async function upsertJobs(jobs) {
-    let jobsNew = 0;
-    let jobsUpdated = 0;
-
-    for (const job of jobs) {
-        try {
-            // Check if job already exists (by external_id + source)
-            const [existing] = await db.select()
-                .from(jobsTable)
-                .where(and(
-                    eq(jobsTable.externalId, job.externalId),
-                    eq(jobsTable.source, job.source)
-                ))
-                .limit(1);
-
-            if (existing) {
-                // Update existing job
-                await db.update(jobsTable)
-                    .set({
-                        ...job,
-                        lastScrapedAt: new Date(),
-                        updatedAt: new Date(),
-                        isActive: true // Reactivate if was inactive
-                    })
-                    .where(eq(jobsTable.id, existing.id));
-
-                jobsUpdated++;
-            } else {
-                // Insert new job
-                await db.insert(jobsTable).values({
-                    ...job,
-                    lastScrapedAt: new Date(),
-                    createdAt: new Date(),
-                    updatedAt: new Date()
-                });
-
-                jobsNew++;
-            }
-        } catch (error) {
-            logger.error('Failed to upsert job', {
-                job: {
-                    externalId: job.externalId,
-                    source: job.source,
-                    title: job.title
-                },
-                error: error.message
-            });
-            // Continue processing other jobs
-        }
+    if (jobs.length === 0) {
+        return { jobsNew: 0, jobsUpdated: 0 };
     }
 
-    return { jobsNew, jobsUpdated };
+    try {
+        // Get current counts before upsert to calculate new vs updated
+        const externalIds = jobs.map(j => ({ externalId: j.externalId, source: j.source }));
+        
+        const existingJobs = await db.select({
+            externalId: jobsTable.externalId,
+            source: jobsTable.source
+        })
+        .from(jobsTable)
+        .where(
+            sql`(${jobsTable.externalId}, ${jobsTable.source}) IN ${sql.raw(`(${externalIds.map(j => `('${j.externalId}', '${j.source}')`).join(',')})`)}`
+        );
+
+        const existingKeys = new Set(existingJobs.map(j => `${j.externalId}:${j.source}`));
+        const jobsUpdated = jobs.filter(j => existingKeys.has(`${j.externalId}:${j.source}`)).length;
+        const jobsNew = jobs.length - jobsUpdated;
+
+        // Prepare jobs for upsert
+        const now = new Date();
+        const jobsToUpsert = jobs.map(job => ({
+            ...job,
+            lastScrapedAt: now,
+            updatedAt: now,
+            createdAt: now, // Only used on insert
+            isActive: true
+        }));
+
+        // Batch upsert with ON CONFLICT
+        await db.transaction(async (tx) => {
+            await tx.insert(jobsTable)
+                .values(jobsToUpsert)
+                .onConflictDoUpdate({
+                    target: [jobsTable.externalId, jobsTable.source],
+                    set: {
+                        title: sql`EXCLUDED.title`,
+                        company: sql`EXCLUDED.company`,
+                        companyLogo: sql`EXCLUDED.company_logo`,
+                        location: sql`EXCLUDED.location`,
+                        remoteType: sql`EXCLUDED.remote_type`,
+                        employmentType: sql`EXCLUDED.employment_type`,
+                        experienceLevel: sql`EXCLUDED.experience_level`,
+                        salaryMin: sql`EXCLUDED.salary_min`,
+                        salaryMax: sql`EXCLUDED.salary_max`,
+                        currency: sql`EXCLUDED.currency`,
+                        salaryPeriod: sql`EXCLUDED.salary_period`,
+                        description: sql`EXCLUDED.description`,
+                        requirements: sql`EXCLUDED.requirements`,
+                        responsibilities: sql`EXCLUDED.responsibilities`,
+                        benefits: sql`EXCLUDED.benefits`,
+                        skillsRequired: sql`EXCLUDED.skills_required`,
+                        educationLevel: sql`EXCLUDED.education_level`,
+                        yearsExperienceMin: sql`EXCLUDED.years_experience_min`,
+                        yearsExperienceMax: sql`EXCLUDED.years_experience_max`,
+                        url: sql`EXCLUDED.url`,
+                        applyUrl: sql`EXCLUDED.apply_url`,
+                        postedDate: sql`EXCLUDED.posted_date`,
+                        expiresAt: sql`EXCLUDED.expires_at`,
+                        lastScrapedAt: now,
+                        isActive: true,
+                        rawData: sql`EXCLUDED.raw_data`,
+                        meta: sql`EXCLUDED.meta`,
+                        updatedAt: now
+                    }
+                });
+        });
+
+        logger.info('Batch upsert completed', { 
+            total: jobs.length, 
+            jobsNew, 
+            jobsUpdated 
+        });
+
+        return { jobsNew, jobsUpdated };
+
+    } catch (error) {
+        logger.error('Batch upsert failed', {
+            error: error.message,
+            stack: error.stack,
+            jobCount: jobs.length
+        });
+        throw error;
+    }
 }
 
 /**

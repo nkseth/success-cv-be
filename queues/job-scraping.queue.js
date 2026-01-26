@@ -143,29 +143,87 @@ export async function addCleanupStaleJobsJob(data = {}, jobOptions = {}) {
 }
 
 /**
- * Schedule periodic job scraping
- * Adds recurring jobs that run on a cron schedule
+ * Schedule periodic job scraping with per-source rate limiting
+ * Each source has its own schedule based on API limits and data freshness
+ * 
+ * Source schedules:
+ * - Remotive: Daily (data has 24h delay)
+ * - RemoteOK: Every 6 hours (good data freshness)
+ * - WeWorkRemotely: Every 2 hours (RSS feed, frequent updates)
+ * - Himalayas: Every 4 hours (rate limited API)
+ * - Jobicy: Every hour (API allows frequent polling, recommends ≤1/hour)
+ * - Cleanup: Daily at 3 AM (mark stale jobs inactive)
  * 
  * Call this once at application startup
  */
 export async function schedulePeriodicScraping() {
     try {
-        // Schedule scraping all sources every 6 hours
-        // Cron: "0 */6 * * *" = At minute 0 past every 6th hour (00:00, 06:00, 12:00, 18:00)
+        // Remotive: Daily at midnight (data has 24h delay anyway)
         await queueService.addJob(
             'job-scraping',
-            JOB_SCRAPING_TYPES.SCRAPE_ALL,
-            { globalOptions: { limit: 100 } },
+            JOB_SCRAPING_TYPES.SCRAPE_SOURCE,
+            { source: 'remotive', options: { limit: 100 } },
+            {
+                repeat: {
+                    pattern: '0 0 * * *', // Daily at midnight
+                },
+                jobId: 'scrape-remotive-recurring',
+            }
+        );
+
+        // RemoteOK: Every 6 hours
+        await queueService.addJob(
+            'job-scraping',
+            JOB_SCRAPING_TYPES.SCRAPE_SOURCE,
+            { source: 'remoteok', options: { limit: 100 } },
             {
                 repeat: {
                     pattern: '0 */6 * * *', // Every 6 hours
                 },
-                jobId: 'scrape-all-recurring',
+                jobId: 'scrape-remoteok-recurring',
+            }
+        );
+
+        // We Work Remotely: Every 2 hours
+        await queueService.addJob(
+            'job-scraping',
+            JOB_SCRAPING_TYPES.SCRAPE_SOURCE,
+            { source: 'weworkremotely', options: { limit: 100 } },
+            {
+                repeat: {
+                    pattern: '0 */2 * * *', // Every 2 hours
+                },
+                jobId: 'scrape-weworkremotely-recurring',
+            }
+        );
+
+        // Himalayas: Every 4 hours (rate limited)
+        await queueService.addJob(
+            'job-scraping',
+            JOB_SCRAPING_TYPES.SCRAPE_SOURCE,
+            { source: 'himalayas', options: { limit: 20 } }, // API max is 20
+            {
+                repeat: {
+                    pattern: '0 */4 * * *', // Every 4 hours
+                },
+                jobId: 'scrape-himalayas-recurring',
+            }
+        );
+
+        // Jobicy: Every hour at minute 15 (recommended ≤1 req/hour)
+        await queueService.addJob(
+            'job-scraping',
+            JOB_SCRAPING_TYPES.SCRAPE_SOURCE,
+            { source: 'jobicy', options: { limit: 100 } },
+            {
+                repeat: {
+                    pattern: '15 * * * *', // Every hour at :15
+                },
+                jobId: 'scrape-jobicy-recurring',
             }
         );
         
         // Schedule cleanup of stale jobs once per day at 3 AM
-        // Cron: "0 3 * * *" = At 3:00 AM every day
         await queueService.addJob(
             'job-scraping',
             JOB_SCRAPING_TYPES.CLEANUP_STALE,
@@ -178,9 +236,13 @@ export async function schedulePeriodicScraping() {
             }
         );
         
-        logger.info('Periodic job scraping scheduled', {
-            scrapeSchedule: 'Every 6 hours',
-            cleanupSchedule: 'Daily at 3 AM'
+        logger.info('Periodic job scraping scheduled with per-source rate limits', {
+            remotive: 'Daily at midnight',
+            remoteok: 'Every 6 hours',
+            weworkremotely: 'Every 2 hours',
+            himalayas: 'Every 4 hours',
+            jobicy: 'Hourly at :15',
+            cleanup: 'Daily at 3 AM'
         });
     } catch (error) {
         logger.error('Failed to schedule periodic scraping', {

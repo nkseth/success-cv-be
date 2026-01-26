@@ -6,6 +6,7 @@ import { userRoutes } from "./user.route.js";
 import { organisationRoutes } from "./organisation.route.js";
 import { invitesRoutes } from "./invites.route.js";
 import { healthRoutes } from "./health.route.js";
+import healthScrapingRoutes from "./health-scraping.route.js";
 import sseRoutes from "./sse.route.js";
 import { uploadRoutes } from "./upload.route.js";
 import { resumeAnalysisRoutes } from "./resume-analysis.route.js";
@@ -36,6 +37,7 @@ router.get('/health', (req, res) => {
 });
 
 router.use('/health', healthRoutes);
+router.use('/health', healthScrapingRoutes);
 router.use('/auth', authRoutes);
 router.use('/profile', profileRoutes);
 router.use('/user', userRoutes);
