@@ -1,5 +1,12 @@
-import { azure } from '@ai-sdk/azure';
+import { createAzure } from '@ai-sdk/azure';
 import { generateObject, generateText } from 'ai';
+
+// Create Azure provider with explicit configuration
+const azure = createAzure({
+  resourceName: process.env.AZURE_RESOURCE_NAME,
+  apiKey: process.env.AZURE_API_KEY,
+});
+
 const generateAiResponseObject = async ({ system, content, schema, model = 'gpt-35-turbo-0613', retries = 3 }) => {
   let lastError;
   
@@ -16,22 +23,63 @@ const generateAiResponseObject = async ({ system, content, schema, model = 'gpt-
 
       console.log(`AI object generation attempt ${attempt}/${retries}`);
 
-      const completion = await generateObject({
-        model: azure("gpt-4o-mini", {
-          apiVersion: "2024-04-01-preview",
-          structuredOutputs: false, // Disable strict validation for complex schemas
-          downloadImages: true
-        }),
-        system,
-        messages, // Pass the properly formatted messages array  
-        schema,
-        temperature: 0.5, // Increased temperature for better completion
-        maxTokens: 16000, // Increased token limit for comprehensive output
-        maxRetries: 2 // Built-in retry mechanism
-      });
+      // Try with repaired schema that's more lenient
+      let completion;
+      try {
+        completion = await generateObject({
+          model: azure("gpt-4o-mini", {
+            // Disable structured outputs - Azure uses JSON mode instead
+            structuredOutputs: false,
+          }),
+          system,
+          messages,
+          schema,
+          temperature: 0.2,
+        });
+      } catch (schemaError) {
+        // If schema validation fails, try to extract and parse the JSON manually
+        if (schemaError.name === 'AI_NoObjectGeneratedError' && schemaError.text) {
+          console.log('Schema validation failed, attempting manual JSON parse with Zod safeParse...');
+          try {
+            const rawJson = JSON.parse(schemaError.text);
+            // Use Zod's safeParse which is lenient and fills in defaults
+            const parseResult = schema.safeParse(rawJson);
+            if (parseResult.success) {
+              console.log('Manual parse successful with defaults applied');
+              completion = { object: parseResult.data };
+            } else {
+              console.log('Zod safeParse failed:', parseResult.error.issues.slice(0, 3));
+              // Even if safeParse fails, return the raw data with defaults
+              // This is better than failing completely
+              const partialData = schema.partial().safeParse(rawJson);
+              if (partialData.success) {
+                console.log('Partial parse successful, returning with defaults');
+                completion = { object: partialData.data };
+              } else {
+                throw schemaError; // Re-throw original error
+              }
+            }
+          } catch (parseError) {
+            if (parseError === schemaError) throw parseError;
+            console.error('Manual JSON parse failed:', parseError.message);
+            throw schemaError;
+          }
+        } else {
+          throw schemaError;
+        }
+      }
 
       if (!completion || !completion.object) {
         throw new Error('No object generated: AI response was empty or invalid');
+      }
+
+      // Validate that we have at least the minimum required fields
+      const hasMinimumData = completion.object.personal_info || 
+                            (completion.object.experiences && completion.object.experiences.length > 0) ||
+                            (completion.object.education && completion.object.education.length > 0);
+      
+      if (!hasMinimumData) {
+        throw new Error('Generated object lacks minimum required data (personal_info, experiences, or education)');
       }
 
       console.log('AI object generation successful on attempt', attempt);
@@ -42,7 +90,9 @@ const generateAiResponseObject = async ({ system, content, schema, model = 'gpt-
       
       console.error(`AI Response Generation Error (attempt ${attempt}/${retries}):`, {
         message: error.message,
-        stack: error.stack,
+        name: error.name,
+        cause: error.cause?.message || 'No cause provided',
+        responseText: error.text || error.response?.text || 'No response text available',
         model: model
       });
       
@@ -96,12 +146,10 @@ const generateAiResponseMarkdown = async ({ system, content }) => {
       : [{ role: "user", content: content }];
 
     const completion = await generateText({
-      model: azure("gpt-4o-mini", {
-        apiVersion: "2024-04-01-preview"
-      }),
+      model: azure("gpt-4o-mini"),
       system,
       messages,
-      max_tokens: 1500,
+      maxOutputTokens: 1500, // Use correct parameter name
       temperature: 0.7
     });
 

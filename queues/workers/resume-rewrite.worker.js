@@ -538,16 +538,38 @@ ${userPrompt || 'Tailor this resume to maximize match with the target job requir
             
             // Apply the rewritten content to resume content table
             // Also update the analysisSummary to show the post-rewrite summary
+            // CRITICAL: Validate content before applying to prevent data loss
             const content = optimizationResult.content;
+            
+            // Validate that we're not replacing with empty/null values
+            const finalPersonalInfo = content?.personalInfo || currentResumeContent.personalInfo;
+            const finalSummary = content?.summary || currentResumeContent.summary;
+            const finalExperience = (content?.experience && content.experience.length > 0) 
+                ? content.experience 
+                : currentResumeContent.experience;
+            const finalEducation = content?.education || currentResumeContent.education;
+            const finalSkills = content?.skills || currentResumeContent.skills;
+            const finalAdditionalSections = content?.additionalSections || currentResumeContent.additionalSections;
+            
+            // Log what's being applied to catch any data loss
+            logger.info('[RESUME_REWRITE] Applying content with validation', {
+                hasPersonalInfo: !!finalPersonalInfo?.fullName,
+                hasSummary: !!finalSummary?.text,
+                experienceCount: finalExperience?.length || 0,
+                educationCount: finalEducation?.length || 0,
+                hasSkills: !!(finalSkills?.technical?.length || finalSkills?.soft?.length),
+                additionalSectionsCount: finalAdditionalSections?.length || 0
+            });
+            
             await db
                 .update(tables.contentTable)
                 .set({
-                    personalInfo: content?.personalInfo || currentResumeContent.personalInfo,
-                    summary: content?.summary || currentResumeContent.summary,
-                    experience: content?.experience || currentResumeContent.experience,
-                    education: content?.education || currentResumeContent.education,
-                    skills: content?.skills || currentResumeContent.skills,
-                    additionalSections: content?.additionalSections || currentResumeContent.additionalSections,
+                    personalInfo: finalPersonalInfo,
+                    summary: finalSummary,
+                    experience: finalExperience,
+                    education: finalEducation,
+                    skills: finalSkills,
+                    additionalSections: finalAdditionalSections,
                     currentScores: optimizationResult.scores || currentResumeContent.currentScores,
                     analysisSummary: rewriteRecord?.rewriteSummary || currentResumeContent.analysisSummary,
                     version: currentResumeContent.version + 1,

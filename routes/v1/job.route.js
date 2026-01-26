@@ -67,9 +67,9 @@ if (JOB_MATCHING_ENABLED) {
     });
 
     router.all('/job-matches', jobMatchingDisabled);
-    router.all('/job-matches/*', jobMatchingDisabled);
+    router.all('/job-matches/*path', jobMatchingDisabled);
     router.all('/job-preferences', jobMatchingDisabled);
-    router.all('/job-preferences/*', jobMatchingDisabled);
+    router.all('/job-preferences/*path', jobMatchingDisabled);
 }
 
 /**

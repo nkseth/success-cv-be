@@ -328,7 +328,7 @@
  *                       example: 456
  *                     analysisID:
  *                       type: integer
- *                       description: Associated analysis ID (status: completed)
+ *                       description: "Associated analysis ID (status - completed)"
  *                       example: 789
  *                     documentID:
  *                       type: integer

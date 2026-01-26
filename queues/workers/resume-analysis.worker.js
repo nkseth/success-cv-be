@@ -207,14 +207,50 @@ async function processResumeAnalysis(job) {
                 content: `Analyze this resume and identify all mistakes, issues, and improvement opportunities:\n\n${fileContent}`
             });
             
+            // Validate experience bullet points are extracted
+            const experiencesWithBullets = (result.experiences || []).filter(exp => 
+                (exp.highlights && exp.highlights.length > 0) || 
+                (exp.summary && exp.summary.trim().length > 0)
+            );
+            
+            // Validate projects bullet points are extracted
+            const projectsWithDetails = (result.projects || []).filter(proj => 
+                (proj.highlights && proj.highlights.length > 0) || 
+                (proj.description && proj.description.trim().length > 0)
+            );
+            
             logger.info('[RESUME_ANALYSIS] AI parsing completed:', {
                 hasPersonalInfo: !!result.personal_info,
+                hasName: !!result.personal_info?.name,
+                hasEmail: !!result.personal_info?.email,
+                hasSummary: !!result.personal_info?.summary,
                 experienceCount: result.experiences?.length || 0,
+                experiencesWithContent: experiencesWithBullets.length,
                 educationCount: result.education?.length || 0,
+                projectsCount: result.projects?.length || 0,
+                projectsWithDetails: projectsWithDetails.length,
+                skillsExtracted: {
+                    technical: result.skills?.technical?.length || 0,
+                    soft: result.skills?.soft?.length || 0,
+                    tools: result.skills?.tools?.length || 0
+                },
+                certificatesCount: result.certificates?.length || 0,
+                achievementsCount: result.achievements?.length || 0,
+                awardsCount: result.awards?.length || 0,
+                publicationsCount: result.publications?.length || 0,
+                volunteersCount: result.volunteers?.length || 0,
+                languagesCount: result.languages?.length || 0,
                 criticalMistakes: result.critical_mistakes?.length || 0,
                 majorIssues: result.major_issues?.length || 0,
-                overallScore: result.relevance?.['Overall Score'] || 0
+                minorImprovements: result.minor_improvements?.length || 0,
+                overallScore: result.relevance?.['Overall Score'] || 0,
+                atsScore: result.resume_quality?.ats_compatibility_score || 0
             });
+            
+            // Warn if important data might be missing
+            if (result.experiences?.length > 0 && experiencesWithBullets.length === 0) {
+                logger.warn('[RESUME_ANALYSIS] ⚠️ Experiences found but no bullet points extracted - check extraction');
+            }
             
             return result;
         });

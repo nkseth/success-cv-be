@@ -16,8 +16,16 @@ export const generatePresignedUrlController = asyncHandler(async (req, res) => {
         const { fileName, maxSizeInMB, expiryMinutes } = req.body;
         const userId = req.userID; // Get from authenticated user
 
+        logger.info("Presigned URL request received", { fileName, userId, body: req.body });
+
         if (!fileName) {
+            logger.warn("Presigned URL request missing fileName", { userId });
             return sendError(res, "fileName is required", 400);
+        }
+
+        if (!userId) {
+            logger.warn("Presigned URL request missing user authentication");
+            return sendError(res, "Authentication required", 401);
         }
 
         // Use user ID as container name (simplified approach)
@@ -32,7 +40,10 @@ export const generatePresignedUrlController = asyncHandler(async (req, res) => {
 
         const result = await generatePresignedUploadUrl(containerName, fileName, options);
 
-        logger.info(`Generated presigned URL for user ${userId}, file: ${fileName}`);
+        logger.info(`Generated presigned URL for user ${userId}, file: ${fileName}`, { 
+            originalName: result.originalName,
+            generatedName: result.fileName 
+        });
 
         return sendSuccess(res, result, "Presigned URL generated successfully");
 

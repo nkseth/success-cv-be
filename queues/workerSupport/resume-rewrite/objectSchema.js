@@ -34,21 +34,21 @@ export const optimizedSummarySchema = z.object({
 /**
  * Optimized Experience Entry Schema
  * MUST match the exact structure used in resume analysis for seamless data flow
- * Uses summary + highlights format (analysis) which gets converted to HTML description on apply
+ * Uses HTML description format with ALL achievements as list items
  */
 export const optimizedExperienceSchema = z.object({
-    id: z.string().describe('Unique identifier for this experience (e.g., "exp_1", "exp_2") - preserve from input'),
-    company: z.string().describe('Company name - preserve exactly as provided'),
-    position: z.string().describe('Job title - can be enhanced for ATS'),
-    location: z.string().nullable().optional().default('').describe('Job location - preserve as provided'),
-    startDate: z.string().nullable().optional().describe('Start date - preserve exactly as provided'),
-    endDate: z.string().nullable().optional().describe('End date or Present - preserve exactly as provided'),
-    current: z.boolean().optional().describe('Is current position'),
-    description: z.string().nullable().optional().default('').describe('HTML formatted content with bullet points: <ul><li>Achievement 1</li><li>Achievement 2</li></ul>. Put ALL bullet points here as HTML list items.'),
-    achievements: z.array(z.string()).optional().default([]).describe('Keep as empty array - all achievements go in description as HTML'),
-    keywords: z.array(z.string()).optional().default([]).describe('ATS keywords for this role'),
-    website: z.string().optional().default('').describe('Company website if available')
-}).describe('Optimized work experience entry - must preserve id, company, dates');
+    id: z.string().describe('Unique identifier - MUST preserve from input exactly (e.g., "exp_1")'),
+    company: z.string().describe('Company name - MUST preserve exactly as provided'),
+    position: z.string().describe('Job title - can enhance for ATS'),
+    location: z.string().nullable().optional().default('').describe('Location - MUST preserve exactly'),
+    startDate: z.string().nullable().optional().describe('Start date - COPY EXACTLY from input'),
+    endDate: z.string().nullable().optional().describe('End date - COPY EXACTLY from input'),
+    current: z.boolean().optional().describe('Current position - COPY EXACTLY from input'),
+    description: z.string().nullable().optional().default('').describe('HTML with ALL original bullets enhanced: <ul><li>Achievement 1</li><li>Achievement 2</li></ul>. Include EVERY bullet from original.'),
+    achievements: z.array(z.string()).optional().default([]).describe('Keep empty - all in description'),
+    keywords: z.array(z.string()).optional().default([]).describe('ATS keywords'),
+    website: z.string().optional().default('').describe('Company website')
+}).describe('Optimized experience - preserve ALL fields and bullet points');
 
 /**
  * Optimized Skills Schema

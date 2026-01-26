@@ -133,6 +133,9 @@ export const candidateSchemaSimplified = z.object({
       social: z.boolean().default(false).describe("Social trait. If uncertain, use false."),
       enterprising: z.boolean().default(false).describe("Enterprising trait. If uncertain, use false."),
       conventional: z.boolean().default(false).describe("Conventional trait. If uncertain, use false.")
+    }).default({
+      realistic: false, investigative: false, artistic: false,
+      social: false, enterprising: false, conventional: false
     }).describe("Candidate traits based on resume content."),
     
     intelligence_types: z.object({
@@ -144,13 +147,39 @@ export const candidateSchemaSimplified = z.object({
       interpersonal: z.boolean().default(false).describe("Interpersonal intelligence. If uncertain, use false."),
       intrapersonal: z.boolean().default(false).describe("Intrapersonal intelligence. If uncertain, use false."),
       naturalistic: z.boolean().default(false).describe("Naturalistic intelligence. If uncertain, use false.")
+    }).default({
+      linguistic: false, logical_mathematical: false, musical: false,
+      bodily_kinesthetic: false, spatial: false, interpersonal: false,
+      intrapersonal: false, naturalistic: false
     }).describe("Intelligence types based on resume content."),
     
     personality_type: z.string().default("").describe("Personality type. If uncertain, use empty string."),
     secondary_alignment: z.string().default("").describe("Secondary alignment. If uncertain, use empty string."),
     personality_description: z.string().default("").describe("Personality description. If uncertain, use empty string."),
     tags: z.array(z.string()).default([]).describe("Personality tags. If none, use empty array.")
-  }).describe("Personality assessment based on resume content."),
+  }).default({}).describe("Personality assessment based on resume content."),
+
+  // TOP-LEVEL FALLBACKS for fields AI sometimes places at root instead of nested
+  // These ensure validation passes even if AI puts them at wrong level
+  intelligence_types: z.object({
+    linguistic: z.boolean().default(false),
+    logical_mathematical: z.boolean().default(false),
+    musical: z.boolean().default(false),
+    bodily_kinesthetic: z.boolean().default(false),
+    spatial: z.boolean().default(false),
+    interpersonal: z.boolean().default(false),
+    intrapersonal: z.boolean().default(false),
+    naturalistic: z.boolean().default(false)
+  }).optional().default({
+    linguistic: false, logical_mathematical: false, musical: false,
+    bodily_kinesthetic: false, spatial: false, interpersonal: false,
+    intrapersonal: false, naturalistic: false
+  }).describe("Fallback for intelligence_types if AI places at root level."),
+  
+  personality_type: z.string().optional().default("").describe("Fallback for personality_type at root level."),
+  secondary_alignment: z.string().optional().default("").describe("Fallback for secondary_alignment at root level."),
+  personality_description: z.string().optional().default("").describe("Fallback for personality_description at root level."),
+  tags: z.array(z.string()).optional().default([]).describe("Fallback for tags at root level."),
 
   // Simplified relevance scoring
   relevance: z.object({
@@ -170,7 +199,7 @@ export const candidateSchemaSimplified = z.object({
     "Strengths": z.string().default("General resume strengths").describe("Strengths. If none, use default."),
     "Weaknesses": z.string().default("General areas for improvement").describe("Weaknesses. If none, use default."),
     "Description": z.string().default("Resume analysis summary").describe("Description. If none, use default.")
-  }).describe("Relevance scoring and assessment."),
+  }).default({}).describe("Relevance scoring and assessment."),
 
   JobFitScore: z.number().min(0).max(100).default(50).describe("Job fit score 0-100."),
   jobFitReason: z.string().default("Standard candidate profile").describe("Job fit reasoning. If none, use default."),
@@ -187,7 +216,48 @@ export const candidateSchemaSimplified = z.object({
     current_quality: z.number().min(0).max(100).default(70).describe("Current resume quality."),
     potential_after_fixes: z.number().min(0).max(100).default(80).describe("Potential quality after fixes."),
     improvement_points: z.number().min(0).max(100).default(10).describe("Expected improvement in points.")
-  }).describe("Resume quality scoring separate from job fit."),
+  }).default({}).describe("Resume quality scoring separate from job fit."),
+
+  // WEAK BULLET POINT REWRITES - The most valuable part for users
+  weak_bullet_rewrites: z.array(z.object({
+    experience_company: z.string().default("").describe("Company name where this bullet is from."),
+    original_bullet: z.string().default("").describe("The exact original weak bullet point from resume."),
+    problem: z.string().default("").describe("What's wrong with it: vague, no metrics, passive voice, duty vs achievement, etc."),
+    rewritten_bullet: z.string().default("").describe("Improved version with action verb + what + how + measurable result."),
+    improvement_reason: z.string().default("").describe("Why the rewrite is better and what impact it shows.")
+  })).default([]).describe("CRITICAL: Identify the 5-10 weakest bullet points and provide specific rewrites. Each should show before/after transformation."),
+
+  // MISSING SKILLS FOR TARGET ROLE
+  missing_skills_analysis: z.object({
+    inferred_target_role: z.string().default("").describe("What role is this candidate targeting based on their experience/summary?"),
+    skills_they_have: z.array(z.string()).default([]).describe("Skills from resume that match the target role."),
+    critical_missing_skills: z.array(z.string()).default([]).describe("MUST-HAVE skills for target role that are completely missing."),
+    nice_to_have_missing: z.array(z.string()).default([]).describe("Nice-to-have skills that would make them more competitive."),
+    hidden_skills: z.array(z.string()).default([]).describe("Skills mentioned in experience but NOT in skills section - should be added."),
+    outdated_skills: z.array(z.string()).default([]).describe("Skills that are outdated and should be updated or removed."),
+    skill_gap_severity: z.enum(["MINOR", "MODERATE", "SIGNIFICANT", "CRITICAL"]).default("MODERATE").describe("How severe is the skills gap for target role?"),
+    recommendations: z.array(z.string()).default([]).describe("Specific actions to close the skills gap.")
+  }).default({}).describe("Deep analysis of skills gap for target role."),
+
+  // ATS KEYWORD ANALYSIS
+  ats_keyword_analysis: z.object({
+    ats_score: z.number().min(0).max(100).default(50).describe("ATS compatibility score 0-100."),
+    keywords_found: z.array(z.string()).default([]).describe("Relevant keywords present in resume."),
+    keywords_missing: z.array(z.string()).default([]).describe("Critical keywords missing for target role."),
+    keyword_stuffing: z.array(z.string()).default([]).describe("Keywords that are overused or seem forced."),
+    ats_parsing_issues: z.array(z.string()).default([]).describe("Formatting issues that will break ATS parsing."),
+    ats_recommendations: z.array(z.string()).default([]).describe("Specific fixes to improve ATS score.")
+  }).default({}).describe("ATS compatibility and keyword analysis."),
+
+  // FIRST IMPRESSION ANALYSIS (6-second scan)
+  first_impression: z.object({
+    would_pass_6_second_test: z.boolean().default(false).describe("Would recruiter continue reading after 6 seconds?"),
+    value_proposition_clear: z.boolean().default(false).describe("Is it immediately clear what candidate offers?"),
+    biggest_first_impression_issue: z.string().default("").describe("The #1 thing hurting first impression."),
+    what_recruiter_sees_first: z.string().default("").describe("What stands out in first 6 seconds."),
+    what_should_stand_out: z.string().default("").describe("What SHOULD stand out but doesn't."),
+    first_impression_score: z.number().min(0).max(100).default(50).describe("First impression score 0-100.")
+  }).default({}).describe("Analysis of first 6-second impression."),
 
   // Critical Mistakes (Must Fix Immediately)
   critical_mistakes: z.array(z.object({
@@ -253,7 +323,7 @@ export const candidateSchemaSimplified = z.object({
       strategy: z.string().default("Continuous learning").describe("Strategy to achieve."),
       timeline: z.string().default("6-12 months").describe("Expected timeline.")
     })).default([]).describe("Long-term career positioning. Provide 3-5 goals if applicable.")
-  }).describe("Step-by-step improvement roadmap."),
+  }).default({}).describe("Step-by-step improvement roadmap."),
 
   // Impact Analysis
   impact_analysis: z.object({
@@ -265,5 +335,5 @@ export const candidateSchemaSimplified = z.object({
     optimized_ats_pass_rate: z.number().min(0).max(100).default(75).describe("Optimized ATS pass rate %."),
     competitive_ranking: z.string().default("Average").describe("Current ranking among similar candidates."),
     expected_ranking_improvement: z.string().default("Above Average").describe("Expected ranking after improvements.")
-  }).describe("Quantified impact of identified mistakes and improvements.")
+  }).default({}).describe("Quantified impact of identified mistakes and improvements.")
 });

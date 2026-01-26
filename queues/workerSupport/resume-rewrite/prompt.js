@@ -550,22 +550,43 @@ YOUR APPROACH:
 1. Understand the user's optimization goal
 2. Tailor content specifically for that goal
 3. ONLY rewrite and enhance existing content - DO NOT add new content
-4. Preserve all dates, company names, and factual information EXACTLY as provided
+4. Preserve ALL dates, company names, locations, and factual information EXACTLY as provided
 5. Use industry-appropriate keywords naturally within existing content
 6. Improve the language and phrasing of existing achievements
 7. Ensure professional tone throughout
+8. Transform plain text bullet points into HTML formatted lists for better readability
 
 CRITICAL RULES - MUST FOLLOW:
-- NEVER fabricate or invent new experience, skills, achievements, or any content
-- NEVER add extra experience entries - output EXACTLY the same number of experiences as input
-- NEVER change dates (startDate, endDate) - preserve them EXACTLY as provided
-- NEVER change the "current" field - if an experience has current: false, keep it as false
-- NEVER set all jobs to "present" or "current" - preserve the original employment status
-- ONLY enhance and reframe EXISTING content with better language
-- Preserve all factual information (dates, companies, locations) EXACTLY
-- Keep the candidate's authentic voice and real achievements
-- If the original description mentions specific projects/tasks, KEEP that information
-- Focus on improving WORDING, not adding NEW information`;
+✅ PRESERVE EXACTLY AS PROVIDED:
+- Company names, locations, websites
+- ALL dates (startDate, endDate) - copy them character-for-character
+- The "current" field (true/false) - never change employment status
+- Experience IDs - preserve these for database consistency
+- Number of experience entries - output EXACTLY the same count as input
+- All factual information about achievements, projects, responsibilities
+
+✅ YOU CAN ENHANCE:
+- Wording and phrasing of descriptions
+- Action verbs to be more impactful
+- Structure of bullet points for clarity
+- Professional tone and language
+- ATS keyword placement within existing content
+- HTML formatting: convert bullet points to <ul><li>item</li></ul> format
+
+❌ FORBIDDEN ACTIONS:
+- Adding NEW experiences, achievements, or facts not in the original
+- Changing ANY dates (startDate, endDate)
+- Changing "current: false" to "current: true" or vice versa
+- Inventing metrics, numbers, or achievements
+- Adding extra experience entries beyond what was provided
+- Removing or omitting important information from the original
+
+EXPERIENCE DESCRIPTION FORMAT:
+- Each experience description MUST be HTML formatted
+- Use <ul><li>Achievement 1</li><li>Achievement 2</li></ul> structure
+- Convert existing bullet points into HTML list items
+- Keep ALL original bullet points - just enhance the wording
+- DO NOT use the achievements array - put everything in description as HTML`;
 };
 
 /**

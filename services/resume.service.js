@@ -1771,38 +1771,44 @@ export const optimizeResumeContent = async (currentContent, userPrompt, options 
         // Build prompt using the new user-driven approach
         const prompt = getUserDrivenOptimizationPrompt(currentContent, userPrompt, options);
         
-        // Get the user-driven system prompt
+        // Get the user-driven system prompt with enhanced preservation rules
         const systemPrompt = `${getUserDrivenSystemPrompt()}
 
+⚠️ CRITICAL DATA PRESERVATION RULES:
+1. DATES: Copy startDate, endDate, and current fields EXACTLY as provided - character-for-character
+2. COMPANIES: Copy company names, locations EXACTLY - do not change spelling or formatting
+3. EXPERIENCE COUNT: Return EXACTLY ${(currentContent?.experience || []).length} experience entries - no more, no less
+4. EXPERIENCE IDS: Each experience has an ID field - preserve these EXACTLY as provided
+5. FACTUAL INFO: All achievements, projects, and responsibilities in the original MUST be included in the rewrite
+6. NO FABRICATION: Do not invent new achievements, metrics, or facts - only reword existing ones
+
 EXPERIENCE DESCRIPTION FORMAT:
-- The description field MUST contain bullet points using HTML: <ul><li>Achievement 1</li><li>Achievement 2</li></ul>
+- The description field MUST contain HTML bullet points: <ul><li>Achievement 1</li><li>Achievement 2</li></ul>
+- Convert ALL existing bullets/achievements from the original into HTML list items
 - Always format experience descriptions as bullet points for better readability
 - Each bullet should ONLY reword existing achievements from the original description
-- Use 3-6 bullet points per experience entry
+- Use 3-8 bullet points per experience based on how many exist in the original
 - The achievements array should be EMPTY - put all content in description as HTML bullets
-- NEVER add new achievements, metrics, or responsibilities that weren't in the original
-
-⚠️ CRITICAL DATE PRESERVATION RULES:
-- COPY startDate, endDate, and current fields EXACTLY as provided in input
-- If endDate is a specific date like "2023-05" or "December 2023", keep it EXACTLY
-- If current is false, it MUST remain false - DO NOT change it to true
-- DO NOT set all jobs to "present" or change past jobs to appear current
-- The employment dates are FACTS that must never be altered
+- NEVER drop or omit information from the original - ALL points must be included
 
 OUTPUT FORMAT:
 - summary: { text: "rewritten summary tailored to user's goal", keywords: [] } (keywords should always be empty array)
-- experience: array of { company, position, location, startDate, endDate, current, description (HTML with bullets), achievements: [] }
+- experience: array of { id, company, position, location, startDate, endDate, current, description (HTML with bullets), achievements: [], keywords: [] }
+  - id, company, location: MUST BE COPIED EXACTLY FROM INPUT
   - startDate, endDate, current: MUST BE COPIED EXACTLY FROM INPUT - NO CHANGES ALLOWED
+  - description: HTML formatted with ALL original bullet points enhanced
 - skills: { technical: [], soft: [], tools: [], languages: [], certifications: [] }
 - estimatedAtsScore: number (0-100) - your estimate after optimization
 - fixesSummary: "Brief description of how resume was optimized for user's goal"
 
 ⛔ FORBIDDEN ACTIONS:
 - Adding extra experience entries beyond what was provided
-- Changing any dates (startDate, endDate)
-- Changing current field from false to true
+- Changing any dates (startDate, endDate)  
+- Changing current field from false to true or vice versa
 - Inventing new achievements, metrics, or facts
-- Adding content that wasn't in the original resume`;
+- Adding content that wasn't in the original resume
+- Omitting or dropping bullet points/achievements from the original
+- Reducing the number of experience entries`;
 
         // Generate optimization using AI with the simplified schema
         const optimizedContent = await aiService.generateAiResponseObject({
@@ -1830,6 +1836,18 @@ OUTPUT FORMAT:
         // Only allow AI to change: description, position (enhancement), keywords
         const mergedExperience = (optimizedContent.experience || []).slice(0, originalExperiences.length).map((exp, idx) => {
             const originalExp = originalExperiences[idx] || {};
+            
+            // Ensure we don't lose description content - use AI's enhanced version, or fall back to original
+            let finalDescription = exp.description;
+            if (!finalDescription || finalDescription.trim() === '' || finalDescription === '<ul></ul>') {
+                // AI returned empty description - keep original
+                finalDescription = originalExp.description || '';
+                logger.warn('[RESUME_SERVICE] AI returned empty description for experience, keeping original', {
+                    idx,
+                    company: originalExp.company
+                });
+            }
+            
             return {
                 // ALWAYS preserve these fields from original - never use AI values
                 id: originalExp.id || exp.id || `exp_${idx + 1}`,
@@ -1841,7 +1859,7 @@ OUTPUT FORMAT:
                 website: originalExp.website || exp.website,
                 // Allow AI to enhance these fields
                 position: exp.position || originalExp.position,
-                description: exp.description || originalExp.description || '',
+                description: finalDescription,
                 achievements: exp.achievements || [],
                 keywords: exp.keywords || []
             };
@@ -1867,17 +1885,40 @@ OUTPUT FORMAT:
         const estimatedAtsScore = optimizedContent.estimatedAtsScore || options.targetATSScore || 85;
         
         // Return content in a format ready for direct application
+        // CRITICAL: Always preserve original content if AI returns null/empty
+        const originalSkills = currentContent?.skills || {};
+        const optimizedSkills = optimizedContent.skills || {};
+        
+        // Merge skills - preserve original if AI didn't return anything
+        const mergedSkills = {
+            technical: optimizedSkills.technical?.length > 0 ? optimizedSkills.technical : (originalSkills.technical || []),
+            soft: optimizedSkills.soft?.length > 0 ? optimizedSkills.soft : (originalSkills.soft || []),
+            tools: optimizedSkills.tools?.length > 0 ? optimizedSkills.tools : (originalSkills.tools || []),
+            languages: optimizedSkills.languages?.length > 0 ? optimizedSkills.languages : (originalSkills.languages || []),
+            certifications: originalSkills.certifications || [] // Always preserve certifications from original
+        };
+        
+        logger.info('[RESUME_SERVICE] Skills merge completed', {
+            technicalCount: mergedSkills.technical.length,
+            softCount: mergedSkills.soft.length,
+            toolsCount: mergedSkills.tools.length,
+            languagesCount: mergedSkills.languages.length,
+            certificationsPreserved: mergedSkills.certifications.length
+        });
+        
         return {
             content: {
                 // Personal info is preserved from original (not modified by optimization)
                 personalInfo: currentContent?.personalInfo || currentContent?.personal_info || null,
                 // Ensure keywords are always empty in rewrites
-                summary: optimizedContent.summary ? { ...optimizedContent.summary, keywords: [] } : null,
+                summary: optimizedContent.summary ? { ...optimizedContent.summary, keywords: [] } : (currentContent?.summary || null),
                 // Use merged experience with preserved IDs
                 experience: mergedExperience,
                 // Education is preserved from original (minimal changes needed)
                 education: currentContent?.education || [],
-                skills: optimizedContent.skills || null,
+                // Use merged skills that preserve original if AI returned empty
+                skills: mergedSkills,
+                // Additional sections always preserved from original
                 additionalSections: currentContent?.additionalSections || null
             },
             // Scores - AI estimates the new ATS score based on optimization
