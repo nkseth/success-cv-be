@@ -1336,3 +1336,218 @@
  *                     pagination:
  *                       $ref: '#/components/schemas/Pagination'
  */
+
+// ==================== CREDIT/WALLET MANAGEMENT ENDPOINTS ====================
+
+/**
+ * @swagger
+ * /api/v1/admin/wallets:
+ *   get:
+ *     summary: Get wallet info for a user or organisation
+ *     description: Retrieve wallet balance and recent transactions for a specific user or organisation. Use this to check credit balance before making adjustments.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: ownerType
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [user, organisation]
+ *         description: Whether the wallet belongs to a user or organisation
+ *       - in: query
+ *         name: ownerId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the user or organisation
+ *     responses:
+ *       200:
+ *         description: Wallet info retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     ownerType:
+ *                       type: string
+ *                       enum: [user, organisation]
+ *                     ownerId:
+ *                       type: integer
+ *                     wallet:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: integer
+ *                         balance:
+ *                           type: integer
+ *                           description: Available credits
+ *                         pendingBalance:
+ *                           type: integer
+ *                           description: Credits reserved for in-progress tasks
+ *                         lifetimeCredits:
+ *                           type: integer
+ *                           description: Total credits ever added
+ *                         lifetimeUsed:
+ *                           type: integer
+ *                           description: Total credits ever consumed
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *                         updatedAt:
+ *                           type: string
+ *                           format: date-time
+ *                     recentTransactions:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                           type:
+ *                             type: string
+ *                             enum: [purchase, debit, refund, admin_adjustment]
+ *                           amount:
+ *                             type: integer
+ *                           balanceAfter:
+ *                             type: integer
+ *                           description:
+ *                             type: string
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *       400:
+ *         description: Missing or invalid parameters
+ *       401:
+ *         description: Unauthorized - Admin authentication required
+ */
+
+/**
+ * @swagger
+ * /api/v1/admin/wallets/adjust:
+ *   post:
+ *     summary: Adjust credits for a user or organisation wallet
+ *     description: |
+ *       Add or remove credits from a user's or organisation's wallet. 
+ *       Use positive amount to add credits, negative amount to remove credits.
+ *       A reason is required for audit purposes. This action is logged in admin activity logs.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - ownerType
+ *               - ownerId
+ *               - amount
+ *               - reason
+ *             properties:
+ *               ownerType:
+ *                 type: string
+ *                 enum: [user, organisation]
+ *                 description: Whether the wallet belongs to a user or organisation
+ *               ownerId:
+ *                 type: integer
+ *                 description: ID of the user or organisation
+ *               amount:
+ *                 type: integer
+ *                 description: Credits to add (positive) or remove (negative). Cannot be zero.
+ *               reason:
+ *                 type: string
+ *                 minLength: 5
+ *                 description: Required explanation for the adjustment (min 5 characters)
+ *           examples:
+ *             addCredits:
+ *               summary: Add credits to user wallet
+ *               value:
+ *                 ownerType: user
+ *                 ownerId: 123
+ *                 amount: 100
+ *                 reason: Promotional credits for beta testing
+ *             removeCredits:
+ *               summary: Remove credits from organisation wallet
+ *               value:
+ *                 ownerType: organisation
+ *                 ownerId: 5
+ *                 amount: -50
+ *                 reason: Credit refund due to billing error
+ *     responses:
+ *       200:
+ *         description: Credits adjusted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: 100 credits added to wallet successfully
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     ownerType:
+ *                       type: string
+ *                     ownerId:
+ *                       type: integer
+ *                     adjustment:
+ *                       type: integer
+ *                       description: The amount that was adjusted
+ *                     wallet:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: integer
+ *                         balance:
+ *                           type: integer
+ *                         pendingBalance:
+ *                           type: integer
+ *                         lifetimeCredits:
+ *                           type: integer
+ *                         lifetimeUsed:
+ *                           type: integer
+ *                     transaction:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           format: uuid
+ *                         type:
+ *                           type: string
+ *                           example: admin_adjustment
+ *                         amount:
+ *                           type: integer
+ *                         balanceAfter:
+ *                           type: integer
+ *                         description:
+ *                           type: string
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *       400:
+ *         description: |
+ *           Invalid request:
+ *           - Missing required fields
+ *           - Invalid ownerType
+ *           - Amount is zero
+ *           - Reason too short
+ *           - Insufficient balance for removal
+ *       401:
+ *         description: Unauthorized - Admin authentication required
+ *       404:
+ *         description: Wallet not found
+ */

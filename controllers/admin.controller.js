@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import { AppError, asyncHandler } from "../middleware/error.js";
 import { sendSuccess } from "../utils/apiHelpers.js";
 import { validateEmail, validateString, validateInteger } from "../utils/validate-helper.js";
-import { userTypeConstants, adminRoleConstants } from "../utils/constants.js";
+import { userTypeConstants, adminRoleConstants, adminActionConstants } from "../utils/constants.js";
 import {
     authenticateAdminService,
     createAdminService,
@@ -30,8 +30,10 @@ import {
     createUserService,
     createCandidateService,
     createOrganisationService,
-    addUserToOrganisationService
+    addUserToOrganisationService,
+    logAdminActivityService
 } from "../services/admin.service.js";
+import billingService from "../services/billing.service.js";
 
 // Helper to get request metadata
 const getRequestMeta = (req) => ({
@@ -633,4 +635,98 @@ export const getAdminDashboardController = asyncHandler(async (req, res, next) =
     };
 
     sendSuccess(res, stats, 'Dashboard stats retrieved successfully');
+});
+
+// ==================== CREDIT ADJUSTMENT CONTROLLERS ====================
+
+/**
+ * Get user or organisation wallet info
+ * GET /api/v1/admin/wallets?ownerType=user&ownerId=123
+ */
+export const getWalletController = asyncHandler(async (req, res, next) => {
+    const { ownerType, ownerId } = req.query;
+
+    if (!ownerType || !ownerId) {
+        return next(new AppError('ownerType and ownerId are required', 400));
+    }
+
+    if (!['user', 'organisation'].includes(ownerType)) {
+        return next(new AppError('ownerType must be "user" or "organisation"', 400));
+    }
+
+    const validOwnerID = validateInteger(ownerId, 'Owner ID');
+    const walletInfo = await billingService.getWalletForAdmin(ownerType, validOwnerID);
+
+    sendSuccess(res, { ownerType, ownerId: validOwnerID, ...walletInfo }, 'Wallet info retrieved successfully');
+});
+
+/**
+ * Adjust credits for a user or organisation wallet (add or remove)
+ * POST /api/v1/admin/wallets/adjust
+ * 
+ * Body: {
+ *   ownerType: 'user' | 'organisation',
+ *   ownerId: number,
+ *   amount: number, // Positive to add, negative to remove
+ *   reason: string  // Required explanation
+ * }
+ */
+export const adjustCreditsController = asyncHandler(async (req, res, next) => {
+    const { ownerType, ownerId, amount, reason } = req.body;
+
+    // Validate required fields
+    if (!ownerType || !ownerId || amount === undefined || amount === null) {
+        return next(new AppError('ownerType, ownerId, and amount are required', 400));
+    }
+
+    if (!['user', 'organisation'].includes(ownerType)) {
+        return next(new AppError('ownerType must be "user" or "organisation"', 400));
+    }
+
+    if (!reason || reason.trim().length < 5) {
+        return next(new AppError('A reason with at least 5 characters is required for credit adjustments', 400));
+    }
+
+    const validOwnerID = validateInteger(ownerId, 'Owner ID');
+    const validAmount = validateInteger(amount, 'Amount');
+
+    if (validAmount === 0) {
+        return next(new AppError('Amount cannot be zero', 400));
+    }
+
+    const { ipAddress, userAgent } = getRequestMeta(req);
+
+    // Perform the adjustment
+    const result = await billingService.adminAdjustCredits(
+        ownerType,
+        validOwnerID,
+        validAmount,
+        reason.trim(),
+        req.adminID
+    );
+
+    // Log the activity
+    await logAdminActivityService({
+        adminId: req.adminID,
+        action: adminActionConstants.ADJUST_CREDITS,
+        resourceType: ownerType === 'user' ? 'user' : 'organisation',
+        resourceId: validOwnerID,
+        details: {
+            amount: validAmount,
+            reason: reason.trim(),
+            walletId: result.wallet.id,
+            newBalance: result.wallet.balance,
+            transactionId: result.transaction.id
+        },
+        ipAddress,
+        userAgent
+    });
+
+    const action = validAmount > 0 ? 'added to' : 'removed from';
+    sendSuccess(res, {
+        ownerType,
+        ownerId: validOwnerID,
+        adjustment: validAmount,
+        ...result
+    }, `${Math.abs(validAmount)} credits ${action} wallet successfully`);
 });

@@ -42,7 +42,10 @@ import {
     // Activity logs
     getActivityLogsController,
     // Dashboard
-    getAdminDashboardController
+    getAdminDashboardController,
+    // Credit management
+    getWalletController,
+    adjustCreditsController
 } from "../../controllers/admin.controller.js";
 
 const router = Router();
@@ -97,6 +100,10 @@ router.post('/candidates', createCandidateController);
 router.get('/organisations', listAllOrganisationsController);
 router.post('/organisations', createOrganisationController);
 router.post('/organisations/:id/members', addUserToOrganisationController);
+
+// ==================== CREDIT/WALLET MANAGEMENT ====================
+router.get('/wallets', getWalletController);
+router.post('/wallets/adjust', adjustCreditsController);
 
 // ==================== ACTIVITY LOGS ====================
 router.get('/activity-logs', getActivityLogsController);

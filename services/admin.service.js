@@ -458,6 +458,13 @@ export const addUserToOrganisationService = async (memberData, adminId, ipAddres
 // ==================== ACTIVITY LOG SERVICES ====================
 
 /**
+ * Log admin activity
+ */
+export const logAdminActivityService = async (logData) => {
+    return await logAdminActivityModel(logData);
+};
+
+/**
  * Get admin activity logs
  */
 export const getActivityLogsService = async (options) => {

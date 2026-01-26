@@ -45,5 +45,6 @@ export const adminActionConstants = {
     CREATE_USER: 'create_user',
     CREATE_CANDIDATE: 'create_candidate',
     CREATE_ORGANISATION: 'create_organisation',
-    ADD_USER_TO_ORGANISATION: 'add_user_to_organisation'
+    ADD_USER_TO_ORGANISATION: 'add_user_to_organisation',
+    ADJUST_CREDITS: 'adjust_credits'
 }

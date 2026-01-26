@@ -13,6 +13,8 @@
  *     description: Organisation management, members, and invitations
  *   - name: Invites
  *     description: Invitation management and acceptance endpoints
+ *   - name: Billing
+ *     description: Subscriptions, credit management, and payment processing with Razorpay
  *   - name: Resume Analysis
  *     description: Resume analysis management and data retrieval endpoints
  *   - name: Resumes

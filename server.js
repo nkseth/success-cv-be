@@ -5,7 +5,7 @@ import { sendSuccess } from "./utils/apiHelpers.js";
 import cors from "cors";
 import helmet from "helmet";
 import dotenv from "dotenv";
-import { v1Routes } from "./routes/v1/index.route.js";
+import v1Routes from "./routes/v1/index.route.js";
 import swaggerUi from "swagger-ui-express";
 import { swaggerSpec } from "./config/swagger.config.js";
 import { connectRedis, disconnectRedis, bullMQConnection } from "./config/redis.config.js";
@@ -61,8 +61,18 @@ app.use(cors({
 app.use(requestLogger);
 
 // Body parsing middleware
+// Use verify option to capture raw body for webhook signature verification
 app.use(urlencoded({ extended: true, limit: '10mb' }));
-app.use(json({ limit: '10mb' }));
+app.use(json({ 
+    limit: '10mb',
+    verify: (req, res, buf) => {
+        // Store raw body for webhook signature verification
+        // Only capture for webhook endpoints
+        if (req.originalUrl.includes('/webhook')) {
+            req.rawBody = buf.toString();
+        }
+    }
+}));
 
 // Root route
 app.get("/", (req, res) => {

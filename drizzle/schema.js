@@ -55,3 +55,11 @@ export {
     jobScrapingLogsTable,
     userJobPreferencesTable
 } from './schema/jobs.schema.js';
+
+// Billing system tables (simplified - credits only, no subscriptions)
+export {
+    creditWalletsTable,
+    creditTransactionsTable,
+    paymentOrdersTable,
+    razorpayWebhooksTable
+} from './schema/billing.js';
