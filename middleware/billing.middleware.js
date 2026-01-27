@@ -153,7 +153,94 @@ export const checkCreditsAvailable = async (req, res, next) => {
     }
 };
 
+/**
+ * Middleware to validate resume content before analysis
+ * Must run BEFORE checkAndReserveCredits to avoid reserving credits for invalid requests
+ */
+export const validateResumeContentForAnalysis = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const { userID, candidateID, type: userType } = req;
+        
+        // Dynamic import to avoid circular dependencies
+        const { validateInteger } = await import('../utils/validate-helper.js');
+        const { validateResumeForAnalysis } = await import('../utils/resumeSchema.js');
+        const { getDynamicTables, isCandidate } = await import('../utils/dynamic-tables.js');
+        const { db } = await import('../config/db.js');
+        const { resumeContentTable, candidateResumeContentTable } = await import('../drizzle/schema.js');
+        const { eq, and } = await import('drizzle-orm');
+        
+        const resumeContentID = validateInteger(id, 'Resume ID');
+        const entityID = isCandidate(userType) ? candidateID : userID;
+        
+        // Get appropriate tables based on user type
+        const tables = getDynamicTables(userType);
+        const entityIDColumn = tables.entityIDColumn;
+        const contentTable = isCandidate(userType) ? candidateResumeContentTable : resumeContentTable;
+        
+        // Fetch the resume content
+        const [resumeContent] = await db.select()
+            .from(contentTable)
+            .where(
+                and(
+                    eq(contentTable.id, resumeContentID),
+                    eq(contentTable[entityIDColumn], entityID)
+                )
+            )
+            .limit(1);
+        
+        if (!resumeContent) {
+            throw new AppError('Resume not found or you do not have permission to access it', 404);
+        }
+        
+        // Validate the resume has sufficient content for analysis
+        const contentToValidate = {
+            personalInfo: resumeContent.personalInfo || {},
+            summary: resumeContent.summary || {},
+            experience: resumeContent.experience || [],
+            education: resumeContent.education || [],
+            skills: resumeContent.skills || {},
+            additionalSections: resumeContent.additionalSections || []
+        };
+        
+        const validation = validateResumeForAnalysis(contentToValidate);
+        
+        if (!validation.isValid) {
+            logger.warn('[BILLING] Resume content validation failed before credit reservation', {
+                resumeContentID,
+                missingFields: validation.missingFields
+            });
+            
+            throw new AppError(
+                validation.message,
+                400,
+                {
+                    code: 'INSUFFICIENT_CONTENT',
+                    missingFields: validation.missingFields,
+                    details: validation.details,
+                    warnings: validation.warnings
+                }
+            );
+        }
+        
+        // Attach validated content to request for use in controller
+        req.validatedResumeContent = resumeContent;
+        req.contentValidation = validation;
+        
+        logger.info('[BILLING] Resume content validated successfully', {
+            resumeContentID,
+            entityID,
+            userType
+        });
+        
+        next();
+    } catch (error) {
+        next(error);
+    }
+};
+
 export default {
     checkAndReserveCredits,
-    checkCreditsAvailable
+    checkCreditsAvailable,
+    validateResumeContentForAnalysis
 };

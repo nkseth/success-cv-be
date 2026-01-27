@@ -176,6 +176,9 @@ export const getResumeContentByID = async (contentID, userID, userType = userTyp
                 activeRewriteID: tables.contentTable.activeRewriteID,
                 createdAt: tables.contentTable.createdAt,
                 updatedAt: tables.contentTable.updatedAt,
+                // Analysis fields
+                analysisStatus: tables.analysisTable.status,
+                analysisJobID: tables.analysisTable.jobID,
                 // Document fields
                 documentID: tables.documentTable.id,
                 documentTitle: tables.documentTable.title,
@@ -223,8 +226,31 @@ export const getResumeContentByAnalysisID = async (analysisID, userID, userType 
         logger.info('[RESUME_MODEL] Fetching resume content by analysis', { analysisID, userID, userType });
 
         const content = await db
-            .select()
+            .select({
+                // Content fields
+                id: tables.contentTable.id,
+                userID: tables.contentTable[entityIDField],
+                analysisID: tables.contentTable.analysisID,
+                personalInfo: tables.contentTable.personalInfo,
+                summary: tables.contentTable.summary,
+                experience: tables.contentTable.experience,
+                education: tables.contentTable.education,
+                skills: tables.contentTable.skills,
+                additionalSections: tables.contentTable.additionalSections,
+                currentScores: tables.contentTable.currentScores,
+                analysisSummary: tables.contentTable.analysisSummary,
+                version: tables.contentTable.version,
+                lastEditType: tables.contentTable.lastEditType,
+                lastEditedSection: tables.contentTable.lastEditedSection,
+                activeRewriteID: tables.contentTable.activeRewriteID,
+                createdAt: tables.contentTable.createdAt,
+                updatedAt: tables.contentTable.updatedAt,
+                // Analysis fields
+                analysisStatus: tables.analysisTable.status,
+                analysisJobID: tables.analysisTable.jobID
+            })
             .from(tables.contentTable)
+            .innerJoin(tables.analysisTable, eq(tables.contentTable.analysisID, tables.analysisTable.id))
             .where(
                 and(
                     eq(tables.contentTable.analysisID, analysisID),
@@ -1573,7 +1599,7 @@ export const createBlankDocument = async (userID, title, userType = userTypeCons
 
 /**
  * Create a blank analysis for manual resume creation
- * Status is "completed" since there's nothing to analyze
+ * Status is "draft" - awaiting user content before analysis can run
  * @param {number} userID - User ID
  * @param {number} documentID - Document ID
  * @param {string} userType - 'user' | 'candidate'
@@ -1597,16 +1623,17 @@ export const createBlankAnalysis = async (userID, documentID, userType = userTyp
             .values({
                 [entityIDField]: userID,
                 documentID,
-                status: 'completed', // No analysis needed for blank resumes
+                status: 'draft', // Awaiting content - no analysis run yet
                 createdAt: now,
                 updatedAt: now,
-                completedAt: now,
-                meta: JSON.stringify({ source: 'blank', createdManually: true })
+                completedAt: null, // Not completed until manual analysis runs
+                meta: JSON.stringify({ source: 'blank', createdManually: true, awaitingAnalysis: true })
             })
             .returning();
 
         logger.info('[RESUME_MODEL] ✅ Blank analysis created', {
             analysisID: analysis.id,
+            status: 'draft',
             userType
         });
 

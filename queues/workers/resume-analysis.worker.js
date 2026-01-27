@@ -105,6 +105,7 @@ import { getFileAccessUrl } from '../../services/Integraion/uploadImage.js';
 import resumeService from '../../services/resume.service.js';
 import { isCandidate as checkIsCandidate } from '../../utils/dynamic-tables.js';
 import { userTypeConstants } from '../../utils/constants.js';
+import billingModel from '../../models/billing.model.js';
 
 /**
  * Get tables for user type
@@ -128,7 +129,7 @@ function getTablesForUserType(userType) {
  * @returns {Promise<Object>} Analysis result
  */
 async function processResumeAnalysis(job) {
-    const { analysisID, userID, resumeId, documentData, meta, userType = userTypeConstants.USER } = job.data;
+    const { analysisID, userID, resumeId, documentData, meta, userType = userTypeConstants.USER, creditTransactionID } = job.data;
     const { title, fileURL } = documentData || {};
     
     // Get appropriate tables based on userType
@@ -419,6 +420,20 @@ async function processResumeAnalysis(job) {
         await executeWithProgress(job.id, 'COMPLETE', async () => {
             const scores = resumeData._scores || {};
             
+            // Confirm credit deduction (task completed successfully)
+            if (creditTransactionID) {
+                try {
+                    await billingModel.confirmDeduction(creditTransactionID);
+                    logger.info('[RESUME_ANALYSIS] ✅ Credit deduction confirmed', { creditTransactionID });
+                } catch (billingError) {
+                    logger.error('[RESUME_ANALYSIS] ⚠️ Failed to confirm credit deduction (non-critical)', {
+                        error: billingError.message,
+                        creditTransactionID
+                    });
+                    // Don't fail the job for billing issues
+                }
+            }
+            
             await publishJobUpdate(job.id, {
                 progress: 100,
                 status: 'completed',
@@ -510,6 +525,19 @@ async function processResumeAnalysis(job) {
             logger.error('[RESUME_ANALYSIS] Failed to update error status', { 
                 error: dbError.message 
             });
+        }
+
+        // Refund credits since task failed
+        if (creditTransactionID) {
+            try {
+                await billingModel.refundCredits(creditTransactionID, `Resume analysis failed: ${error.message}`);
+                logger.info('[RESUME_ANALYSIS] Credits refunded due to failure', { creditTransactionID });
+            } catch (billingError) {
+                logger.error('[RESUME_ANALYSIS] Failed to refund credits', {
+                    error: billingError.message,
+                    creditTransactionID
+                });
+            }
         }
 
         // Publish error update

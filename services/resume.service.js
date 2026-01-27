@@ -1014,6 +1014,7 @@ export const createRewrite = async (userID, analysisID, options = {}) => {
             userPrompt,
             targetATSScore = 90,
             versionLabel,
+            creditTransactionID,
             ...otherOptions 
         } = options;
         
@@ -1104,7 +1105,8 @@ export const createRewrite = async (userID, analysisID, options = {}) => {
             userPrompt: sanitizedPrompt,
             isDefaultPrompt: isDefaultPrompt,
             optimizationOptions: optimizationSettings,
-            userType
+            userType,
+            creditTransactionID  // Pass credit transaction for confirmation/refund
         });
 
         // Update rewrite with job ID

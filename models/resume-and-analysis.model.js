@@ -41,7 +41,7 @@ export const createUserDocument = async (userID, data) => {
     }
 }
 
-export const createAnalysisRecord = async (userID, documentID, meta, documentData) => {
+export const createAnalysisRecord = async (userID, documentID, meta, documentData, creditTransactionID = null) => {
     try {
 
         const [createAnalytics] = await db.insert(analysisTable).values({
@@ -61,7 +61,8 @@ export const createAnalysisRecord = async (userID, documentID, meta, documentDat
             userType: userTypeConstants.USER,
             resumeId: documentID,
             meta: meta || null,
-            documentData
+            documentData,
+            creditTransactionID
         });
 
         if (resp.error) {
@@ -115,7 +116,7 @@ export const createCandidateDocument = async (candidateID, data) => {
     }
 };
 
-export const createCandidateAnalysisRecord = async (candidateID, documentID, meta, documentData) => {
+export const createCandidateAnalysisRecord = async (candidateID, documentID, meta, documentData, creditTransactionID = null) => {
     try {
         const [createAnalytics] = await db.insert(candidateAnalysisTable).values({
             candidateID,
@@ -136,7 +137,8 @@ export const createCandidateAnalysisRecord = async (candidateID, documentID, met
             userType: userTypeConstants.CANDIDATE,
             resumeId: documentID,
             meta: meta || null,
-            documentData
+            documentData,
+            creditTransactionID
         });
 
         if (resp.error) {

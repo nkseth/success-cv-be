@@ -118,42 +118,63 @@ export const verifyPaymentController = asyncHandler(async (req, res) => {
  * IMPORTANT: This endpoint must:
  * 1. Receive raw body for signature verification
  * 2. Verify signature before processing
- * 3. Always return 200 to Razorpay
+ * 3. Always return 200 to Razorpay (even on errors, to prevent retries)
  */
-export const webhookController = asyncHandler(async (req, res) => {
-    const signature = req.headers['x-razorpay-signature'];
-    
-    if (!signature) {
-        logger.warn('[WEBHOOK] Missing signature header');
-        return res.status(400).json({ error: 'Missing signature' });
-    }
-    
-    // Get raw body for signature verification
-    // The raw body should be set by middleware before JSON parsing
-    const rawBody = req.rawBody;
-    
-    if (!rawBody) {
-        logger.error('[WEBHOOK] Raw body not available - middleware not configured correctly');
-        return res.status(500).json({ error: 'Server configuration error' });
-    }
-    
-    // Verify webhook signature
-    const isValid = razorpayService.verifyWebhookSignature(rawBody, signature);
-    
-    if (!isValid) {
-        logger.warn('[WEBHOOK] Invalid signature', { 
-            signatureLength: signature?.length,
-            bodyLength: rawBody?.length 
+export const webhookController = async (req, res) => {
+    try {
+        const signature = req.headers['x-razorpay-signature'];
+        
+        if (!signature) {
+            logger.warn('[WEBHOOK] Missing signature header');
+            // Still return 200 to prevent Razorpay from retrying invalid requests
+            return res.status(200).json({ status: 'error', error: 'Missing signature' });
+        }
+        
+        // Get raw body for signature verification
+        // The raw body should be set by middleware before JSON parsing
+        const rawBody = req.rawBody;
+        
+        if (!rawBody) {
+            logger.error('[WEBHOOK] Raw body not available - middleware not configured correctly');
+            return res.status(200).json({ status: 'error', error: 'Server configuration error' });
+        }
+        
+        // Verify webhook signature
+        const isValid = razorpayService.verifyWebhookSignature(rawBody, signature);
+        
+        if (!isValid) {
+            logger.warn('[WEBHOOK] Invalid signature', { 
+                signatureLength: signature?.length,
+                bodyLength: rawBody?.length 
+            });
+            // Return 200 to prevent retries of invalid signature requests
+            return res.status(200).json({ status: 'error', error: 'Invalid signature' });
+        }
+        
+        // Log incoming webhook for debugging
+        logger.info('[WEBHOOK] Received valid webhook', {
+            event: req.body?.event,
+            paymentId: req.body?.payload?.payment?.entity?.id,
+            orderId: req.body?.payload?.payment?.entity?.order_id
         });
-        return res.status(401).json({ error: 'Invalid signature' });
+        
+        // Process webhook - errors are handled internally
+        const result = await billingService.handleWebhook(req.body);
+        
+        // Always return 200 to Razorpay
+        res.status(200).json({ status: 'ok', ...result });
+    } catch (error) {
+        // Log the error but still return 200 to Razorpay
+        logger.error('[WEBHOOK] Unhandled error in webhook processing', {
+            error: error.message,
+            stack: error.stack,
+            body: req.body?.event
+        });
+        
+        // CRITICAL: Always return 200 to prevent Razorpay from retrying
+        res.status(200).json({ status: 'error', error: 'Internal processing error' });
     }
-    
-    // Process webhook
-    const result = await billingService.handleWebhook(req.body);
-    
-    // Always return 200 to Razorpay
-    res.status(200).json({ status: 'ok', ...result });
-});
+};
 
 export default {
     getConfigController,

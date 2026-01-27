@@ -15,6 +15,7 @@ import { optimizeResumeContent } from '../../services/resume.service.js';
 import { executeWithRewriteProgress, publishJobUpdate } from '../../utils/progressTracking.js';
 import { isCandidate as checkIsCandidate } from '../../utils/dynamic-tables.js';
 import { userTypeConstants } from '../../utils/constants.js';
+import billingModel from '../../models/billing.model.js';
 
 /**
  * Get tables for user type
@@ -210,7 +211,8 @@ async function processResumeRewrite(job) {
         targetJobID,  // NEW: Job-aware rewrite
         sourceResumeID,  // NEW: Source resume for job-aware rewrite
         jobMetadata,  // NEW: Job details for context
-        userType = userTypeConstants.USER
+        userType = userTypeConstants.USER,
+        creditTransactionID  // Credit transaction for billing
     } = job.data;
     
     // Get appropriate tables based on userType
@@ -606,6 +608,20 @@ ${userPrompt || 'Tailor this resume to maximize match with the target job requir
         await executeWithRewriteProgress(job.id, 'COMPLETE', async () => {
             logger.info('[RESUME_REWRITE] Job completed successfully');
             
+            // Confirm credit deduction (task completed successfully)
+            if (creditTransactionID) {
+                try {
+                    await billingModel.confirmDeduction(creditTransactionID);
+                    logger.info('[RESUME_REWRITE] ✅ Credit deduction confirmed', { creditTransactionID });
+                } catch (billingError) {
+                    logger.error('[RESUME_REWRITE] ⚠️ Failed to confirm credit deduction (non-critical)', {
+                        error: billingError.message,
+                        creditTransactionID
+                    });
+                    // Don't fail the job for billing issues
+                }
+            }
+            
             await publishJobUpdate(job.id, {
                 progress: 100,
                 status: 'completed',
@@ -652,6 +668,19 @@ ${userPrompt || 'Tailor this resume to maximize match with the target job requir
             logger.error('[RESUME_REWRITE] Failed to update rewrite status', {
                 error: dbError.message
             });
+        }
+
+        // Refund credits since task failed
+        if (creditTransactionID) {
+            try {
+                await billingModel.refundCredits(creditTransactionID, `Rewrite failed: ${error.message}`);
+                logger.info('[RESUME_REWRITE] Credits refunded due to failure', { creditTransactionID });
+            } catch (billingError) {
+                logger.error('[RESUME_REWRITE] Failed to refund credits', {
+                    error: billingError.message,
+                    creditTransactionID
+                });
+            }
         }
 
         // Publish error update

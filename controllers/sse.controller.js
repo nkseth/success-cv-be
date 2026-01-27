@@ -152,3 +152,73 @@ export const getStats = async (req, res) => {
         return sendError(res, `Failed to get SSE stats: ${error.message}`, 500);
     }
 };
+
+/**
+ * Connect and subscribe to a manual analysis job (One-step connection)
+ * GET /api/v1/sse/manual-analysis/:jobId
+ * 
+ * Specialized endpoint for monitoring manual resume analysis jobs.
+ * Auto-subscribes to the manual-resume-analysis queue for progress updates.
+ * 
+ * Usage: 
+ * new EventSource('/api/v1/sse/manual-analysis/manual-analysis-123-1699267200000')
+ * 
+ * Events emitted:
+ * - connected: Connection established
+ * - subscribed: Subscription confirmed
+ * - job_update: Progress updates (status, progress%, message, stage)
+ * - heartbeat: Keep-alive (every 30s)
+ * 
+ * Progress stages:
+ * - INIT (0%): Initializing resume analysis
+ * - PREPARING (15%): Preparing resume content for analysis
+ * - ANALYZING (40%): AI is analyzing your resume
+ * - SCORING (70%): Calculating scores and identifying improvements
+ * - SAVING (85%): Saving analysis results
+ * - COMPLETE (100%): Resume analysis completed
+ */
+export const connectToManualAnalysisJob = async (req, res) => {
+    try {
+        const { jobId } = req.params;
+        const connectionId = uuidv4();
+        
+        // Get subdomain context for logging
+        const subdomainInfo = req.subdomainContext ? {
+            userType: req.subdomainContext.userType,
+            subdomain: req.subdomain,
+            organisationSlug: req.organisationSlug
+        } : { userType: 'unknown' };
+        
+        logger.info('SSE: Manual analysis job connection established', { 
+            connectionId,
+            jobId,
+            queueName: 'manual-resume-analysis',
+            ip: req.ip,
+            ...subdomainInfo
+        });
+
+        // Create SSE connection
+        sseService.createConnection(connectionId, res, req);
+        
+        // Automatically subscribe to the job
+        await sseService.subscribeToJob(connectionId, jobId);
+
+        // Subscribe to manual-resume-analysis queue updates
+        await sseService.subscribeToQueue(connectionId, 'manual-resume-analysis');
+
+        logger.info('SSE: Manual analysis subscriptions active', {
+            connectionId,
+            subscriptions: {
+                job: jobId,
+                queue: 'manual-resume-analysis'
+            }
+        });
+
+    } catch (error) {
+        logger.error('SSE: Manual analysis job connection failed', { 
+            error: error.message,
+            jobId: req.params.jobId 
+        });
+        return sendError(res, `Failed to establish manual analysis job connection: ${error.message}`, 500);
+    }
+};

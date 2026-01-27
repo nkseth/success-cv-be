@@ -8,8 +8,10 @@ import {
     userDocumentTable,
     candidateAnalysisTable,
     candidateProcessedAndRawDataTable,
-    candidateDocumentTable
-} from "../drizzle/schema/analytics-rewrite-schema.js";
+    candidateDocumentTable,
+    resumeContentTable,
+    candidateResumeContentTable
+} from "../drizzle/schema.js";
 import { eq, and, desc, asc, inArray, gte, lte, or, like, ilike, count } from "drizzle-orm";
 import logger from "../middleware/logger.js";
 import { 
@@ -22,6 +24,8 @@ import {
 } from "../utils/pagination-filter.js";
 import { getDynamicTables, isCandidate } from "../utils/dynamic-tables.js";
 import { userTypeConstants } from "../utils/constants.js";
+import { validateResumeForAnalysis } from "../utils/resumeSchema.js";
+import { addManualAnalysisJob } from "../queues/manual-analysis.queue.js";
 
 /**
  * Get resume analysis details by analysis ID
@@ -443,6 +447,7 @@ export const createResumeController = asyncHandler(async (req, res, next) => {
 
     const userID = req.userID;
     const userType = req.type || userTypeConstants.USER;
+    const creditTransaction = req.creditTransaction;
     const validatedId = validateInteger(userID, 'User ID');
 
     // Get entity based on user type
@@ -488,7 +493,7 @@ export const createResumeController = asyncHandler(async (req, res, next) => {
             title: documentTitle,
             fileURL,
             meta: {}
-        });
+        }, creditTransaction?.id);
     } else {
         // Use user-specific functions
         createdDocument = await createUserDocument(validatedId, {
@@ -501,7 +506,7 @@ export const createResumeController = asyncHandler(async (req, res, next) => {
             title: documentTitle,
             fileURL,
             meta: {}
-        });
+        }, creditTransaction?.id);
     }
 
     if (!createAnalysis) {
@@ -514,4 +519,200 @@ export const createResumeController = asyncHandler(async (req, res, next) => {
         ...createAnalysis, 
         steps: "Use the jobId to track the analysis process" 
     }, "Document created successfully", 201);
+});
+
+/**
+ * Analyze a manually-created resume (blank resume with user content)
+ * POST /api/v1/resumes/:id/analyze
+ * 
+ * This endpoint:
+ * 1. Validates the resume has sufficient content
+ * 2. Reserves 1 credit (via middleware)
+ * 3. Queues the analysis job
+ * 4. Returns job ID for progress tracking
+ * 
+ * Requires: checkAndReserveCredits('analysis') middleware
+ */
+export const analyzeManualResumeController = asyncHandler(async (req, res, next) => {
+    const { id } = req.params;
+    const userID = req.userID;
+    const candidateID = req.candidateID;
+    const userType = req.type || userTypeConstants.USER;
+    const creditTransaction = req.creditTransaction;
+    
+    // Use pre-validated content from middleware (validateResumeContentForAnalysis)
+    // This middleware runs BEFORE credit reservation, so credits are only reserved for valid requests
+    let resumeContent = req.validatedResumeContent;
+    let validation = req.contentValidation;
+
+    // Validate resume ID
+    const resumeContentID = validateInteger(id, 'Resume ID');
+    const entityID = isCandidate(userType) ? candidateID : userID;
+
+    logger.info('[MANUAL_ANALYSIS] Starting manual resume analysis', {
+        resumeContentID,
+        entityID,
+        userType,
+        creditTransactionID: creditTransaction?.id,
+        hasPrevalidatedContent: !!resumeContent
+    });
+
+    // Get appropriate tables based on user type
+    const tables = getDynamicTables(userType);
+    const entityIDColumn = tables.entityIDColumn;
+    const contentTable = isCandidate(userType) ? candidateResumeContentTable : resumeContentTable;
+
+    // If no pre-validated content (middleware was bypassed), fetch and validate
+    if (!resumeContent) {
+        const [fetchedContent] = await db.select()
+            .from(contentTable)
+            .where(
+                and(
+                    eq(contentTable.id, resumeContentID),
+                    eq(contentTable[entityIDColumn], entityID)
+                )
+            )
+            .limit(1);
+
+        if (!fetchedContent) {
+            return next(new AppError('Resume not found or you do not have permission to access it', 404));
+        }
+
+        // Validate the resume has sufficient content for analysis
+        const contentToValidate = {
+            personalInfo: fetchedContent.personalInfo || {},
+            summary: fetchedContent.summary || {},
+            experience: fetchedContent.experience || [],
+            education: fetchedContent.education || [],
+            skills: fetchedContent.skills || {},
+            additionalSections: fetchedContent.additionalSections || []
+        };
+
+        validation = validateResumeForAnalysis(contentToValidate);
+
+        if (!validation.isValid) {
+            logger.warn('[MANUAL_ANALYSIS] Resume has insufficient content for analysis', {
+                resumeContentID,
+                missingFields: validation.missingFields,
+                details: validation.details
+            });
+
+            return next(new AppError(
+                validation.message,
+                400,
+                {
+                    code: 'INSUFFICIENT_CONTENT',
+                    missingFields: validation.missingFields,
+                    details: validation.details,
+                    warnings: validation.warnings
+                }
+            ));
+        }
+        
+        resumeContent = fetchedContent;
+    }
+
+    // Get the analysis record for this resume
+    const analysisID = resumeContent.analysisID;
+    if (!analysisID) {
+        return next(new AppError('No analysis record associated with this resume', 400));
+    }
+
+    // Get document ID
+    const dynAnalysisTable = tables.analysisTable;
+    const [analysisRecord] = await db.select()
+        .from(dynAnalysisTable)
+        .where(eq(dynAnalysisTable.id, analysisID))
+        .limit(1);
+
+    if (!analysisRecord) {
+        return next(new AppError('Analysis record not found', 404));
+    }
+
+    // Check if analysis is already in progress
+    if (analysisRecord.status === 'processing') {
+        return next(new AppError(
+            'Analysis is already in progress. Please wait for it to complete.',
+            409,
+            { 
+                code: 'ANALYSIS_IN_PROGRESS',
+                jobID: analysisRecord.jobID 
+            }
+        ));
+    }
+
+    // Final validation check before updating analysis - ensures empty resumes can't trigger analysis
+    // This is a safeguard in case middleware was bypassed or validation was skipped
+    if (!validation || !validation.isValid) {
+        const contentToRevalidate = {
+            personalInfo: resumeContent.personalInfo || {},
+            summary: resumeContent.summary || {},
+            experience: resumeContent.experience || [],
+            education: resumeContent.education || [],
+            skills: resumeContent.skills || {},
+            additionalSections: resumeContent.additionalSections || []
+        };
+        
+        const finalValidation = validateResumeForAnalysis(contentToRevalidate);
+        
+        if (!finalValidation.isValid) {
+            logger.warn('[MANUAL_ANALYSIS] Final validation failed - empty resume cannot be analyzed', {
+                resumeContentID,
+                entityID,
+                missingFields: finalValidation.missingFields
+            });
+            
+            return next(new AppError(
+                finalValidation.message,
+                400,
+                {
+                    code: 'INSUFFICIENT_CONTENT',
+                    missingFields: finalValidation.missingFields,
+                    details: finalValidation.details,
+                    warnings: finalValidation.warnings
+                }
+            ));
+        }
+        
+        validation = finalValidation;
+    }
+
+    // Update analysis status to pending
+    await db.update(dynAnalysisTable)
+        .set({
+            status: 'pending',
+            updatedAt: new Date()
+        })
+        .where(eq(dynAnalysisTable.id, analysisID));
+
+    // Queue the manual analysis job
+    const job = await addManualAnalysisJob({
+        analysisID,
+        userID: entityID,
+        userType,
+        resumeContentID,
+        documentID: analysisRecord.documentID,
+        creditTransactionID: creditTransaction?.id
+    });
+
+    logger.info('[MANUAL_ANALYSIS] Analysis job queued', {
+        jobId: job.id,
+        analysisID,
+        resumeContentID,
+        entityID,
+        userType
+    });
+
+    sendSuccess(res, {
+        analysisID,
+        resumeContentID,
+        jobID: job.id,
+        status: 'pending',
+        message: 'Resume analysis started. Use the jobID to track progress.',
+        validation: {
+            isValid: true,
+            details: validation.details,
+            warnings: validation.warnings
+        }
+    }, 'Resume analysis started successfully', 202);
 });

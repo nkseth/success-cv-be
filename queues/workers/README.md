@@ -43,6 +43,24 @@ npm run worker:email:dev    # Development
 - Candidate verification emails (with credentials)
 - Generic emails
 
+### 4. Manual Analysis Worker
+**File**: `manual-analysis.worker.js`
+
+Analyzes manually-created resumes (blank resumes with user-entered content). Unlike the regular analysis worker, this does NOT extract content from files - it analyzes existing structured resume content and provides AI-powered scoring, mistake identification, and improvement recommendations.
+
+**Start Commands:**
+```bash
+npm run worker:manual-analysis      # Production
+npm run worker:manual-analysis:dev  # Development
+```
+
+**Features:**
+- Validates resume has sufficient content
+- Converts structured resume data to text for AI analysis
+- Uses the same AI scoring schema as upload analysis
+- Provides ATS scores, content quality scores, and improvement plans
+- Integrates with billing (costs 1 credit per analysis)
+
 ## Architecture
 
 ```

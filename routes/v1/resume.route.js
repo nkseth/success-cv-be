@@ -2,6 +2,7 @@ import { Router } from "express";
 import logger from "../../middleware/logger.js";
 import { sendSuccess } from "../../utils/apiHelpers.js";
 import { commonAuthenticate } from "../../middleware/authenticate-routes.js";
+import { checkAndReserveCredits, validateResumeContentForAnalysis } from "../../middleware/billing.middleware.js";
 import {
     // Resume content endpoints
     getAllResumesController,
@@ -41,6 +42,10 @@ import {
     downloadWithCustomThemeController,
     getDownloadInfoController
 } from "../../controllers/download.controller.js";
+import {
+    // Manual analysis endpoint
+    analyzeManualResumeController
+} from "../../controllers/resume-analysis.controller.js";
 
 const router = Router();
 
@@ -173,23 +178,34 @@ router.patch('/:id/title', updateTitleController);
  */
 router.post('/:id/publish', publishResumeController);
 
+/**
+ * @route POST /api/v1/resumes/:id/analyze
+ * @desc Analyze a manually-created resume (blank resume with user content)
+ * @access Private
+ * @note Costs 1 credit. Validates resume has sufficient content before reserving credits.
+ * @returns { analysisID, resumeContentID, jobID, status, validation }
+ */
+router.post('/:id/analyze', validateResumeContentForAnalysis, checkAndReserveCredits('analysis'), analyzeManualResumeController);
+
 // ========== REWRITE ROUTES ==========
 
 /**
  * @route POST /api/v1/resumes/:id/rewrites
  * @desc Create a new rewrite job for resume based on user's optimization prompt
  * @access Private
+ * @note Costs 1 credit
  * @body { prompt: string (REQUIRED), versionLabel?: string, targetATSScore?: number }
  */
-router.post('/:id/rewrites', createRewriteController);
+router.post('/:id/rewrites', checkAndReserveCredits('rewrite'), createRewriteController);
 
 /**
  * @route POST /api/v1/resumes/analysis/:analysisId/rewrites
  * @desc Create a new rewrite job by analysis ID based on user's optimization prompt
  * @access Private
+ * @note Costs 1 credit
  * @body { prompt: string (REQUIRED), versionLabel?: string, targetATSScore?: number }
  */
-router.post('/analysis/:analysisId/rewrites', createRewriteByAnalysisController);
+router.post('/analysis/:analysisId/rewrites', checkAndReserveCredits('rewrite'), createRewriteByAnalysisController);
 
 /**
  * @route GET /api/v1/resumes/:id/rewrites

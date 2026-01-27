@@ -298,6 +298,7 @@ export const publishResumeController = asyncHandler(async (req, res, next) => {
 export const createRewriteController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
     const userType = req.type || userTypeConstants.USER;
+    const creditTransaction = req.creditTransaction;
     const { id } = req.params;
     const { 
         prompt,         // NEW: User's optimization goal
@@ -316,7 +317,8 @@ export const createRewriteController = asyncHandler(async (req, res, next) => {
         resumeID: validatedID,
         analysisID: resume.content.analysisID,
         hasPrompt: !!prompt,
-        promptPreview: prompt?.substring(0, 50)
+        promptPreview: prompt?.substring(0, 50),
+        creditTransactionID: creditTransaction?.id
     });
 
     const result = await resumeService.createRewrite(
@@ -326,7 +328,8 @@ export const createRewriteController = asyncHandler(async (req, res, next) => {
             userPrompt: prompt,  // Pass user's optimization goal
             versionLabel,
             targetATSScore: targetATSScore ? parseInt(targetATSScore) : 90,
-            userType
+            userType,
+            creditTransactionID: creditTransaction?.id
         }
     );
 
@@ -344,6 +347,7 @@ export const createRewriteController = asyncHandler(async (req, res, next) => {
 export const createRewriteByAnalysisController = asyncHandler(async (req, res, next) => {
     const userID = req.userID;
     const userType = req.type || userTypeConstants.USER;
+    const creditTransaction = req.creditTransaction;
     const { analysisId } = req.params;
     const { 
         prompt,         // NEW: User's optimization goal
@@ -358,7 +362,8 @@ export const createRewriteByAnalysisController = asyncHandler(async (req, res, n
         userType,
         analysisID: validatedID,
         hasPrompt: !!prompt,
-        promptPreview: prompt?.substring(0, 50)
+        promptPreview: prompt?.substring(0, 50),
+        creditTransactionID: creditTransaction?.id
     });
 
     const result = await resumeService.createRewrite(
@@ -368,7 +373,8 @@ export const createRewriteByAnalysisController = asyncHandler(async (req, res, n
             userPrompt: prompt,  // Pass user's optimization goal
             versionLabel,
             targetATSScore: targetATSScore ? parseInt(targetATSScore) : 90,
-            userType
+            userType,
+            creditTransactionID: creditTransaction?.id
         }
     );
 

@@ -2,6 +2,7 @@ import { Router } from "express";
 import logger from "../../middleware/logger.js";
 import { sendSuccess } from "../../utils/apiHelpers.js";
 import { commonAuthenticate } from "../../middleware/authenticate-routes.js";
+import { checkAndReserveCredits } from "../../middleware/billing.middleware.js";
 import { getUserByIdController } from "../../controllers/user.controller.js";
 import { createOrgByUserIDController, getOrgsByUserIDController } from "../../controllers/organisation.controller.js";
 import { createResumeController } from "../../controllers/resume-analysis.controller.js";
@@ -52,6 +53,6 @@ router.post('/:id/resumes', (req, res, next) => {
     const userId = req.params.id;
     logger.info(`API v1 AUTH User resumes route accessed for user ID: ${userId}`);
     next();
-}, createResumeController);
+}, checkAndReserveCredits('analysis'), createResumeController);
 
 export const userRoutes = router;

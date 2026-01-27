@@ -247,35 +247,59 @@ export const verifyAndCompletePayment = async (razorpayOrderId, razorpayPaymentI
 /**
  * Handle Razorpay webhook
  * 
- * IMPORTANT: Signature must be verified BEFORE calling this function
+ * IMPORTANT: 
+ * - Signature must be verified BEFORE calling this function
+ * - This function should NOT throw errors - all errors are handled internally
  */
 export const handleWebhook = async (payload) => {
+    // Use Razorpay's account_id + event for a more unique event ID, 
+    // or fall back to payment/order entity ID
     const eventId = payload.payload?.payment?.entity?.id || 
                     payload.payload?.order?.entity?.id ||
                     `${payload.event}-${Date.now()}`;
     const eventType = payload.event;
     
-    // Check for duplicate (idempotency)
-    const [existing] = await db.select()
-        .from(razorpayWebhooksTable)
-        .where(eq(razorpayWebhooksTable.eventId, eventId));
+    logger.info('[WEBHOOK] Processing webhook', { eventType, eventId });
     
-    if (existing) {
-        logger.info('[BILLING] Duplicate webhook ignored', { eventId, eventType });
-        return { status: 'duplicate' };
+    // Check for duplicate (idempotency)
+    try {
+        const [existing] = await db.select()
+            .from(razorpayWebhooksTable)
+            .where(eq(razorpayWebhooksTable.eventId, eventId));
+        
+        if (existing) {
+            logger.info('[WEBHOOK] Duplicate webhook ignored', { eventId, eventType });
+            return { status: 'duplicate' };
+        }
+    } catch (error) {
+        logger.error('[WEBHOOK] Error checking for duplicate', { eventId, error: error.message });
+        // Continue processing - better to potentially duplicate than to skip
     }
     
-    // Log webhook
-    await db.insert(razorpayWebhooksTable).values({
-        eventType,
-        eventId,
-        payload,
-        status: 'received'
-    });
+    // Log webhook to database
+    try {
+        await db.insert(razorpayWebhooksTable).values({
+            eventType,
+            eventId,
+            payload,
+            status: 'received'
+        });
+    } catch (error) {
+        logger.error('[WEBHOOK] Error logging webhook', { eventId, error: error.message });
+        // Continue processing even if logging fails
+    }
     
     try {
         // Process based on event type
         switch (eventType) {
+            case 'payment.authorized':
+                // Payment authorized but not yet captured
+                // Useful for logging, but actual credit addition happens on capture
+                logger.info('[WEBHOOK] Payment authorized', { 
+                    paymentId: payload.payload?.payment?.entity?.id 
+                });
+                break;
+                
             case 'payment.captured':
                 await handlePaymentCaptured(payload.payload.payment.entity);
                 break;
@@ -283,25 +307,41 @@ export const handleWebhook = async (payload) => {
             case 'payment.failed':
                 await handlePaymentFailed(payload.payload.payment.entity);
                 break;
+                
+            case 'order.paid':
+                // Order fully paid - this is another trigger point for credit addition
+                await handleOrderPaid(payload.payload.order.entity, payload.payload.payment?.entity);
+                break;
             
             default:
-                logger.info('[BILLING] Unhandled webhook event', { eventType });
+                logger.info('[WEBHOOK] Unhandled webhook event type', { eventType });
         }
         
-        // Update webhook status
+        // Update webhook status to processed
         await db.update(razorpayWebhooksTable)
             .set({ status: 'processed', processedAt: new Date() })
             .where(eq(razorpayWebhooksTable.eventId, eventId));
         
-        return { status: 'processed' };
+        return { status: 'processed', eventType };
     } catch (error) {
-        logger.error('[BILLING] Webhook processing error', { eventId, error: error.message });
+        logger.error('[WEBHOOK] Error processing webhook', { 
+            eventId, 
+            eventType,
+            error: error.message,
+            stack: error.stack 
+        });
         
-        await db.update(razorpayWebhooksTable)
-            .set({ status: 'failed', errorMessage: error.message })
-            .where(eq(razorpayWebhooksTable.eventId, eventId));
+        // Update webhook status to failed
+        try {
+            await db.update(razorpayWebhooksTable)
+                .set({ status: 'failed', errorMessage: error.message })
+                .where(eq(razorpayWebhooksTable.eventId, eventId));
+        } catch (updateError) {
+            logger.error('[WEBHOOK] Error updating webhook status', { eventId, error: updateError.message });
+        }
         
-        throw error;
+        // Return error status but don't throw - webhook should still return 200
+        return { status: 'error', error: error.message };
     }
 };
 
@@ -310,28 +350,36 @@ export const handleWebhook = async (payload) => {
  */
 const handlePaymentCaptured = async (payment) => {
     const razorpayOrderId = payment.order_id;
+    const paymentId = payment.id;
+    
+    logger.info('[WEBHOOK] Processing payment.captured', { 
+        paymentId, 
+        razorpayOrderId,
+        amount: payment.amount,
+        currency: payment.currency
+    });
     
     if (!razorpayOrderId) {
-        logger.warn('[BILLING] Payment captured without order_id', { paymentId: payment.id });
+        logger.warn('[WEBHOOK] Payment captured without order_id', { paymentId });
         return;
     }
     
     // Get our order
     const order = await billingModel.getPaymentOrderByRazorpayID(razorpayOrderId);
     if (!order) {
-        logger.warn('[BILLING] Order not found for captured payment', { razorpayOrderId });
+        logger.warn('[WEBHOOK] Order not found for captured payment', { razorpayOrderId, paymentId });
         return;
     }
     
     if (order.status === 'paid') {
-        logger.info('[BILLING] Order already paid (via verify-payment)', { orderID: order.id });
+        logger.info('[WEBHOOK] Order already paid (via verify-payment or previous webhook)', { orderID: order.id });
         return;
     }
     
     // Update order and add credits
     await billingModel.updatePaymentOrder(order.id, {
         status: 'paid',
-        razorpayPaymentId: payment.id,
+        razorpayPaymentId: paymentId,
         paidAt: new Date()
     });
     
@@ -341,13 +389,15 @@ const handlePaymentCaptured = async (payment) => {
         'purchase',
         'purchase',
         order.id,
-        `Purchased ${order.creditsAmount} credits (via webhook)`,
+        `Purchased ${order.creditsAmount} credits (via payment.captured webhook)`,
         order.userID
     );
     
-    logger.info('[BILLING] Payment captured via webhook', { 
+    logger.info('[WEBHOOK] Payment captured - credits added successfully', { 
         orderID: order.id, 
-        credits: order.creditsAmount 
+        credits: order.creditsAmount,
+        paymentId,
+        razorpayOrderId
     });
 };
 
@@ -358,14 +408,20 @@ const handlePaymentFailed = async (payment) => {
     const razorpayOrderId = payment.order_id;
     
     if (!razorpayOrderId) {
-        logger.warn('[BILLING] Payment failed without order_id', { paymentId: payment.id });
+        logger.warn('[WEBHOOK] Payment failed without order_id', { paymentId: payment.id });
         return;
     }
     
     // Get our order
     const order = await billingModel.getPaymentOrderByRazorpayID(razorpayOrderId);
     if (!order) {
-        logger.warn('[BILLING] Order not found for failed payment', { razorpayOrderId });
+        logger.warn('[WEBHOOK] Order not found for failed payment', { razorpayOrderId });
+        return;
+    }
+    
+    // Don't update if already paid
+    if (order.status === 'paid') {
+        logger.info('[WEBHOOK] Order already paid, ignoring failure', { orderID: order.id });
         return;
     }
     
@@ -376,9 +432,58 @@ const handlePaymentFailed = async (payment) => {
         failureReason: payment.error_description || payment.error_reason || 'Payment failed'
     });
     
-    logger.info('[BILLING] Payment failed webhook processed', { 
+    logger.info('[WEBHOOK] Payment failed webhook processed', { 
         orderID: order.id,
         reason: payment.error_description 
+    });
+};
+
+/**
+ * Handle order.paid webhook
+ * This is an alternative event that Razorpay sends when an order is fully paid
+ */
+const handleOrderPaid = async (orderEntity, paymentEntity) => {
+    const razorpayOrderId = orderEntity?.id;
+    
+    if (!razorpayOrderId) {
+        logger.warn('[WEBHOOK] Order paid without order id');
+        return;
+    }
+    
+    // Get our order
+    const order = await billingModel.getPaymentOrderByRazorpayID(razorpayOrderId);
+    if (!order) {
+        logger.warn('[WEBHOOK] Order not found for order.paid event', { razorpayOrderId });
+        return;
+    }
+    
+    if (order.status === 'paid') {
+        logger.info('[WEBHOOK] Order already paid', { orderID: order.id });
+        return;
+    }
+    
+    // Update order and add credits
+    const paymentId = paymentEntity?.id || orderEntity?.payments?.items?.[0]?.id;
+    
+    await billingModel.updatePaymentOrder(order.id, {
+        status: 'paid',
+        razorpayPaymentId: paymentId || null,
+        paidAt: new Date()
+    });
+    
+    await billingModel.addCredits(
+        order.walletID,
+        order.creditsAmount,
+        'purchase',
+        'purchase',
+        order.id,
+        `Purchased ${order.creditsAmount} credits (via order.paid webhook)`,
+        order.userID
+    );
+    
+    logger.info('[WEBHOOK] Order paid webhook processed', { 
+        orderID: order.id, 
+        credits: order.creditsAmount 
     });
 };
 

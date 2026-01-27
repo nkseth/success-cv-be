@@ -267,11 +267,7 @@ a:hover { text-decoration: underline; }
     color: var(--rp-color-primary);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    background-color: var(--rp-color-header-bg);
-    padding: 6px 8px;
     margin: 0 0 var(--rp-spacing-item);
-    border-radius: 4px;
-    border-left: 3px solid var(--rp-color-primary);
 }
 
 .header {
@@ -598,19 +594,13 @@ const getSectionStyles = (config) => {
         case 'background':
             headingCSS = `
                 .section-title {
-                    background-color: var(--rp-color-header-bg);
-                    padding: var(--rp-spacing-line) var(--rp-spacing-item);
                     margin-bottom: var(--rp-spacing-item);
-                    border-left: 3px solid var(--rp-color-primary);
-                    border-radius: 4px;
                 }
             `;
             break;
         case 'accent-left':
             headingCSS = `
                 .section-title {
-                    padding-left: var(--rp-spacing-item);
-                    border-left: 4px solid var(--rp-color-primary);
                     margin-bottom: var(--rp-spacing-item);
                 }
             `;

@@ -2,6 +2,7 @@ import queueService from '../services/queue.service.js';
 import { resumeAnalysisQueue } from './resume-analysis.queue.js';
 import { jobScrapingQueue } from './job-scraping.queue.js';
 import { getJobMatchingQueue } from './job-matching.queue.js';
+import { manualAnalysisQueue } from './manual-analysis.queue.js';
 
 /**
  * Central export for all queues
@@ -26,11 +27,26 @@ export {
     closeQueue
 } from './resume-analysis.queue.js';
 
+// Export manual analysis queue functions
+export {
+    manualAnalysisQueue,
+    addManualAnalysisJob,
+    removeManualAnalysisJob,
+    getManualAnalysisJobStatus,
+    getManualAnalysisQueueStats,
+    retryManualAnalysisJob,
+    cleanManualAnalysisQueue,
+    pauseManualAnalysisQueue,
+    resumeManualAnalysisQueue,
+    closeManualAnalysisQueue
+} from './manual-analysis.queue.js';
+
 // Queue registry
 export const queues = {
     resumeAnalysis: resumeAnalysisQueue,
     jobScraping: jobScrapingQueue,
     jobMatching: getJobMatchingQueue(),
+    manualAnalysis: manualAnalysisQueue,
 };
 
 // Export job matching queue
