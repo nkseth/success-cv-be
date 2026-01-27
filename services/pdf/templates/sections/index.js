@@ -3,12 +3,17 @@
  * 
  * Modular HTML generators for each resume section.
  * Each renderer takes section data and theme config, returns HTML string.
+ * 
+ * SYNCED with frontend (temp/resume-preview/sections/)
  */
 
 import { escapeHtml, sanitizeHtml, formatDate, formatDateRange } from "./helpers.js";
 
 /**
  * Render Personal Info / Header Section
+ * Supports alignment variants: left, center, right (from config.style.headerAlignment)
+ * Matches frontend Header component (temp/resume-preview/sections/header.tsx)
+ * 
  * @param {Object} personalInfo - Personal info data
  * @param {Object} config - Theme configuration
  * @returns {string} HTML string
@@ -27,6 +32,10 @@ export const renderPersonalInfo = (personalInfo, config) => {
         github = '',
         portfolio = ''
     } = personalInfo;
+
+    // Get header alignment from theme config (default: center for backwards compat)
+    const headerAlignment = config.style?.headerAlignment || 'center';
+    const alignmentClass = `header-align-${headerAlignment}`;
 
     const contacts = [];
     
@@ -56,12 +65,12 @@ export const renderPersonalInfo = (personalInfo, config) => {
     }
 
     return `
-        <header class="header section section-personal-info">
+        <header class="header section section-personal-info ${alignmentClass}">
             <h1 class="header-name">${escapeHtml(fullName)}</h1>
             ${title ? `<p class="header-title">${escapeHtml(title)}</p>` : ''}
             ${contacts.length > 0 ? `
                 <div class="contact-info">
-                    ${contacts.join('<span class="contact-divider">|</span>')}
+                    ${contacts.join('')}
                 </div>
             ` : ''}
         </header>
@@ -228,6 +237,13 @@ export const renderEducation = (education, config) => {
 
 /**
  * Render Skills Section
+ * Supports 6 layouts to match frontend (temp/resume-preview/sections/skills.tsx):
+ * - pills: Flattened skills with filled primary background
+ * - tags: Flattened skills with bordered/light background  
+ * - grouped: By category with label and pills per category
+ * - list: 2-column grid with bullet points (flattened)
+ * - inline / comma-separated: By category "Label: skill1, skill2, skill3"
+ * 
  * @param {Object} skills - Skills data
  * @param {Object} config - Theme configuration
  * @returns {string} HTML string
@@ -236,89 +252,108 @@ export const renderSkills = (skills, config) => {
     if (!skills) return '';
 
     const skillsLayout = config.style?.skillsLayout || 'pills';
+    
+    // Gather all skills (flattened for some layouts)
+    const allSkills = [
+        ...(skills.technical || []),
+        ...(skills.tools || []),
+        ...(skills.soft || []),
+        ...(skills.languages || []),
+    ].filter(Boolean);
+
+    // Gather categories (for grouped/inline layouts)
     const categories = [];
 
-    // Technical Skills
     if (skills.technical && skills.technical.length > 0) {
-        categories.push({
-            title: 'Technical Skills',
-            items: skills.technical
-        });
+        categories.push({ title: 'Technical', items: skills.technical });
     }
-
-    // Soft Skills
-    if (skills.soft && skills.soft.length > 0) {
-        categories.push({
-            title: 'Soft Skills',
-            items: skills.soft
-        });
-    }
-
-    // Tools
     if (skills.tools && skills.tools.length > 0) {
-        categories.push({
-            title: 'Tools & Technologies',
-            items: skills.tools
-        });
+        categories.push({ title: 'Tools', items: skills.tools });
     }
-
-    // Languages
+    if (skills.soft && skills.soft.length > 0) {
+        categories.push({ title: 'Soft Skills', items: skills.soft });
+    }
     if (skills.languages && skills.languages.length > 0) {
-        categories.push({
-            title: 'Languages',
-            items: skills.languages
-        });
+        categories.push({ title: 'Languages', items: skills.languages });
     }
 
-    // Certifications
-    if (skills.certifications && skills.certifications.length > 0) {
-        const certNames = skills.certifications.map(c => 
-            typeof c === 'string' ? c : c.name
-        ).filter(Boolean);
-        if (certNames.length > 0) {
-            categories.push({
-                title: 'Certifications',
-                items: certNames
-            });
-        }
-    }
+    if (allSkills.length === 0 && categories.length === 0) return '';
 
-    if (categories.length === 0) return '';
+    let contentHTML = '';
 
-    const renderCategory = (category) => {
-        if (skillsLayout === 'pills') {
-            return `
-                <div class="skill-category">
-                    <h4 class="skill-category-title">${escapeHtml(category.title)}</h4>
-                    <div class="skills-list">
-                        ${category.items.map(skill => `<span class="skill-pill">${escapeHtml(skill)}</span>`).join('')}
+    switch (skillsLayout) {
+        case 'pills':
+            // Flattened, filled primary bg pills (matches frontend PillsSkills with variant='pills')
+            contentHTML = `
+                <div class="skills-list skills-list-flat">
+                    ${allSkills.map(skill => `<span class="skill-pill-filled">${escapeHtml(skill)}</span>`).join('')}
+                </div>
+            `;
+            break;
+
+        case 'tags':
+            // Flattened, bordered tags (matches frontend PillsSkills with variant='tags')
+            contentHTML = `
+                <div class="skills-list skills-list-flat">
+                    ${allSkills.map(skill => `<span class="skill-tag">${escapeHtml(skill)}</span>`).join('')}
+                </div>
+            `;
+            break;
+
+        case 'grouped':
+            // Category labels with pills per category (matches frontend GroupedSkills)
+            contentHTML = categories.map(cat => `
+                <div class="skill-category skill-category-grouped">
+                    <span class="skill-category-label">${escapeHtml(cat.title)}:</span>
+                    <div class="skills-list-inline">
+                        ${cat.items.map(skill => `<span class="skill-pill-light">${escapeHtml(skill)}</span>`).join('')}
                     </div>
                 </div>
-            `;
-        } else if (skillsLayout === 'inline') {
-            return `
-                <div class="skill-category">
-                    <span class="skill-category-title">${escapeHtml(category.title)}:</span>
-                    <span class="skills-inline">${category.items.map(s => escapeHtml(s)).join(', ')}</span>
+            `).join('');
+            break;
+
+        case 'list':
+            // 2-column grid with bullet points (matches frontend ListSkills)
+            contentHTML = `
+                <div class="skills-grid">
+                    ${allSkills.map(skill => `
+                        <p class="skill-list-item">
+                            <span class="skill-bullet">•</span>
+                            ${escapeHtml(skill)}
+                        </p>
+                    `).join('')}
                 </div>
             `;
-        } else { // list
-            return `
-                <div class="skill-category">
-                    <h4 class="skill-category-title">${escapeHtml(category.title)}</h4>
-                    <ul class="item-list">
-                        ${category.items.map(skill => `<li>${escapeHtml(skill)}</li>`).join('')}
-                    </ul>
+            break;
+
+        case 'inline':
+        case 'comma-separated':
+            // By category "Label: skill1, skill2, skill3" (matches frontend InlineSkills)
+            contentHTML = categories.map(cat => `
+                <p class="skill-category skill-category-inline">
+                    <strong class="skill-category-label">${escapeHtml(cat.title)}:</strong>
+                    <span class="skills-inline">${cat.items.map(s => escapeHtml(s)).join(', ')}</span>
+                </p>
+            `).join('');
+            break;
+
+        default:
+            // Fallback to grouped
+            contentHTML = categories.map(cat => `
+                <div class="skill-category skill-category-grouped">
+                    <span class="skill-category-label">${escapeHtml(cat.title)}:</span>
+                    <div class="skills-list-inline">
+                        ${cat.items.map(skill => `<span class="skill-pill-light">${escapeHtml(skill)}</span>`).join('')}
+                    </div>
                 </div>
-            `;
-        }
-    };
+            `).join('');
+    }
 
     return `
         <section class="section section-skills sidebar-section">
             <h2 class="section-title">Skills</h2>
             <div class="section-content skills-container">
-                ${categories.map(renderCategory).join('')}
+                ${contentHTML}
             </div>
         </section>
     `;
@@ -502,11 +537,74 @@ const getIcon = (name) => {
     return icons[name] || '';
 };
 
+/**
+ * Render Certifications Section (separate from skills)
+ * Controlled by config.style.certificationsDisplay:
+ * - 'with-skills': Don't render separate section (handled by renderSkills)
+ * - 'separate': Render as its own section
+ * - 'hidden': Don't display certifications at all
+ * 
+ * Matches frontend CertificationsSection (temp/resume-preview/sections/skills.tsx)
+ * 
+ * @param {Array} certifications - Certifications data (from skills.certifications)
+ * @param {Object} config - Theme configuration
+ * @returns {string} HTML string
+ */
+export const renderCertifications = (certifications, config) => {
+    if (!certifications || !Array.isArray(certifications) || certifications.length === 0) {
+        return '';
+    }
+
+    const certificationsDisplay = config.style?.certificationsDisplay || 'with-skills';
+    
+    // If hidden or with-skills mode, don't render separate section
+    if (certificationsDisplay === 'hidden' || certificationsDisplay === 'with-skills') {
+        return '';
+    }
+
+    const certItems = certifications.map(cert => {
+        if (typeof cert === 'string') {
+            return `
+                <p class="cert-item" style="display: flex; align-items: center; gap: 6pt; font-size: var(--rp-font-size-body);">
+                    <span style="color: var(--rp-color-primary);">✓</span>
+                    ${escapeHtml(cert)}
+                </p>
+            `;
+        }
+
+        const name = cert.name || '';
+        const issuer = cert.issuer || cert.authority || '';
+        const date = cert.date || cert.startDate || '';
+        const expiry = cert.expiryDate || cert.endDate || '';
+        const dateStr = formatDateRange(date, expiry);
+
+        return `
+            <div class="cert-item" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8pt; margin-bottom: 4pt;">
+                <div>
+                    <p style="font-size: var(--rp-font-size-body); font-weight: var(--rp-font-weight-medium);">${escapeHtml(name)}</p>
+                    ${issuer ? `<p style="font-size: var(--rp-font-size-small); color: var(--rp-color-text-light);">${escapeHtml(issuer)}</p>` : ''}
+                </div>
+                ${dateStr ? `<p style="font-size: var(--rp-font-size-small); color: var(--rp-color-text-light); flex-shrink: 0;">${escapeHtml(dateStr)}</p>` : ''}
+            </div>
+        `;
+    }).join('');
+
+    return `
+        <section class="section section-certifications">
+            <h2 class="section-title">Certifications</h2>
+            <div class="section-content">
+                ${certItems}
+            </div>
+        </section>
+    `;
+};
+
 export default {
     renderPersonalInfo,
     renderSummary,
     renderExperience,
     renderEducation,
     renderSkills,
+    renderCertifications,
     renderAdditionalSections
 };

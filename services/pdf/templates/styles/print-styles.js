@@ -4,6 +4,8 @@
  * Handles page breaks, orphans/widows, and multi-page rendering.
  * These styles ensure proper content flow across pages without
  * repetition or cut-off issues.
+ * 
+ * IMPORTANT: Uses --rp- prefix for CSS variables to match frontend
  */
 
 import { PRINT_SETTINGS } from '../../constants.js';
@@ -15,7 +17,7 @@ import { PRINT_SETTINGS } from '../../constants.js';
  */
 export const getPrintStyles = (config) => {
     const pageSize = config.layout?.pageSize || 'A4';
-    const margins = config.layout?.margins || { top: 0.5, right: 0.5, bottom: 0.5, left: 0.5 };
+    const margins = config.layout?.margins || { top: 0.4, right: 0.4, bottom: 0.4, left: 0.4 };
     
     return `
         /* ========== PAGE SETUP ========== */
@@ -43,6 +45,18 @@ export const getPrintStyles = (config) => {
                 margin: 0;
                 padding: 0;
                 box-sizing: border-box;
+                overflow: visible !important;
+                min-height: auto !important;
+            }
+
+            /* Two-column layout print handling */
+            .resume-two-column {
+                break-inside: auto;
+            }
+
+            .resume-sidebar {
+                break-inside: avoid;
+                page-break-inside: avoid;
             }
 
             /* ========== PAGE BREAK CONTROL ========== */
@@ -106,17 +120,47 @@ export const getPrintStyles = (config) => {
             }
 
             /* Skills section - pills should wrap properly */
-            .skills-list {
+            .skills-list,
+            .skills-list-flat {
                 break-inside: auto;
                 page-break-inside: auto;
             }
 
-            .skill-pill {
+            .skill-pill,
+            .skill-pill-filled,
+            .skill-tag,
+            .skill-pill-light {
                 break-inside: avoid;
                 page-break-inside: avoid;
             }
 
-            .skill-category {
+            .skill-category,
+            .skill-category-grouped {
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+
+            /* Skills container should allow breaking but keep groups together */
+            .skills-container,
+            .skills-list,
+            .skills-list-flat {
+                break-inside: auto;
+                page-break-inside: auto;
+            }
+
+            /* Individual skill rows in grouped/inline layouts should stay together */
+            .skill-category-inline {
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+
+            /* 2-column grid items should avoid breaking */
+            .skills-grid {
+                break-inside: auto;
+                page-break-inside: auto;
+            }
+
+            .skill-list-item {
                 break-inside: avoid;
                 page-break-inside: avoid;
             }
@@ -195,6 +239,7 @@ export const getPrintStyles = (config) => {
 /**
  * Get page-safe wrapper styles
  * These ensure content respects margins without double-padding
+ * Uses --rp- prefix to match frontend
  * @param {Object} config - Theme configuration
  * @returns {string} Wrapper CSS
  */
@@ -213,12 +258,12 @@ export const getPageSafeStyles = (config) => {
 
         /* Ensure consistent section spacing */
         .section {
-            margin-bottom: ${spacing.section}pt;
+            margin-bottom: var(--rp-spacing-section, ${spacing.section}pt);
         }
 
         /* Last section should still have space from bottom edge */
         .section:last-child {
-            margin-bottom: ${Math.max(spacing.section / 2, 8)}pt;
+            margin-bottom: calc(var(--rp-spacing-section, ${spacing.section}pt) / 2);
         }
 
         /* Content wrapper for two-column layouts */

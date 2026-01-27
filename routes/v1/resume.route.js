@@ -10,6 +10,7 @@ import {
     createBlankResumeController,
     updateSectionController,
     updateSectionsController,
+    updateTitleController,
     getResumeForRenderController,
     publishResumeController,
     // Rewrite endpoints
@@ -156,6 +157,14 @@ router.patch('/:id/sections/:sectionName', updateSectionController);
  * @body { sections: { sectionName: data, ... } }
  */
 router.patch('/:id/sections', updateSectionsController);
+
+/**
+ * @route PATCH /api/v1/resumes/:id/title
+ * @desc Update resume document title
+ * @access Private
+ * @body { title: string }
+ */
+router.patch('/:id/title', updateTitleController);
 
 /**
  * @route POST /api/v1/resumes/:id/publish

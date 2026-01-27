@@ -49,21 +49,22 @@ export const MARGIN_CONSTRAINTS = {
 
 /**
  * Default margins for different contexts
+ * SYNCED with frontend (temp/resume-preview/utils.ts)
  */
 export const DEFAULT_MARGINS = {
-    // Standard balanced margins (in inches)
+    // Standard balanced margins (in inches) - matches frontend default
     standard: {
+        top: 0.4,
+        right: 0.4,
+        bottom: 0.4,
+        left: 0.4
+    },
+    // Compact for more content
+    compact: {
         top: 0.3,
         right: 0.3,
         bottom: 0.3,
         left: 0.3
-    },
-    // Compact for more content
-    compact: {
-        top: 0.25,
-        right: 0.25,
-        bottom: 0.25,
-        left: 0.25
     },
     // Generous for executive/premium look
     generous: {
@@ -206,13 +207,25 @@ export const PRINT_SETTINGS = {
 
 /**
  * Valid style option values
+ * SYNCED with frontend types (temp/resume-preview/types.ts)
  */
 export const STYLE_OPTIONS = {
     bulletStyles: ['disc', 'circle', 'square', 'dash', 'none'],
     headingStyles: ['underline', 'background', 'accent-left', 'simple'],
     skillsLayouts: ['pills', 'tags', 'list', 'inline', 'grouped', 'comma-separated'],
     datePositions: ['right', 'below', 'inline'],
-    dividerStyles: ['solid', 'dashed', 'dotted', 'none']
+    dividerStyles: ['solid', 'dashed', 'dotted', 'none'],
+    // NEW: Header alignment options
+    headerAlignments: ['left', 'center', 'right'],
+    headerVariants: ['default', 'compact', 'minimal'],
+    // NEW: Certifications display options
+    certificationsDisplays: ['with-skills', 'separate', 'hidden'],
+    // NEW: Experience layout options
+    experienceLayouts: ['standard', 'compact', 'detailed'],
+    // NEW: Photo options
+    photoPositions: ['left', 'right', 'center'],
+    // NEW: Sidebar options
+    sidebarPositions: ['left', 'right']
 };
 
 // ========== SECTION DEFAULTS ==========

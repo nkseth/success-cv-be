@@ -90,7 +90,9 @@ const themes = [
                 experienceLayout: 'standard',
                 photoEnabled: false,
                 photoPosition: 'right',
-                photoSize: 80
+                photoSize: 80,
+                headerAlignment: 'center',
+                certificationsDisplay: 'separate'
             }
         },
         thumbnailURL: '/themes/classic-professional-thumb.png',
@@ -165,7 +167,9 @@ const themes = [
                 experienceLayout: 'standard',
                 photoEnabled: false,
                 photoPosition: 'right',
-                photoSize: 80
+                photoSize: 80,
+                headerAlignment: 'left',
+                certificationsDisplay: 'separate'
             }
         },
         thumbnailURL: '/themes/modern-minimal-thumb.png',
@@ -241,7 +245,16 @@ const themes = [
                 experienceLayout: 'compact',
                 photoEnabled: false,
                 photoPosition: 'left',
-                photoSize: 70
+                photoSize: 70,
+                headerAlignment: 'left',
+                certificationsDisplay: 'with-skills'
+            },
+            // Two-column specific settings
+            twoColumn: {
+                sidebarWidth: 35,
+                sidebarPosition: 'left',
+                sidebarPadding: 16,
+                sidebarBg: '#f8f9fa'  // Match headerBg
             }
         },
         thumbnailURL: '/themes/two-column-pro-thumb.png',
@@ -316,7 +329,9 @@ const themes = [
                 experienceLayout: 'standard',
                 photoEnabled: false,
                 photoPosition: 'right',
-                photoSize: 80
+                photoSize: 80,
+                headerAlignment: 'left',
+                certificationsDisplay: 'separate'
             }
         },
         thumbnailURL: '/themes/ats-optimized-thumb.png',
@@ -391,7 +406,9 @@ const themes = [
                 experienceLayout: 'standard',
                 photoEnabled: false,
                 photoPosition: 'right',
-                photoSize: 80
+                photoSize: 80,
+                headerAlignment: 'center',
+                certificationsDisplay: 'with-skills'
             }
         },
         thumbnailURL: '/themes/creative-bold-thumb.png',
@@ -466,7 +483,9 @@ const themes = [
                 experienceLayout: 'detailed',
                 photoEnabled: false,
                 photoPosition: 'right',
-                photoSize: 80
+                photoSize: 80,
+                headerAlignment: 'center',
+                certificationsDisplay: 'separate'
             }
         },
         thumbnailURL: '/themes/academic-scholar-thumb.png',
@@ -541,7 +560,9 @@ const themes = [
                 experienceLayout: 'standard',
                 photoEnabled: false,
                 photoPosition: 'right',
-                photoSize: 80
+                photoSize: 80,
+                headerAlignment: 'left',
+                certificationsDisplay: 'with-skills'
             }
         },
         thumbnailURL: '/themes/tech-developer-thumb.png',
@@ -616,7 +637,9 @@ const themes = [
                 experienceLayout: 'detailed',
                 photoEnabled: false,
                 photoPosition: 'right',
-                photoSize: 80
+                photoSize: 80,
+                headerAlignment: 'center',
+                certificationsDisplay: 'separate'
             }
         },
         thumbnailURL: '/themes/executive-leadership-thumb.png',
@@ -631,57 +654,32 @@ async function seedThemes() {
     console.log('🌱 Starting theme seeding/update...');
     
     try {
-        const { eq } = await import('drizzle-orm');
-        let updatedCount = 0;
+        const { eq, sql } = await import('drizzle-orm');
+        
+        // Clear all existing themes first
+        console.log('🗑️  Clearing existing themes...');
+        await db.delete(resumeThemesTable);
+        console.log('✅ All themes cleared\n');
+        
         let insertedCount = 0;
 
         for (const theme of themes) {
-            // Check if theme exists by slug
-            const existingTheme = await db
-                .select({ id: resumeThemesTable.id })
-                .from(resumeThemesTable)
-                .where(eq(resumeThemesTable.slug, theme.slug))
-                .limit(1);
-
-            if (existingTheme.length > 0) {
-                // Update existing theme
-                await db
-                    .update(resumeThemesTable)
-                    .set({
-                        name: theme.name,
-                        description: theme.description,
-                        category: theme.category,
-                        config: theme.config,
-                        thumbnailURL: theme.thumbnailURL,
-                        previewURL: theme.previewURL,
-                        isSystemTheme: theme.isSystemTheme,
-                        isATSOptimized: theme.isATSOptimized,
-                        isPublic: theme.isPublic,
-                        updatedAt: new Date()
-                    })
-                    .where(eq(resumeThemesTable.slug, theme.slug));
-                
-                console.log(`   ✅ Updated: ${theme.name} (${theme.slug})`);
-                updatedCount++;
-            } else {
-                // Insert new theme
-                await db
-                    .insert(resumeThemesTable)
-                    .values({
-                        ...theme,
-                        usageCount: 0,
-                        createdAt: new Date(),
-                        updatedAt: new Date()
-                    });
-                
-                console.log(`   ✅ Inserted: ${theme.name} (${theme.slug})`);
-                insertedCount++;
-            }
+            // Insert new theme
+            await db
+                .insert(resumeThemesTable)
+                .values({
+                    ...theme,
+                    usageCount: 0,
+                    createdAt: new Date(),
+                    updatedAt: new Date()
+                });
+            
+            console.log(`   ✅ Inserted: ${theme.name} (${theme.slug})`);
+            insertedCount++;
         }
 
         console.log(`\n🎉 Theme seeding complete!`);
-        console.log(`   Updated: ${updatedCount} themes`);
-        console.log(`   Inserted: ${insertedCount} themes`);
+        console.log(`   Total themes inserted: ${insertedCount}`);
 
     } catch (error) {
         console.error('❌ Failed to seed themes:', error.message);

@@ -204,6 +204,44 @@ export const updateSectionsController = asyncHandler(async (req, res, next) => {
 });
 
 /**
+ * Update resume document title
+ * PATCH /api/v1/resumes/:id/title
+ */
+export const updateTitleController = asyncHandler(async (req, res, next) => {
+    const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
+    const { id } = req.params;
+    const { title } = req.body;
+
+    const validatedID = validateInteger(id, 'Resume ID');
+
+    if (!title || typeof title !== 'string') {
+        throw new AppError('Title is required and must be a string', 400);
+    }
+
+    const validatedTitle = validateString(title, 'Title', {
+        minLength: 1,
+        maxLength: 255
+    });
+
+    logger.info('[RESUME_CONTROLLER] Updating document title', {
+        userID,
+        userType,
+        resumeID: validatedID,
+        newTitle: validatedTitle
+    });
+
+    const result = await resumeService.updateTitle(
+        validatedID,
+        userID,
+        validatedTitle,
+        userType
+    );
+
+    sendSuccess(res, result, 'Document title updated successfully');
+});
+
+/**
  * Get resume formatted for rendering with theme
  * GET /api/v1/resumes/:id/render
  */

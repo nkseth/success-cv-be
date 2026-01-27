@@ -1965,6 +1965,45 @@ export const getOptimizationExamples = () => {
     return getExamplePrompts();
 };
 
+/**
+ * Update document title
+ * @param {number} contentID - Resume content ID
+ * @param {number} userID - User ID
+ * @param {string} title - New document title
+ * @param {string} userType - 'user' | 'candidate'
+ * @returns {Promise<Object>} Updated document info
+ */
+export const updateTitle = async (contentID, userID, title, userType = userTypeConstants.USER) => {
+    try {
+        logger.info('[RESUME_SERVICE] Updating document title', {
+            contentID,
+            title,
+            userType
+        });
+
+        const updated = await resumeModel.updateDocumentTitle(
+            contentID,
+            userID,
+            title,
+            userType
+        );
+
+        logger.info('[RESUME_SERVICE] ✅ Document title updated', {
+            documentID: updated.id,
+            newTitle: updated.title
+        });
+
+        return updated;
+    } catch (error) {
+        logger.error('[RESUME_SERVICE] Failed to update document title', {
+            error: error.message,
+            contentID,
+            userType
+        });
+        throw error;
+    }
+};
+
 export default {
     // Content operations
     createResumeFromAnalysis,
@@ -1974,6 +2013,7 @@ export default {
     getAllResumes,
     updateSection,
     updateSections,
+    updateTitle,
     // Rewrite operations
     createRewrite,
     getRewrite,

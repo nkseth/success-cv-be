@@ -1623,6 +1623,95 @@ export const createBlankAnalysis = async (userID, documentID, userType = userTyp
     }
 };
 
+/**
+ * Update document title
+ * @param {number} contentID - Resume content ID
+ * @param {number} userID - User ID
+ * @param {string} title - New document title
+ * @param {string} userType - 'user' | 'candidate'
+ * @returns {Promise<Object>} Updated document info
+ */
+export const updateDocumentTitle = async (contentID, userID, title, userType = userTypeConstants.USER) => {
+    try {
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+
+        logger.info('[RESUME_MODEL] Updating document title', {
+            contentID,
+            title,
+            userType
+        });
+
+        // First get the document ID from resume content
+        const content = await db
+            .select({
+                analysisID: tables.contentTable.analysisID
+            })
+            .from(tables.contentTable)
+            .where(
+                and(
+                    eq(tables.contentTable.id, contentID),
+                    eq(tables.contentTable[entityIDField], userID)
+                )
+            )
+            .limit(1);
+
+        if (content.length === 0) {
+            throw new AppError('Resume not found or access denied', 404);
+        }
+
+        // Get document ID from analysis
+        const analysis = await db
+            .select({ documentID: tables.analysisTable.documentID })
+            .from(tables.analysisTable)
+            .where(eq(tables.analysisTable.id, content[0].analysisID))
+            .limit(1);
+
+        if (analysis.length === 0) {
+            throw new AppError('Analysis not found', 404);
+        }
+
+        // Update the document title
+        const updatedDocument = await db
+            .update(tables.documentTable)
+            .set({
+                title: title,
+                updatedAt: new Date()
+            })
+            .where(
+                and(
+                    eq(tables.documentTable.id, analysis[0].documentID),
+                    eq(tables.documentTable[entityIDField], userID)
+                )
+            )
+            .returning({
+                id: tables.documentTable.id,
+                title: tables.documentTable.title,
+                updatedAt: tables.documentTable.updatedAt
+            });
+
+        if (updatedDocument.length === 0) {
+            throw new AppError('Document not found or access denied', 404);
+        }
+
+        logger.info('[RESUME_MODEL] ✅ Document title updated', {
+            documentID: updatedDocument[0].id,
+            newTitle: updatedDocument[0].title
+        });
+
+        return updatedDocument[0];
+    } catch (error) {
+        logger.error('[RESUME_MODEL] Failed to update document title', {
+            error: error.message,
+            contentID,
+            userID,
+            userType
+        });
+        if (error instanceof AppError) throw error;
+        throw new AppError(`Failed to update document title: ${error.message}`, 500);
+    }
+};
+
 export default {
     // Content operations
     createResumeContent,
@@ -1632,6 +1721,7 @@ export default {
     updateResumeSection,
     updateMultipleSections,
     updateResumeScores,
+    updateDocumentTitle,
     // Blank resume operations
     createBlankDocument,
     createBlankAnalysis,

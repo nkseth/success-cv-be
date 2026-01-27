@@ -71,12 +71,24 @@ export const DEFAULT_THEME_CONFIG = {
         dividerWidth: 1,
         bulletStyle: 'disc',        // disc, circle, square, dash, none
         headingStyle: 'underline',  // underline, background, simple, accent-left
-        datePosition: 'right',      // right, below
-        skillsLayout: 'pills',      // pills, list, inline, grouped
+        datePosition: 'right',      // right, below, inline
+        skillsLayout: 'pills',      // pills, tags, list, inline, grouped, comma-separated
         experienceLayout: 'standard', // standard, compact, detailed
         photoEnabled: false,
         photoPosition: 'right',     // left, right, center
-        photoSize: 80               // pixels
+        photoSize: 80,              // pixels
+        // NEW: Header styling options (synced with frontend)
+        headerAlignment: 'center',  // left, center, right
+        headerVariant: 'default',   // default, compact, minimal
+        // NEW: Certifications display
+        certificationsDisplay: 'with-skills'  // with-skills, separate, hidden
+    },
+    // NEW: Two-column layout settings
+    twoColumn: {
+        sidebarWidth: 35,           // Percentage (30-40)
+        sidebarPosition: 'left',    // left, right
+        sidebarPadding: 16,         // Points
+        sidebarBg: null             // null = use colors.headerBg
     }
 };
 
@@ -188,6 +200,23 @@ const validateThemeConfig = (config) => {
     if (config.style.skillsLayout && !STYLE_OPTIONS.skillsLayouts.includes(config.style.skillsLayout)) {
         config.style.skillsLayout = 'pills';
     }
+    // NEW: Validate header alignment
+    if (config.style.headerAlignment && !STYLE_OPTIONS.headerAlignments.includes(config.style.headerAlignment)) {
+        config.style.headerAlignment = 'center';
+    }
+    // NEW: Validate certifications display
+    if (config.style.certificationsDisplay && !STYLE_OPTIONS.certificationsDisplays.includes(config.style.certificationsDisplay)) {
+        config.style.certificationsDisplay = 'with-skills';
+    }
+
+    // NEW: Validate twoColumn config
+    config.twoColumn = config.twoColumn || DEFAULT_THEME_CONFIG.twoColumn;
+    if (config.twoColumn.sidebarWidth) {
+        config.twoColumn.sidebarWidth = clamp(config.twoColumn.sidebarWidth, 25, 45);
+    }
+    if (config.twoColumn.sidebarPosition && !STYLE_OPTIONS.sidebarPositions.includes(config.twoColumn.sidebarPosition)) {
+        config.twoColumn.sidebarPosition = 'left';
+    }
 
     return config;
 };
@@ -253,58 +282,65 @@ const clamp = (value, min, max) => {
 
 /**
  * Get CSS variables from theme config
+ * Uses --rp- prefix to match frontend (temp/resume-preview/utils.ts)
  * @param {Object} themeConfig - Theme configuration
  * @returns {string} CSS custom properties
  */
 export const getThemeCSSVariables = (themeConfig) => {
     const config = mergeThemeConfig(themeConfig);
+    const sidebarBg = config.twoColumn?.sidebarBg || config.colors.headerBg;
     
     return `
         :root {
-            /* Colors - from theme */
-            --color-primary: ${config.colors.primary};
-            --color-secondary: ${config.colors.secondary};
-            --color-accent: ${config.colors.accent};
-            --color-text: ${config.colors.text};
-            --color-text-light: ${config.colors.textLight};
-            --color-background: ${config.colors.background};
-            --color-border: ${config.colors.border};
-            --color-header-bg: ${config.colors.headerBg};
+            /* Colors - from theme (--rp- prefix for frontend sync) */
+            --rp-color-primary: ${config.colors.primary};
+            --rp-color-secondary: ${config.colors.secondary};
+            --rp-color-accent: ${config.colors.accent};
+            --rp-color-text: ${config.colors.text};
+            --rp-color-text-light: ${config.colors.textLight};
+            --rp-color-background: ${config.colors.background};
+            --rp-color-border: ${config.colors.border};
+            --rp-color-header-bg: ${config.colors.headerBg};
+            --rp-color-sidebar-bg: ${sidebarBg};
 
             /* Typography - from theme */
-            --font-family: ${config.typography.fontFamily};
-            --font-family-header: ${config.typography.headerFontFamily || config.typography.fontFamily};
-            --font-size-base: ${config.typography.baseFontSize}pt;
-            --font-size-name: ${config.typography.sizes?.name || 24}pt;
-            --font-size-title: ${config.typography.sizes?.title || 14}pt;
-            --font-size-section: ${config.typography.sizes?.sectionHeading || 12}pt;
-            --font-size-subheading: ${config.typography.sizes?.subheading || 11}pt;
-            --font-size-body: ${config.typography.sizes?.body || 10}pt;
-            --font-size-small: ${config.typography.sizes?.small || 9}pt;
-            --font-weight-light: ${config.typography.weights?.light || 300};
-            --font-weight-regular: ${config.typography.weights?.regular || 400};
-            --font-weight-medium: ${config.typography.weights?.medium || 500};
-            --font-weight-semibold: ${config.typography.weights?.semibold || 600};
-            --font-weight-bold: ${config.typography.weights?.bold || 700};
-            --line-height: ${config.typography.lineHeight || PRINT_SETTINGS.lineHeight};
+            --rp-font-family: ${config.typography.fontFamily};
+            --rp-font-family-header: ${config.typography.headerFontFamily || config.typography.fontFamily};
+            --rp-font-size-base: ${config.typography.baseFontSize}pt;
+            --rp-font-size-name: ${config.typography.sizes?.name || 24}pt;
+            --rp-font-size-title: ${config.typography.sizes?.title || 14}pt;
+            --rp-font-size-section: ${config.typography.sizes?.sectionHeading || 12}pt;
+            --rp-font-size-subheading: ${config.typography.sizes?.subheading || 11}pt;
+            --rp-font-size-body: ${config.typography.sizes?.body || 10}pt;
+            --rp-font-size-small: ${config.typography.sizes?.small || 9}pt;
+            --rp-font-weight-light: ${config.typography.weights?.light || 300};
+            --rp-font-weight-regular: ${config.typography.weights?.regular || 400};
+            --rp-font-weight-medium: ${config.typography.weights?.medium || 500};
+            --rp-font-weight-semibold: ${config.typography.weights?.semibold || 600};
+            --rp-font-weight-bold: ${config.typography.weights?.bold || 700};
+            --rp-line-height: ${config.typography.lineHeight || PRINT_SETTINGS.lineHeight};
 
             /* Spacing - from theme (in points) */
-            --spacing-section: ${config.layout.spacing.section}pt;
-            --spacing-item: ${config.layout.spacing.item}pt;
-            --spacing-line: ${config.layout.spacing.line}pt;
-            --spacing-paragraph: ${config.layout.spacing.paragraph || 6}pt;
+            --rp-spacing-section: ${config.layout.spacing.section}pt;
+            --rp-spacing-item: ${config.layout.spacing.item}pt;
+            --rp-spacing-line: ${config.layout.spacing.line}pt;
+            --rp-spacing-paragraph: ${config.layout.spacing.paragraph || 6}pt;
 
             /* Style - from theme */
-            --border-radius: ${config.style.borderRadius}px;
-            --divider-style: ${config.style.dividerStyle};
-            --divider-width: ${config.style.dividerWidth}px;
+            --rp-border-radius: ${config.style.borderRadius}px;
+            --rp-divider-style: ${config.style.dividerStyle};
+            --rp-divider-width: ${config.style.dividerWidth}px;
             
             /* Page info - from theme */
-            --page-size: ${config.layout.pageSize};
-            --margin-top: ${config.layout.margins.top}in;
-            --margin-right: ${config.layout.margins.right}in;
-            --margin-bottom: ${config.layout.margins.bottom}in;
-            --margin-left: ${config.layout.margins.left}in;
+            --rp-page-size: ${config.layout.pageSize};
+            --rp-margin-top: ${config.layout.margins.top}in;
+            --rp-margin-right: ${config.layout.margins.right}in;
+            --rp-margin-bottom: ${config.layout.margins.bottom}in;
+            --rp-margin-left: ${config.layout.margins.left}in;
+
+            /* Two-column layout */
+            --rp-sidebar-width: ${config.twoColumn?.sidebarWidth || 35}%;
+            --rp-sidebar-padding: ${config.twoColumn?.sidebarPadding || 16}pt;
         }
     `;
 };
@@ -339,6 +375,7 @@ export const exportThemeForFrontend = (themeConfig) => {
             visibility: { ...config.sections.visibility }
         },
         style: { ...config.style },
+        twoColumn: { ...config.twoColumn },
         // Include CSS variables as a string for easy frontend injection
         cssVariables: getThemeCSSVariables(config)
     };

@@ -19,6 +19,7 @@ import {
     renderExperience,
     renderEducation,
     renderSkills,
+    renderCertifications,
     renderAdditionalSections
 } from "./sections/index.js";
 import { getBaseStyles } from "./styles/base-styles.js";
@@ -135,20 +136,23 @@ const buildFrontendVariableBlock = (config) => {
         const spacing = config.layout?.spacing || {};
         const margins = config.layout?.margins || {};
         const colors = config.colors || {};
+        const twoColumn = config.twoColumn || {};
 
-        const fontFamily = typography.fontFamily || "'Montserrat', sans-serif";
+        const fontFamily = typography.fontFamily || "'Inter', 'Segoe UI', 'Roboto', sans-serif";
         const headerFontFamily = typography.headerFontFamily || fontFamily;
+        const sidebarBg = twoColumn.sidebarBg || colors.headerBg || '#f8fafc';
 
         return `
 :root {
-    --rp-color-primary: ${colors.primary || '#6c5ce7'};
-    --rp-color-secondary: ${colors.secondary || '#6c5ce7'};
-    --rp-color-accent: ${colors.accent || '#fd79a8'};
-    --rp-color-text: ${colors.text || '#2d3436'};
-    --rp-color-text-light: ${colors.textLight || '#666666'};
+    --rp-color-primary: ${colors.primary || '#2563eb'};
+    --rp-color-secondary: ${colors.secondary || '#1e293b'};
+    --rp-color-accent: ${colors.accent || '#0ea5e9'};
+    --rp-color-text: ${colors.text || '#1f2937'};
+    --rp-color-text-light: ${colors.textLight || '#6b7280'};
     --rp-color-background: ${colors.background || '#ffffff'};
-    --rp-color-border: ${colors.border || '#dddddd'};
-    --rp-color-header-bg: ${colors.headerBg || '#f5f5f5'};
+    --rp-color-border: ${colors.border || '#e5e7eb'};
+    --rp-color-header-bg: ${colors.headerBg || '#f8fafc'};
+    --rp-color-sidebar-bg: ${sidebarBg};
 
     --rp-font-family: ${fontFamily};
     --rp-font-family-header: ${headerFontFamily};
@@ -170,13 +174,16 @@ const buildFrontendVariableBlock = (config) => {
     --rp-spacing-line: ${toPxFromPoints(spacing.line || 4)}px;
     --rp-spacing-paragraph: ${toPxFromPoints(spacing.paragraph || 6)}px;
 
-    --rp-margin-top: ${toPxFromInches(margins.top || 0.5)}px;
-    --rp-margin-right: ${toPxFromInches(margins.right || 0.5)}px;
-    --rp-margin-bottom: ${toPxFromInches(margins.bottom || 0.5)}px;
-    --rp-margin-left: ${toPxFromInches(margins.left || 0.5)}px;
+    --rp-margin-top: ${toPxFromInches(margins.top || 0.4)}px;
+    --rp-margin-right: ${toPxFromInches(margins.right || 0.4)}px;
+    --rp-margin-bottom: ${toPxFromInches(margins.bottom || 0.4)}px;
+    --rp-margin-left: ${toPxFromInches(margins.left || 0.4)}px;
 
-    --rp-border-radius: ${(config.style?.borderRadius ?? 8)}px;
+    --rp-border-radius: ${(config.style?.borderRadius ?? 4)}px;
     --rp-divider-width: ${(config.style?.dividerWidth ?? 1)}px;
+
+    --rp-sidebar-width: ${twoColumn.sidebarWidth || 35}%;
+    --rp-sidebar-padding: ${toPxFromPoints(twoColumn.sidebarPadding || 16)}px;
 }
 `;
 };
@@ -190,13 +197,14 @@ const buildFrontendPreviewStyles = (config) => {
         const page = PAGE_SIZES[pageSizeKey] || PAGE_SIZES.A4;
         const pageWidthPx = Math.round((page.widthIn || page.width / 72) * PX_PER_INCH) || DEFAULT_PAGE_WIDTH_PX;
         const pageHeightPx = Math.round((page.heightIn || page.height / 72) * PX_PER_INCH) || DEFAULT_PAGE_HEIGHT_PX;
+        const margins = config.layout?.margins || { top: 0.4, right: 0.4, bottom: 0.4, left: 0.4 };
 
         return `
 ${buildFrontendVariableBlock(config)}
 
 @page {
     size: ${page.name || pageSizeKey};
-    margin: 0;
+    margin: ${margins.top}in ${margins.right}in ${margins.bottom}in ${margins.left}in;
 }
 
 body {
@@ -209,13 +217,14 @@ body {
 }
 
 .resume-container {
-    width: ${pageWidthPx}px;
+    width: 100%;
+    max-width: ${pageWidthPx}px;
     min-height: ${pageHeightPx}px;
     background-color: var(--rp-color-background);
-    padding: var(--rp-margin-top) var(--rp-margin-right) var(--rp-margin-bottom) var(--rp-margin-left);
-    border-radius: var(--rp-border-radius);
+    padding: 0;
+    border-radius: 0;
     position: relative;
-    overflow: hidden;
+    overflow: visible;
     color: var(--rp-color-text);
 }
 
@@ -223,12 +232,17 @@ body {
     .resume-container {
         margin: 0 auto;
         box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
+        padding: var(--rp-margin-top) var(--rp-margin-right) var(--rp-margin-bottom) var(--rp-margin-left);
+        border-radius: var(--rp-border-radius);
     }
 }
 
 @media print {
     .resume-container {
         box-shadow: none;
+        padding: 0;
+        overflow: visible;
+        min-height: auto;
     }
 }
 
@@ -262,7 +276,7 @@ a:hover { text-decoration: underline; }
 
 .header {
     padding-bottom: var(--rp-spacing-item);
-    margin-bottom: var(--rp-spacing-item);
+    margin-bottom: var(--rp-spacing-section);
     border-bottom: 2px solid var(--rp-color-primary);
 }
 
@@ -271,22 +285,24 @@ a:hover { text-decoration: underline; }
     font-family: var(--rp-font-family-header);
     font-weight: var(--rp-font-weight-bold);
     color: var(--rp-color-secondary);
-    margin: 0 0 6px;
+    margin: 0;
+    letter-spacing: -0.5px;
 }
 
 .header-title {
     font-size: var(--rp-font-size-title);
     font-weight: var(--rp-font-weight-medium);
     color: var(--rp-color-primary);
-    margin: 0 0 8px;
+    margin: 4px 0 0;
 }
 
 .contact-info {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px 16px;
+    gap: 4px 16px;
     font-size: var(--rp-font-size-small);
     color: var(--rp-color-text-light);
+    margin-top: 12px;
 }
 
 .contact-item {
@@ -299,7 +315,8 @@ a:hover { text-decoration: underline; }
 .contact-item svg {
     width: 12px;
     height: 12px;
-    color: var(--rp-color-text-light);
+    color: currentColor;
+    flex-shrink: 0;
 }
 
 .summary-text,
@@ -394,7 +411,7 @@ const escapeHTML = (str) => {
  */
 const renderSections = (content, config, options) => {
     const sectionOrder = config.sections?.order || [
-        'personalInfo', 'summary', 'experience', 'education', 'skills', 'additionalSections'
+        'personalInfo', 'summary', 'experience', 'education', 'skills', 'certifications', 'additionalSections'
     ];
     const visibility = config.sections?.visibility || {};
     const columns = Number(config.layout?.columns || 1);
@@ -403,7 +420,7 @@ const renderSections = (content, config, options) => {
         Array.isArray(value) && value.length > 0 ? value : fallback;
 
     const fullWidthSections = ensureArray(config.layout?.fullWidthSections, ['personalInfo', 'summary']);
-    const sidebarSections = ensureArray(config.layout?.sidebarSections, ['skills', 'additionalSections']);
+    const sidebarSections = ensureArray(config.layout?.sidebarSections, ['skills', 'certifications', 'additionalSections']);
     const mainSections = ensureArray(config.layout?.mainSections, ['experience', 'education']);
 
     const sectionRenderers = {
@@ -412,6 +429,7 @@ const renderSections = (content, config, options) => {
         experience: () => renderExperience(content.experience, config),
         education: () => renderEducation(content.education, config),
         skills: () => renderSkills(content.skills, config),
+        certifications: () => renderCertifications(content.skills?.certifications, config),
         additionalSections: () => renderAdditionalSections(content.additionalSections, config)
     };
 
@@ -478,21 +496,39 @@ const renderSections = (content, config, options) => {
  */
 const getLayoutStyles = (config) => {
     const columns = config.layout?.columns || 1;
+    const sidebarWidth = config.twoColumn?.sidebarWidth || 35;
+    const sidebarPosition = config.twoColumn?.sidebarPosition || 'left';
+    const sidebarPadding = config.twoColumn?.sidebarPadding || 16;
     
     if (columns === 2) {
+        // Match frontend: grid-cols-[35%_1fr] with proper sidebar styling
+        const gridCols = sidebarPosition === 'left' 
+            ? `${sidebarWidth}% 1fr`
+            : `1fr ${sidebarWidth}%`;
+        const positionClass = sidebarPosition === 'right' ? 'resume-two-column-right' : '';
+        
         return `
             .resume-two-column {
                 display: grid;
-                grid-template-columns: minmax(220px, 1fr) minmax(340px, 2fr);
-                gap: var(--spacing-section);
+                grid-template-columns: ${gridCols};
+                gap: var(--rp-spacing-section);
                 align-items: start;
             }
 
-            .resume-sidebar,
+            .resume-sidebar {
+                padding: ${sidebarPadding}pt;
+                background-color: var(--rp-color-sidebar-bg, var(--rp-color-header-bg));
+                border-radius: var(--rp-border-radius);
+                display: flex;
+                flex-direction: column;
+                gap: var(--rp-spacing-item);
+                min-width: 0;
+            }
+
             .resume-main {
                 display: flex;
                 flex-direction: column;
-                gap: var(--spacing-section);
+                gap: var(--rp-spacing-section);
                 min-width: 0;
             }
 
@@ -505,6 +541,23 @@ const getLayoutStyles = (config) => {
                 margin-bottom: 0;
             }
 
+            /* Sidebar section title adjustments */
+            .resume-sidebar .section-title {
+                font-size: calc(var(--rp-font-size-section) * 0.9);
+                margin-bottom: var(--rp-spacing-line);
+                padding-bottom: var(--rp-spacing-line);
+            }
+
+            /* Sidebar-specific compact styling */
+            .resume-sidebar .skill-category {
+                margin-bottom: var(--rp-spacing-line);
+            }
+
+            .resume-sidebar .entry-item {
+                margin-bottom: var(--rp-spacing-line);
+            }
+
+            /* Full width sections span above the columns */
             .section-personal-info,
             .section-summary {
                 width: 100%;
@@ -536,35 +589,36 @@ const getSectionStyles = (config) => {
         case 'underline':
             headingCSS = `
                 .section-title {
-                    border-bottom: 2px solid var(--color-primary);
-                    padding-bottom: var(--spacing-line);
-                    margin-bottom: var(--spacing-item);
+                    border-bottom: 2px solid var(--rp-color-primary);
+                    padding-bottom: var(--rp-spacing-line);
+                    margin-bottom: var(--rp-spacing-item);
                 }
             `;
             break;
         case 'background':
             headingCSS = `
                 .section-title {
-                    background-color: var(--color-header-bg);
-                    padding: var(--spacing-line) var(--spacing-item);
-                    margin-bottom: var(--spacing-item);
-                    border-left: 3px solid var(--color-primary);
+                    background-color: var(--rp-color-header-bg);
+                    padding: var(--rp-spacing-line) var(--rp-spacing-item);
+                    margin-bottom: var(--rp-spacing-item);
+                    border-left: 3px solid var(--rp-color-primary);
+                    border-radius: 4px;
                 }
             `;
             break;
         case 'accent-left':
             headingCSS = `
                 .section-title {
-                    padding-left: var(--spacing-item);
-                    border-left: 4px solid var(--color-primary);
-                    margin-bottom: var(--spacing-item);
+                    padding-left: var(--rp-spacing-item);
+                    border-left: 4px solid var(--rp-color-primary);
+                    margin-bottom: var(--rp-spacing-item);
                 }
             `;
             break;
         default: // simple
             headingCSS = `
                 .section-title {
-                    margin-bottom: var(--spacing-item);
+                    margin-bottom: var(--rp-spacing-item);
                 }
             `;
     }
@@ -575,12 +629,12 @@ const getSectionStyles = (config) => {
         .item-list,
         .entry-achievements {
             list-style-type: ${bulletStyle === 'dash' ? '"— "' : bulletStyle};
-            padding-left: ${bulletStyle === 'none' ? '0' : 'var(--spacing-section)'};
+            padding-left: ${bulletStyle === 'none' ? '0' : 'var(--rp-spacing-section)'};
         }
         
         .item-list li,
         .entry-achievements li {
-            margin-bottom: var(--spacing-line);
+            margin-bottom: var(--rp-spacing-line);
         }
         
         .item-list li:last-child,
@@ -590,8 +644,8 @@ const getSectionStyles = (config) => {
         
         .section-divider {
             border: none;
-            border-top: var(--divider-width) ${dividerStyle} var(--color-border);
-            margin: var(--spacing-section) 0;
+            border-top: var(--rp-divider-width) ${dividerStyle} var(--rp-color-border);
+            margin: var(--rp-spacing-section) 0;
         }
     `;
 };
