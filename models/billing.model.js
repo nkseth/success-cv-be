@@ -251,39 +251,82 @@ export const refundCredits = async (transactionID, reason) => {
  * @param {number|null} initiatedByUserID - User who initiated (for org purchases)
  */
 export const addCredits = async (walletID, amount, type, referenceType, referenceID, description, initiatedByUserID = null) => {
-    return await db.transaction(async (tx) => {
-        const [wallet] = await tx.update(creditWalletsTable)
-            .set({
-                balance: sql`${creditWalletsTable.balance} + ${amount}`,
-                lifetimeCredits: sql`${creditWalletsTable.lifetimeCredits} + ${amount}`,
-                updatedAt: new Date()
-            })
-            .where(eq(creditWalletsTable.id, walletID))
-            .returning();
-        
-        await tx.insert(creditTransactionsTable)
-            .values({
+    console.log('[BILLING DEBUG] addCredits called with:', { 
+        walletID, amount, type, referenceType, referenceID, description, initiatedByUserID 
+    });
+    
+    try {
+        return await db.transaction(async (tx) => {
+            console.log('[BILLING DEBUG] Starting transaction to add credits');
+            
+            // Update wallet balance
+            console.log('[BILLING DEBUG] Updating wallet balance for walletID:', walletID);
+            const [wallet] = await tx.update(creditWalletsTable)
+                .set({
+                    balance: sql`${creditWalletsTable.balance} + ${amount}`,
+                    lifetimeCredits: sql`${creditWalletsTable.lifetimeCredits} + ${amount}`,
+                    updatedAt: new Date()
+                })
+                .where(eq(creditWalletsTable.id, walletID))
+                .returning();
+            
+            if (!wallet) {
+                console.error('[BILLING DEBUG] ERROR: Wallet not found or update failed for walletID:', walletID);
+                throw new AppError('Wallet not found', 404);
+            }
+            
+            console.log('[BILLING DEBUG] Wallet updated successfully:', { 
+                walletID: wallet.id, 
+                newBalance: wallet.balance,
+                lifetimeCredits: wallet.lifetimeCredits 
+            });
+            
+            // Create transaction record
+            const transactionData = {
                 walletID,
                 initiatedByUserID,
                 type,
                 amount,
                 balanceAfter: wallet.balance,
                 referenceType: referenceType || null,
-                referenceID: referenceID || null,
+                referenceID: referenceID ? String(referenceID) : null,
                 status: 'completed',
                 description,
                 completedAt: new Date()
+            };
+            
+            console.log('[BILLING DEBUG] Inserting transaction record:', transactionData);
+            
+            const [transaction] = await tx.insert(creditTransactionsTable)
+                .values(transactionData)
+                .returning();
+            
+            if (!transaction) {
+                console.error('[BILLING DEBUG] ERROR: Failed to insert transaction record');
+                throw new AppError('Failed to create transaction record', 500);
+            }
+            
+            console.log('[BILLING DEBUG] Transaction record created successfully:', {
+                transactionID: transaction.id,
+                type: transaction.type,
+                amount: transaction.amount,
+                status: transaction.status
             });
-        
-        logger.info('[BILLING] Credits added', { 
-            walletID, 
-            amount, 
-            type, 
-            newBalance: wallet.balance 
+            
+            logger.info('[BILLING] Credits added', { 
+                walletID, 
+                amount, 
+                type, 
+                newBalance: wallet.balance,
+                transactionID: transaction.id
+            });
+            
+            return wallet;
         });
-        
-        return wallet;
-    });
+    } catch (error) {
+        console.error('[BILLING DEBUG] ERROR in addCredits:', error.message, error.stack);
+        throw error;
+    }
 };
 
 // ========== TRANSACTION HISTORY ==========

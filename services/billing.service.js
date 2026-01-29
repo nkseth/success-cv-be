@@ -181,27 +181,47 @@ export const createCreditPurchaseOrder = async (userID, forOrganisationID, credi
 
 /**
  * Verify and complete payment
+ * 
+ * CRITICAL SECURITY: This function performs two-step verification:
+ * 1. Verify the signature from Razorpay callback (client-side)
+ * 2. Verify payment status directly with Razorpay API (server-side authoritative check)
+ * 
+ * Never trust frontend data alone - always verify with Razorpay API
  */
 export const verifyAndCompletePayment = async (razorpayOrderId, razorpayPaymentId, razorpaySignature) => {
-    // Verify signature
-    const isValid = razorpayService.verifyPaymentSignature(
+    console.log('[BILLING DEBUG] verifyAndCompletePayment started:', {
+        razorpayOrderId,
+        razorpayPaymentId
+    });
+    
+    // Step 1: Verify signature (quick initial check)
+    console.log('[BILLING DEBUG] Step 1: Verifying payment signature');
+    const isSignatureValid = razorpayService.verifyPaymentSignature(
         razorpayOrderId,
         razorpayPaymentId,
         razorpaySignature
     );
     
-    if (!isValid) {
-        logger.warn('[BILLING] Invalid payment signature', { razorpayOrderId });
+    console.log('[BILLING DEBUG] Signature verification result:', isSignatureValid);
+    
+    if (!isSignatureValid) {
+        console.log('[BILLING DEBUG] Invalid payment signature - rejecting');
+        logger.warn('[BILLING] Invalid payment signature', { razorpayOrderId, razorpayPaymentId });
         throw new AppError('Invalid payment signature', 400);
     }
     
-    // Get our order
+    // Get our order first
+    console.log('[BILLING DEBUG] Fetching order from database for:', razorpayOrderId);
     const order = await billingModel.getPaymentOrderByRazorpayID(razorpayOrderId);
+    console.log('[BILLING DEBUG] Order found:', order ? { id: order.id, status: order.status, walletID: order.walletID, creditsAmount: order.creditsAmount } : 'NOT FOUND');
+    
     if (!order) {
+        console.log('[BILLING DEBUG] Order not found - rejecting');
         throw new AppError('Order not found', 404);
     }
     
     if (order.status === 'paid') {
+        console.log('[BILLING DEBUG] Order already paid - returning early');
         logger.info('[BILLING] Payment already processed', { orderID: order.id });
         return { 
             message: 'Payment already processed', 
@@ -210,7 +230,76 @@ export const verifyAndCompletePayment = async (razorpayOrderId, razorpayPaymentI
         };
     }
     
-    // Update order status
+    // Step 2: CRITICAL - Verify payment status directly with Razorpay API
+    // This is the authoritative check - never trust frontend data alone
+    console.log('[BILLING DEBUG] Step 2: Verifying payment with Razorpay API');
+    // Pass expected amount in paise for capture if needed
+    const expectedAmountInPaise = Math.round(order.amount * 100);
+    const apiVerification = await razorpayService.verifyPaymentWithRazorpay(
+        razorpayPaymentId, 
+        razorpayOrderId,
+        expectedAmountInPaise
+    );
+    
+    console.log('[BILLING DEBUG] API verification result:', {
+        verified: apiVerification.verified,
+        error: apiVerification.error,
+        paymentStatus: apiVerification.payment?.status,
+        paymentAmount: apiVerification.payment?.amount
+    });
+    
+    if (!apiVerification.verified) {
+        console.log('[BILLING DEBUG] API verification failed - rejecting');
+        logger.error('[BILLING] Payment verification failed with Razorpay API', { 
+            razorpayOrderId, 
+            razorpayPaymentId,
+            error: apiVerification.error,
+            paymentStatus: apiVerification.payment?.status
+        });
+        
+        // Update order status to failed
+        await billingModel.updatePaymentOrder(order.id, {
+            status: 'failed',
+            razorpayPaymentId,
+            failureReason: apiVerification.error
+        });
+        
+        throw new AppError(`Payment verification failed: ${apiVerification.error}`, 400);
+    }
+    
+    // Verify amount matches our order (in paise) - use the already calculated value
+    console.log('[BILLING DEBUG] Verifying amount:', {
+        expectedAmountInPaise,
+        actualAmount: apiVerification.payment.amount,
+        orderAmount: order.amount
+    });
+    
+    if (apiVerification.payment.amount !== expectedAmountInPaise) {
+        console.log('[BILLING DEBUG] Amount mismatch - rejecting');
+        logger.error('[BILLING] Payment amount mismatch', { 
+            razorpayOrderId, 
+            expectedAmount: expectedAmountInPaise,
+            actualAmount: apiVerification.payment.amount
+        });
+        
+        await billingModel.updatePaymentOrder(order.id, {
+            status: 'failed',
+            razorpayPaymentId,
+            failureReason: 'Payment amount mismatch'
+        });
+        
+        throw new AppError('Payment amount does not match order', 400);
+    }
+    
+    // All verifications passed - Update order status
+    console.log('[BILLING DEBUG] All verifications passed, updating order status to paid');
+    console.log('[BILLING DEBUG] Order details:', {
+        orderID: order.id,
+        walletID: order.walletID,
+        creditsAmount: order.creditsAmount,
+        userID: order.userID
+    });
+    
     await billingModel.updatePaymentOrder(order.id, {
         status: 'paid',
         razorpayPaymentId,
@@ -218,28 +307,48 @@ export const verifyAndCompletePayment = async (razorpayOrderId, razorpayPaymentI
         paidAt: new Date()
     });
     
+    console.log('[BILLING DEBUG] Order status updated to paid, now adding credits to wallet');
+    
     // Add credits to wallet
-    const wallet = await billingModel.addCredits(
-        order.walletID,
-        order.creditsAmount,
-        'purchase',
-        'purchase',
-        order.id,
-        `Purchased ${order.creditsAmount} credits`,
-        order.userID
-    );
-    
-    logger.info('[BILLING] Payment verified and credits added', { 
-        orderID: order.id,
-        credits: order.creditsAmount,
-        newBalance: wallet.balance
-    });
-    
-    return { 
-        message: 'Payment successful',
-        credits: order.creditsAmount,
-        newBalance: wallet.balance
-    };
+    try {
+        const wallet = await billingModel.addCredits(
+            order.walletID,
+            order.creditsAmount,
+            'purchase',
+            'purchase',
+            order.id,
+            `Purchased ${order.creditsAmount} credits`,
+            order.userID
+        );
+        
+        console.log('[BILLING DEBUG] Credits added successfully:', {
+            walletID: wallet.id,
+            newBalance: wallet.balance
+        });
+        
+        logger.info('[BILLING] Payment verified and credits added', { 
+            orderID: order.id,
+            credits: order.creditsAmount,
+            newBalance: wallet.balance,
+            razorpayPaymentId
+        });
+        
+        return { 
+            message: 'Payment successful',
+            credits: order.creditsAmount,
+            newBalance: wallet.balance
+        };
+    } catch (error) {
+        console.error('[BILLING DEBUG] ERROR adding credits:', error.message, error.stack);
+        // Order is marked as paid but credits failed - this needs manual intervention
+        logger.error('[BILLING] CRITICAL: Payment marked as paid but credits failed to add', {
+            orderID: order.id,
+            walletID: order.walletID,
+            creditsAmount: order.creditsAmount,
+            error: error.message
+        });
+        throw error;
+    }
 };
 
 // ========== WEBHOOK HANDLING ==========

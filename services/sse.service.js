@@ -45,7 +45,7 @@ class SSEService {
         this.sendEvent(connectionId, 'connected', {
             connectionId,
             timestamp: Date.now(),
-            message: 'SSE connection established'
+            message: 'Connection established successfully'
         });
 
         // Set up heartbeat interval (every 30 seconds)
@@ -178,7 +178,8 @@ class SSEService {
             this.sendEvent(connectionId, 'subscribed', {
                 type: 'job',
                 jobId,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                message: 'Ready to receive updates'
             });
         } catch (error) {
             logger.error('SSE: Failed to subscribe to job', { 
@@ -221,7 +222,8 @@ class SSEService {
             this.sendEvent(connectionId, 'subscribed', {
                 type: 'queue',
                 queueName,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                message: 'Ready to receive updates'
             });
         } catch (error) {
             logger.error('SSE: Failed to subscribe to queue', { 

@@ -2006,6 +2006,45 @@ export const updateTitle = async (contentID, userID, title, userType = userTypeC
     }
 };
 
+/**
+ * Soft delete a resume
+ * @param {number} contentID - Resume content ID
+ * @param {number} userID - User ID
+ * @param {string} userType - 'user' | 'candidate'
+ * @returns {Promise<Object>} Deleted resume info
+ */
+export const deleteResume = async (contentID, userID, userType = userTypeConstants.USER) => {
+    try {
+        logger.info('[RESUME_SERVICE] Deleting resume', {
+            contentID,
+            userID,
+            userType
+        });
+
+        const result = await resumeModel.softDeleteResume(contentID, userID, userType);
+
+        logger.info('[RESUME_SERVICE] ✅ Resume deleted successfully', {
+            contentID,
+            documentID: result.documentID,
+            userType
+        });
+
+        return {
+            id: result.id,
+            title: result.title,
+            deletedAt: result.deletedAt,
+            message: 'Resume deleted successfully'
+        };
+    } catch (error) {
+        logger.error('[RESUME_SERVICE] Failed to delete resume', {
+            error: error.message,
+            contentID,
+            userType
+        });
+        throw error;
+    }
+};
+
 export default {
     // Content operations
     createResumeFromAnalysis,
@@ -2016,6 +2055,7 @@ export default {
     updateSection,
     updateSections,
     updateTitle,
+    deleteResume,
     // Rewrite operations
     createRewrite,
     getRewrite,

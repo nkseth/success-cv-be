@@ -437,7 +437,7 @@ async function processResumeAnalysis(job) {
             await publishJobUpdate(job.id, {
                 progress: 100,
                 status: 'completed',
-                message: 'Resume analysis completed successfully!',
+                message: 'Your resume has been analyzed successfully',
                 result: {
                     analysisID,
                     scores: {
@@ -544,7 +544,7 @@ async function processResumeAnalysis(job) {
         await publishJobUpdate(job.id, {
             progress: 0,
             status: 'failed',
-            message: `Resume analysis failed: ${error.message}`,
+            message: `We encountered an issue analyzing your resume. Please try again or contact support.`,
             error: error.message
         });
 

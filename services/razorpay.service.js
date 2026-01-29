@@ -30,15 +30,144 @@ export const createOrder = async (amount, currency = 'INR', receipt, notes = {})
 /**
  * Verify Razorpay payment signature
  * Used after frontend receives payment confirmation
+ * 
+ * CRITICAL: This verifies the signature is authentic, but you should
+ * also verify the payment status from Razorpay API for critical operations.
  */
 export const verifyPaymentSignature = (orderId, paymentId, signature) => {
+    // Ensure secret is configured
+    if (!process.env.RAZORPAY_KEY_SECRET) {
+        logger.error('[RAZORPAY] RAZORPAY_KEY_SECRET not configured for signature verification');
+        throw new AppError('Payment verification not configured', 500);
+    }
+    
     const body = `${orderId}|${paymentId}`;
     const generatedSignature = crypto
         .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
         .update(body)
         .digest('hex');
     
-    return generatedSignature === signature;
+    // Use timing-safe comparison to prevent timing attacks
+    try {
+        return crypto.timingSafeEqual(
+            Buffer.from(signature),
+            Buffer.from(generatedSignature)
+        );
+    } catch (error) {
+        // Buffers have different lengths - signatures don't match
+        return false;
+    }
+};
+
+/**
+ * Capture an authorized payment
+ * This transfers the funds from the customer's account
+ * 
+ * @param {string} paymentId - Razorpay payment ID
+ * @param {number} amount - Amount to capture in paise
+ * @returns {Promise<Object>} - Captured payment object
+ */
+export const capturePayment = async (paymentId, amount) => {
+    try {
+        console.log('[RAZORPAY DEBUG] Capturing payment:', { paymentId, amount });
+        const payment = await razorpay.payments.capture(paymentId, amount);
+        console.log('[RAZORPAY DEBUG] Payment captured successfully:', { 
+            paymentId, 
+            status: payment.status 
+        });
+        logger.info('[RAZORPAY] Payment captured', { paymentId, amount, status: payment.status });
+        return payment;
+    } catch (error) {
+        console.error('[RAZORPAY DEBUG] Failed to capture payment:', error.message);
+        logger.error('[RAZORPAY] Failed to capture payment', { paymentId, error: error.message });
+        throw error;
+    }
+};
+
+/**
+ * Verify payment is actually captured/paid by fetching from Razorpay API
+ * If payment is in "authorized" state, it will be captured automatically
+ * This is the authoritative check - never trust frontend data alone
+ * 
+ * @param {string} paymentId - Razorpay payment ID
+ * @param {string} expectedOrderId - Expected order ID (for additional validation)
+ * @param {number} expectedAmount - Expected amount in paise (for capture)
+ * @returns {Promise<{verified: boolean, payment?: Object, error?: string}>}
+ */
+export const verifyPaymentWithRazorpay = async (paymentId, expectedOrderId, expectedAmount = null) => {
+    try {
+        let payment = await razorpay.payments.fetch(paymentId);
+        
+        console.log('[RAZORPAY DEBUG] Payment fetched:', { 
+            paymentId, 
+            status: payment.status, 
+            amount: payment.amount,
+            order_id: payment.order_id 
+        });
+        
+        // If payment is authorized but not captured, capture it
+        if (payment.status === 'authorized') {
+            console.log('[RAZORPAY DEBUG] Payment is authorized, attempting to capture...');
+            const amountToCapture = expectedAmount || payment.amount;
+            
+            try {
+                payment = await capturePayment(paymentId, amountToCapture);
+            } catch (captureError) {
+                logger.error('[RAZORPAY] Failed to capture authorized payment', { 
+                    paymentId, 
+                    error: captureError.message 
+                });
+                return { 
+                    verified: false, 
+                    error: `Failed to capture payment: ${captureError.message}`,
+                    payment 
+                };
+            }
+        }
+        
+        // Check payment status - must be captured for funds to be received
+        if (payment.status !== 'captured') {
+            logger.warn('[RAZORPAY] Payment not captured', { 
+                paymentId, 
+                status: payment.status,
+                expectedOrderId 
+            });
+            return { 
+                verified: false, 
+                error: `Payment status is ${payment.status}, expected captured`,
+                payment 
+            };
+        }
+        
+        // Verify the payment belongs to the expected order
+        if (payment.order_id !== expectedOrderId) {
+            logger.warn('[RAZORPAY] Payment order mismatch', { 
+                paymentId, 
+                paymentOrderId: payment.order_id,
+                expectedOrderId 
+            });
+            return { 
+                verified: false, 
+                error: 'Payment order ID mismatch',
+                payment 
+            };
+        }
+        
+        logger.info('[RAZORPAY] Payment verified with API', { 
+            paymentId, 
+            orderId: payment.order_id,
+            amount: payment.amount,
+            status: payment.status 
+        });
+        
+        return { verified: true, payment };
+    } catch (error) {
+        logger.error('[RAZORPAY] Failed to verify payment with API', { 
+            paymentId, 
+            error: error.message 
+        });
+        return { verified: false, error: error.message };
+    }
 };
 
 /**
@@ -104,6 +233,8 @@ export const fetchOrder = async (orderId) => {
 export default {
     createOrder,
     verifyPaymentSignature,
+    verifyPaymentWithRazorpay,
+    capturePayment,
     verifyWebhookSignature,
     fetchPayment,
     fetchOrder

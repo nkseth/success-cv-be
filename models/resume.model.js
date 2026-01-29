@@ -1739,6 +1739,107 @@ export const updateDocumentTitle = async (contentID, userID, title, userType = u
     }
 };
 
+/**
+ * Soft delete a resume by marking its document as deleted
+ * @param {number} contentID - Resume content ID
+ * @param {number} userID - User ID (for security check)
+ * @param {string} userType - 'user' | 'candidate'
+ * @returns {Promise<Object>} Deleted resume info
+ */
+export const softDeleteResume = async (contentID, userID, userType = userTypeConstants.USER) => {
+    try {
+        const tables = getTablesForUserType(userType);
+        const entityIDField = tables.isCandidate ? 'candidateID' : 'userID';
+        
+        logger.info('[RESUME_MODEL] Soft deleting resume', {
+            contentID,
+            userID,
+            userType
+        });
+
+        // First verify the resume belongs to the user
+        const content = await db
+            .select({
+                id: tables.contentTable.id,
+                analysisID: tables.contentTable.analysisID
+            })
+            .from(tables.contentTable)
+            .where(
+                and(
+                    eq(tables.contentTable.id, contentID),
+                    eq(tables.contentTable[entityIDField], userID)
+                )
+            )
+            .limit(1);
+
+        if (!content || content.length === 0) {
+            throw new AppError('Resume not found', 404);
+        }
+
+        // Get the document ID from the analysis
+        const analysis = await db
+            .select({
+                documentID: tables.analysisTable.documentID
+            })
+            .from(tables.analysisTable)
+            .where(eq(tables.analysisTable.id, content[0].analysisID))
+            .limit(1);
+
+        if (!analysis || analysis.length === 0) {
+            throw new AppError('Resume document not found', 404);
+        }
+
+        const documentID = analysis[0].documentID;
+
+        // Soft delete the document by setting deletedAt timestamp
+        const deleted = await db
+            .update(tables.documentTable)
+            .set({
+                deletedAt: new Date(),
+                updatedAt: new Date()
+            })
+            .where(
+                and(
+                    eq(tables.documentTable.id, documentID),
+                    eq(tables.documentTable[entityIDField], userID),
+                    isNull(tables.documentTable.deletedAt) // Ensure not already deleted
+                )
+            )
+            .returning({
+                id: tables.documentTable.id,
+                title: tables.documentTable.title,
+                deletedAt: tables.documentTable.deletedAt
+            });
+
+        if (!deleted || deleted.length === 0) {
+            throw new AppError('Resume not found or already deleted', 404);
+        }
+
+        logger.info('[RESUME_MODEL] ✅ Resume soft deleted', {
+            contentID,
+            documentID,
+            userID,
+            userType
+        });
+
+        return {
+            id: contentID,
+            documentID,
+            title: deleted[0].title,
+            deletedAt: deleted[0].deletedAt
+        };
+    } catch (error) {
+        logger.error('[RESUME_MODEL] Failed to soft delete resume', {
+            error: error.message,
+            contentID,
+            userID,
+            userType
+        });
+        if (error instanceof AppError) throw error;
+        throw new AppError(`Failed to delete resume: ${error.message}`, 500);
+    }
+};
+
 export default {
     // Content operations
     createResumeContent,
@@ -1749,6 +1850,7 @@ export default {
     updateMultipleSections,
     updateResumeScores,
     updateDocumentTitle,
+    softDeleteResume,
     // Blank resume operations
     createBlankDocument,
     createBlankAnalysis,

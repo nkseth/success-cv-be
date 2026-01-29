@@ -59,7 +59,9 @@ export const downloadResumeController = asyncHandler(async (req, res, next) => {
     res.setHeader('Content-Type', result.contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
     res.setHeader('Content-Length', result.buffer.length);
-    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     
     // Add metadata headers
     res.setHeader('X-Resume-Version', result.metadata.version);
@@ -101,7 +103,9 @@ export const downloadResumeByAnalysisController = asyncHandler(async (req, res, 
     res.setHeader('Content-Type', result.contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
     res.setHeader('Content-Length', result.buffer.length);
-    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
 
     res.send(result.buffer);
 });
@@ -139,7 +143,9 @@ export const downloadRewriteController = asyncHandler(async (req, res, next) => 
     res.setHeader('Content-Type', result.contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
     res.setHeader('Content-Length', result.buffer.length);
-    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     
     res.setHeader('X-Rewrite-Version', result.metadata.versionNumber);
     if (result.metadata.versionLabel) {
@@ -183,7 +189,9 @@ export const previewResumeController = asyncHandler(async (req, res, next) => {
     // Inline disposition for viewing in browser
     res.setHeader('Content-Type', result.contentType);
     res.setHeader('Content-Disposition', 'inline');
-    res.setHeader('Cache-Control', 'private, max-age=60');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
 
     res.send(result.buffer);
 });

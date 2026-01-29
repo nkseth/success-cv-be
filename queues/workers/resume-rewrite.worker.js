@@ -625,7 +625,7 @@ ${userPrompt || 'Tailor this resume to maximize match with the target job requir
             await publishJobUpdate(job.id, {
                 progress: 100,
                 status: 'completed',
-                message: 'Resume optimization completed and applied successfully',
+                message: 'Your resume has been optimized successfully',
                 data: {
                     rewriteID,
                     analysisID,
@@ -687,7 +687,7 @@ ${userPrompt || 'Tailor this resume to maximize match with the target job requir
         await publishJobUpdate(job.id, {
             progress: 0,
             status: 'failed',
-            message: `Resume optimization failed: ${error.message}`,
+            message: `We encountered an issue optimizing your resume. Please try again or contact support.`,
             error: error.message
         });
 

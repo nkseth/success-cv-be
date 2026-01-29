@@ -73,13 +73,24 @@ const generateAiResponseObject = async ({ system, content, schema, model = 'gpt-
         throw new Error('No object generated: AI response was empty or invalid');
       }
 
+      // Log what we received for debugging
+      console.log('AI response object keys:', Object.keys(completion.object));
+
       // Validate that we have at least the minimum required fields
-      const hasMinimumData = completion.object.personal_info || 
-                            (completion.object.experiences && completion.object.experiences.length > 0) ||
-                            (completion.object.education && completion.object.education.length > 0);
+      // Support both resume parsing schema (personal_info, experiences, education)
+      // and resume optimization schema (summary, experience, skills)
+      const obj = completion.object;
+      const hasParsingData = obj.personal_info || 
+                            (obj.experiences && obj.experiences.length > 0) ||
+                            (obj.education && obj.education.length > 0);
+      const hasOptimizationData = obj.summary || 
+                                  (obj.experience && obj.experience.length > 0) ||
+                                  obj.skills;
+      const hasMinimumData = hasParsingData || hasOptimizationData;
       
       if (!hasMinimumData) {
-        throw new Error('Generated object lacks minimum required data (personal_info, experiences, or education)');
+        console.error('AI response object (first 500 chars):', JSON.stringify(completion.object).substring(0, 500));
+        throw new Error('Generated object lacks minimum required data (personal_info/experiences/education for parsing, or summary/experience/skills for optimization)');
       }
 
       console.log('AI object generation successful on attempt', attempt);

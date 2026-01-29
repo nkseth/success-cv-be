@@ -242,6 +242,28 @@ export const updateTitleController = asyncHandler(async (req, res, next) => {
 });
 
 /**
+ * Delete resume (soft delete)
+ * DELETE /api/v1/resumes/:id
+ */
+export const deleteResumeController = asyncHandler(async (req, res, next) => {
+    const userID = req.userID;
+    const userType = req.type || userTypeConstants.USER;
+    const { id } = req.params;
+
+    const validatedID = validateInteger(id, 'Resume ID');
+
+    logger.info('[RESUME_CONTROLLER] Deleting resume', {
+        userID,
+        userType,
+        resumeID: validatedID
+    });
+
+    const result = await resumeService.deleteResume(validatedID, userID, userType);
+
+    sendSuccess(res, result, 'Resume deleted successfully');
+});
+
+/**
  * Get resume formatted for rendering with theme
  * GET /api/v1/resumes/:id/render
  */
@@ -417,9 +439,13 @@ export const getUserRewritesController = asyncHandler(async (req, res, next) => 
         defaultSort: { field: 'createdAt', order: 'desc' }
     });
 
+    // Only return completed rewrites (filter out pending and failed)
+    const statusFilter = filters.status || ['completed'];
+    const updatedFilters = { ...filters, status: statusFilter };
+
     const { rewrites, totalCount } = await resumeService.getUserRewrites(userID, {
         pagination,
-        filters,
+        filters: updatedFilters,
         sort,
         userType
     });
@@ -475,10 +501,14 @@ export const getRewritesController = asyncHandler(async (req, res, next) => {
         defaultSort: { field: 'createdAt', order: 'desc' }
     });
 
+    // Only return completed rewrites (filter out pending and failed)
+    const statusFilter = filters.status || ['completed'];
+    const updatedFilters = { ...filters, status: statusFilter };
+
     const { rewrites, totalCount } = await resumeService.getRewritesByAnalysis(
         resume.content.analysisID,
         userID,
-        { pagination, filters, sort, userType }
+        { pagination, filters: updatedFilters, sort, userType }
     );
 
     // Calculate pagination metadata
@@ -508,6 +538,11 @@ export const getRewriteController = asyncHandler(async (req, res, next) => {
     });
 
     const rewrite = await resumeService.getRewrite(validatedRewriteID, userID, userType);
+
+    // Only return if status is completed
+    if (rewrite.status !== 'completed') {
+        throw new AppError('Rewrite is not yet completed', 404);
+    }
 
     sendSuccess(res, rewrite, 'Rewrite fetched successfully');
 });
@@ -834,8 +869,12 @@ export default {
     getResumeByAnalysisController,
     updateSectionController,
     updateSectionsController,
+    updateTitleController,
+    deleteResumeController,
     getResumeForRenderController,
     publishResumeController,
+    createBlankResumeController,
+    getUserRewritesController,
     // Rewrites
     createRewriteController,
     createRewriteByAnalysisController,

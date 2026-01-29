@@ -11,29 +11,29 @@ import logger from '../middleware/logger.js';
  */
 export const PROGRESS_STAGES = {
     // Resume Analysis stages
-    INIT: { percent: 0, message: 'Initializing resume analysis...' },
-    DOWNLOADING: { percent: 10, message: 'Downloading resume file...' },
-    EXTRACTING: { percent: 25, message: 'Extracting text from resume...' },
-    PARSING: { percent: 40, message: 'Parsing resume content...' },
-    ANALYZING: { percent: 60, message: 'Analyzing resume with AI...' },
-    SCORING: { percent: 80, message: 'Calculating scores...' },
-    SAVING: { percent: 90, message: 'Saving results to database...' },
-    COMPLETE: { percent: 100, message: 'Resume analysis completed!' }
+    INIT: { percent: 0, message: 'Preparing to analyze your resume...' },
+    DOWNLOADING: { percent: 10, message: 'Retrieving your resume file...' },
+    EXTRACTING: { percent: 25, message: 'Reading resume content...' },
+    PARSING: { percent: 40, message: 'Processing resume information...' },
+    ANALYZING: { percent: 60, message: 'Analyzing your resume...' },
+    SCORING: { percent: 80, message: 'Evaluating your resume...' },
+    SAVING: { percent: 90, message: 'Saving your analysis...' },
+    COMPLETE: { percent: 100, message: 'Analysis complete!' }
 };
 
 /**
  * Rewrite-specific progress stages with more granular messages
  */
 export const REWRITE_PROGRESS_STAGES = {
-    INIT: { percent: 0, message: 'Initializing resume rewrite...' },
-    PREPARING: { percent: 15, message: 'Preparing current content for optimization...' },
-    ANALYZING_ISSUES: { percent: 25, message: 'Analyzing issues from original analysis...' },
-    OPTIMIZING: { percent: 40, message: 'AI is optimizing your resume content...' },
+    INIT: { percent: 0, message: 'Preparing to optimize your resume...' },
+    PREPARING: { percent: 15, message: 'Reviewing current content...' },
+    ANALYZING_ISSUES: { percent: 25, message: 'Identifying areas for improvement...' },
+    OPTIMIZING: { percent: 40, message: 'Optimizing your resume content...' },
     ENHANCING_SECTIONS: { percent: 55, message: 'Enhancing resume sections...' },
-    IMPROVING_ATS: { percent: 70, message: 'Improving ATS compatibility...' },
+    IMPROVING_ATS: { percent: 70, message: 'Improving readability and compatibility...' },
     SAVING: { percent: 85, message: 'Saving optimized content...' },
-    APPLYING: { percent: 92, message: 'Applying rewrite to your resume...' },
-    COMPLETE: { percent: 100, message: 'Resume optimization completed!' }
+    APPLYING: { percent: 92, message: 'Finalizing changes...' },
+    COMPLETE: { percent: 100, message: 'Optimization complete!' }
 };
 
 /**
@@ -97,7 +97,7 @@ export async function safeExecuteWithSSE(jobId, progressPercent, stepDescription
             progress: progressPercent,
             stage: stage,
             status: 'step_completed',
-            message: `${stepDescription} - completed`
+            message: stepDescription
         });
         
         logger.info('[PROGRESS] ✅ Step completed', { 
@@ -121,7 +121,7 @@ export async function safeExecuteWithSSE(jobId, progressPercent, stepDescription
             progress: progressPercent,
             stage: stage,
             status: 'step_failed',
-            message: `${stepDescription} - failed: ${error.message}`,
+            message: `Unable to complete: ${error.message}`,
             error: error.message
         });
         

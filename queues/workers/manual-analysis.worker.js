@@ -110,12 +110,12 @@ import billingModel from '../../models/billing.model.js';
 
 // Custom progress stages for manual analysis (no download/extract steps)
 const MANUAL_ANALYSIS_STAGES = {
-    INIT: { percent: 0, message: 'Initializing resume analysis...' },
-    PREPARING: { percent: 15, message: 'Preparing resume content for analysis...' },
-    ANALYZING: { percent: 40, message: 'AI is analyzing your resume...' },
-    SCORING: { percent: 70, message: 'Calculating scores and identifying improvements...' },
-    SAVING: { percent: 85, message: 'Saving analysis results...' },
-    COMPLETE: { percent: 100, message: 'Resume analysis completed!' }
+    INIT: { percent: 0, message: 'Preparing to analyze your resume...' },
+    PREPARING: { percent: 15, message: 'Processing resume content...' },
+    ANALYZING: { percent: 40, message: 'Analyzing your resume...' },
+    SCORING: { percent: 70, message: 'Evaluating your resume...' },
+    SAVING: { percent: 85, message: 'Saving your analysis...' },
+    COMPLETE: { percent: 100, message: 'Analysis complete!' }
 };
 
 /**
@@ -450,7 +450,7 @@ async function processManualAnalysis(job) {
             await publishJobUpdate(job.id, {
                 progress: 100,
                 status: 'completed',
-                message: 'Resume analysis completed successfully!',
+                message: 'Your resume has been analyzed successfully',
                 result: {
                     analysisID,
                     scores: {
@@ -555,7 +555,7 @@ async function processManualAnalysis(job) {
         await publishJobUpdate(job.id, {
             progress: 0,
             status: 'failed',
-            message: `Resume analysis failed: ${error.message}`,
+            message: `We encountered an issue analyzing your resume. Please try again or contact support.`,
             error: error.message
         });
 

@@ -12,6 +12,7 @@ import {
     updateSectionController,
     updateSectionsController,
     updateTitleController,
+    deleteResumeController,
     getResumeForRenderController,
     publishResumeController,
     // Rewrite endpoints
@@ -170,6 +171,13 @@ router.patch('/:id/sections', updateSectionsController);
  * @body { title: string }
  */
 router.patch('/:id/title', updateTitleController);
+
+/**
+ * @route DELETE /api/v1/resumes/:id
+ * @desc Soft delete a resume
+ * @access Private
+ */
+router.delete('/:id', deleteResumeController);
 
 /**
  * @route POST /api/v1/resumes/:id/publish

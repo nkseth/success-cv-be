@@ -98,15 +98,26 @@ export const getCreditHistoryController = asyncHandler(async (req, res) => {
 export const verifyPaymentController = asyncHandler(async (req, res) => {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
     
+    console.log('[BILLING DEBUG] verifyPaymentController called with:', {
+        razorpay_order_id,
+        razorpay_payment_id,
+        razorpay_signature: razorpay_signature ? `${razorpay_signature.substring(0, 10)}...` : 'MISSING'
+    });
+    
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+        console.log('[BILLING DEBUG] Missing payment verification data');
         throw new AppError('Missing payment verification data', 400);
     }
+    
+    console.log('[BILLING DEBUG] Calling billingService.verifyAndCompletePayment');
     
     const result = await billingService.verifyAndCompletePayment(
         razorpay_order_id,
         razorpay_payment_id,
         razorpay_signature
     );
+    
+    console.log('[BILLING DEBUG] verifyAndCompletePayment result:', result);
     
     sendSuccess(res, result, 'Payment verified successfully');
 });
