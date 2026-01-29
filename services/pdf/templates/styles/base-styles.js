@@ -107,12 +107,11 @@ export const getBaseStyles = (config) => {
 
         .section-title {
             font-size: var(--rp-font-size-section);
-            font-weight: var(--rp-font-weight-bold);
+            font-weight: var(--rp-font-weight-semibold);
             color: var(--rp-color-primary);
             text-transform: uppercase;
-            letter-spacing: 1pt;
+            letter-spacing: 0.05em;
             margin-bottom: var(--rp-spacing-item);
-            padding-bottom: var(--rp-spacing-line);
         }
 
         .section-content {

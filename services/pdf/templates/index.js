@@ -583,32 +583,40 @@ const getSectionStyles = (config) => {
     
     switch (headingStyle) {
         case 'underline':
+            // Underline (Default): border-bottom styling
             headingCSS = `
                 .section-title {
                     border-bottom: 2px solid var(--rp-color-primary);
-                    padding-bottom: var(--rp-spacing-line);
-                    margin-bottom: var(--rp-spacing-item);
+                    padding-bottom: 4px;
+                    margin-bottom: 8px;
                 }
             `;
             break;
         case 'background':
+            // Background: headerBg background with padding
             headingCSS = `
                 .section-title {
-                    margin-bottom: var(--rp-spacing-item);
+                    background-color: var(--rp-color-header-bg);
+                    padding: 4px 8px;
+                    margin-bottom: 8px;
                 }
             `;
             break;
         case 'accent-left':
+            // Accent Left: left border styling
             headingCSS = `
                 .section-title {
-                    margin-bottom: var(--rp-spacing-item);
+                    border-left: 3px solid var(--rp-color-primary);
+                    padding-left: 8px;
+                    margin-bottom: 8px;
                 }
             `;
             break;
         default: // simple
+            // Simple: clean, no decoration
             headingCSS = `
                 .section-title {
-                    margin-bottom: var(--rp-spacing-item);
+                    margin-bottom: 8px;
                 }
             `;
     }
