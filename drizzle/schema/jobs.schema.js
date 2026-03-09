@@ -49,7 +49,7 @@ export const jobsTable = pgTable("jobs", {
     salaryPeriod: varchar("salary_period", { length: 20 }), // 'yearly', 'monthly', 'hourly'
     
     // Job content (for matching & display)
-    description: text().notNull(),
+    description: text(), // nullable — some scrapers (Internshala, LinkedIn-India, Shine) may return null
     requirements: text(),
     responsibilities: text(),
     benefits: text(),
@@ -110,7 +110,7 @@ export const jobsTable = pgTable("jobs", {
     index("jobs_source_active_idx").on(table.source, table.isActive),
     
     // Skills matching (GIN index for JSONB array operations)
-    index("jobs_skills_idx").on(table.skillsRequired),
+    index("jobs_skills_idx").using('gin', table.skillsRequired),
     
     // Date range queries
     index("jobs_posted_date_idx").on(table.postedDate),

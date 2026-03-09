@@ -28,6 +28,12 @@ COPY --from=builder /app/node_modules ./node_modules
 # Copy application files
 COPY . .
 
+# Install Python and scrapling (for scraper/ sub-service)
+# scrapling install downloads Chromium binaries needed by StealthyFetcher/DynamicFetcher
+RUN apk add --no-cache python3 py3-pip \
+    && pip3 install --break-system-packages "scrapling[fetchers]" \
+    && scrapling install
+
 # Create a non-root user
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001 && \

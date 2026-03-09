@@ -32,6 +32,7 @@ export const jobScrapingQueue = queueService.registerQueue('job-scraping', {
 export const JOB_SCRAPING_TYPES = {
     SCRAPE_SOURCE: 'scrape-job-source', // Scrape a specific source
     SCRAPE_ALL: 'scrape-all-sources', // Scrape all sources
+    SCRAPE_INDIAN_SOURCE: 'scrape-indian-source', // Scrape a specific Indian job board via Python service
     CLEANUP_STALE: 'cleanup-stale-jobs', // Mark old jobs as inactive
 };
 
@@ -254,6 +255,100 @@ export async function schedulePeriodicScraping() {
 }
 
 /**
+ * Schedule periodic scraping for Indian job boards via the Python microservice.
+ *
+ * Schedules (India-first, IST-friendly):
+ *  - Naukri.com:        Every 4 hours (high volume, most important)
+ *  - Internshala:       Every 6 hours (internships + fresher jobs)
+ *  - LinkedIn India:    Every 3 hours (frequent updates)
+ *  - Foundit:           Every 6 hours (mid-level roles)
+ *  - Shine.com:         Every 8 hours (verified companies)
+ *
+ * @param {Object} options
+ * @param {string[]} [options.keywords]   Override default keywords
+ * @param {string[]} [options.locations]  Override default Indian cities
+ * @param {number}   [options.limit]      Max jobs per keyword+location
+ */
+export async function scheduleIndianScraping(options = {}) {
+    try {
+        const baseOptions = {
+            keywords: options.keywords,
+            locations: options.locations || ['Bangalore', 'Mumbai', 'Delhi', 'Hyderabad', 'Chennai', 'Pune', 'India'],
+            limit: options.limit || 50,
+        };
+
+        // Naukri.com: Every 4 hours — most important for Indian market
+        await queueService.addJob(
+            'job-scraping',
+            JOB_SCRAPING_TYPES.SCRAPE_SOURCE,
+            { source: 'naukri', options: baseOptions },
+            {
+                repeat: { pattern: '0 */4 * * *' },
+                jobId: 'scrape-naukri-recurring',
+            }
+        );
+
+        // Internshala: Every 6 hours — freshers and interns
+        await queueService.addJob(
+            'job-scraping',
+            JOB_SCRAPING_TYPES.SCRAPE_SOURCE,
+            { source: 'internshala', options: { ...baseOptions, include_internships: true, include_jobs: true } },
+            {
+                repeat: { pattern: '30 */6 * * *' },
+                jobId: 'scrape-internshala-recurring',
+            }
+        );
+
+        // LinkedIn India: Every 3 hours — global companies hiring in India
+        await queueService.addJob(
+            'job-scraping',
+            JOB_SCRAPING_TYPES.SCRAPE_SOURCE,
+            { source: 'linkedin-india', options: baseOptions },
+            {
+                repeat: { pattern: '0 */3 * * *' },
+                jobId: 'scrape-linkedin-india-recurring',
+            }
+        );
+
+        // Foundit: Every 6 hours — mid-level roles
+        await queueService.addJob(
+            'job-scraping',
+            JOB_SCRAPING_TYPES.SCRAPE_SOURCE,
+            { source: 'foundit', options: baseOptions },
+            {
+                repeat: { pattern: '15 */6 * * *' },
+                jobId: 'scrape-foundit-recurring',
+            }
+        );
+
+        // Shine.com: Every 8 hours — verified companies
+        await queueService.addJob(
+            'job-scraping',
+            JOB_SCRAPING_TYPES.SCRAPE_SOURCE,
+            { source: 'shine', options: baseOptions },
+            {
+                repeat: { pattern: '45 */8 * * *' },
+                jobId: 'scrape-shine-recurring',
+            }
+        );
+
+        logger.info('Indian job board scraping scheduled', {
+            naukri: 'Every 4 hours',
+            internshala: 'Every 6 hours',
+            'linkedin-india': 'Every 3 hours',
+            foundit: 'Every 6 hours',
+            shine: 'Every 8 hours',
+        });
+    } catch (error) {
+        logger.error('Failed to schedule Indian job scraping', {
+            error: error.message,
+            stack: error.stack,
+        });
+        throw error;
+    }
+}
+
+/**
  * Get job status by job ID
  * @param {string} jobId - Job ID
  * @returns {Promise<Object>}
@@ -320,6 +415,7 @@ export default {
     addScrapeAllSourcesJob,
     addCleanupStaleJobsJob,
     schedulePeriodicScraping,
+    scheduleIndianScraping,
     getJobStatus,
     getQueueStats,
     retryJob,

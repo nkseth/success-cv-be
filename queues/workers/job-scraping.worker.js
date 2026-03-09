@@ -1,11 +1,11 @@
 import { Worker } from 'bullmq';
 import { bullMQConnection } from '../../config/redis.config.js';
 import logger from '../../middleware/logger.js';
-import { JOB_SCRAPING_TYPES } from '../job-scraping.queue.js';
+import { JOB_SCRAPING_TYPES, addScrapeSourceJob } from '../job-scraping.queue.js';
 import jobBoardsService from '../../services/jobBoards/index.js';
 import { db } from '../../config/db.js';
 import { jobsTable, jobScrapingLogsTable } from '../../drizzle/schema.js';
-import { eq, and, lt, sql } from 'drizzle-orm';
+import { eq, and, lt, sql, inArray } from 'drizzle-orm';
 
 /**
  * Job Scraping Worker
@@ -39,6 +39,7 @@ async function processJobScrapingJob(job) {
 
         switch (jobType) {
             case JOB_SCRAPING_TYPES.SCRAPE_SOURCE:
+            case JOB_SCRAPING_TYPES.SCRAPE_INDIAN_SOURCE: // Indian boards share the same single-source handler
                 result = await scrapeSingleSource(job.id, data);
                 break;
 
@@ -154,10 +155,33 @@ async function scrapeAllSources(jobId, data) {
 
     logger.info('Scraping jobs from all sources', { globalOptions });
 
-    // Scrape from all sources
+    // Scrape from all remote/international sources
     const result = await jobBoardsService.scrapeAllSources(globalOptions);
 
-    // Process results from each source
+    // Enqueue individual SCRAPE_SOURCE jobs for all 5 Indian boards so each
+    // gets its own retry budget, concurrency slot, and scraping-log entry.
+    const indianBoardDefaults = {
+        locations: ['Bangalore', 'Mumbai', 'Delhi', 'Hyderabad', 'Chennai', 'Pune', 'India'],
+        limit: globalOptions.limit || 50,
+    };
+    const indianBoards = [
+        { source: 'naukri',        options: indianBoardDefaults },
+        { source: 'linkedin-india', options: indianBoardDefaults },
+        { source: 'internshala',   options: { ...indianBoardDefaults, include_internships: true, include_jobs: true } },
+        { source: 'foundit',       options: indianBoardDefaults },
+        { source: 'shine',         options: indianBoardDefaults },
+    ];
+    await Promise.allSettled(
+        indianBoards.map(board =>
+            addScrapeSourceJob(
+                { source: board.source, options: { ...globalOptions, ...board.options } },
+                { jobId: `scrape-${board.source}-${jobId}-${Date.now()}`, priority: 5 }
+            ).catch(err => logger.warn('Failed to enqueue Indian board job', { source: board.source, error: err.message }))
+        )
+    );
+    logger.info('Indian board scraping jobs enqueued', { boards: indianBoards.map(b => b.source) });
+
+    // Process results from each remote source
     const sourceResults = [];
     let totalNew = 0;
     let totalUpdated = 0;
@@ -240,19 +264,23 @@ async function upsertJobs(jobs) {
     }
 
     try {
-        // Get current counts before upsert to calculate new vs updated
-        const externalIds = jobs.map(j => ({ externalId: j.externalId, source: j.source }));
-        
+        // Get current counts before upsert to calculate new vs updated.
+        // Use inArray() on externalId (parameterized — no sql.raw) then filter
+        // in-memory by source to avoid composite-tuple SQL injection.
+        const externalIdList = [...new Set(jobs.map(j => j.externalId))];
+        const sourceSet = new Set(jobs.map(j => j.source));
+
         const existingJobs = await db.select({
             externalId: jobsTable.externalId,
             source: jobsTable.source
         })
         .from(jobsTable)
-        .where(
-            sql`(${jobsTable.externalId}, ${jobsTable.source}) IN ${sql.raw(`(${externalIds.map(j => `('${j.externalId}', '${j.source}')`).join(',')})`)}`
-        );
+        .where(inArray(jobsTable.externalId, externalIdList));
 
-        const existingKeys = new Set(existingJobs.map(j => `${j.externalId}:${j.source}`));
+        // Further narrow to the exact sources in this batch (in-memory — cheap)
+        const filteredExisting = existingJobs.filter(j => sourceSet.has(j.source));
+
+        const existingKeys = new Set(filteredExisting.map(j => `${j.externalId}:${j.source}`));
         const jobsUpdated = jobs.filter(j => existingKeys.has(`${j.externalId}:${j.source}`)).length;
         const jobsNew = jobs.length - jobsUpdated;
 
@@ -350,10 +378,18 @@ async function cleanupStaleJobs(jobId, data) {
         .returning({ id: jobsTable.id });
 
     const jobsDeactivated = result.length;
+
+    // Hard-delete very old inactive jobs to prevent unbounded table growth
+    const purgeResult = await db.execute(
+        sql`DELETE FROM jobs WHERE is_active = false AND updated_at < now() - interval '90 days'`
+    );
+    const jobsPurged = Number(purgeResult.rowCount ?? 0);
+
     const duration = Date.now() - startTime;
 
     logger.info('Stale jobs cleaned up', { 
-        jobsDeactivated, 
+        jobsDeactivated,
+        jobsPurged,
         daysOld,
         duration: `${duration}ms`
     });
@@ -361,6 +397,7 @@ async function cleanupStaleJobs(jobId, data) {
     return {
         success: true,
         jobsDeactivated,
+        jobsPurged,
         daysOld,
         cutoffDate,
         duration: `${duration}ms`

@@ -17,6 +17,7 @@ import remotiveService from './remotive.service.js';
 import weworkremotelyService from './weworkremotely.service.js';
 import himalayasService from './himalayas.service.js';
 import jobicyService from './jobicy.service.js';
+import indianBoardsService from './indianBoards.service.js';
 import cacheService from './cache.service.js';
 import circuitBreakerService from './circuit-breaker.service.js';
 import logger from '../../middleware/logger.js';
@@ -95,7 +96,18 @@ export async function scrapeJobsFromSource(source, options = {}) {
                     options
                 );
                 break;
-                
+
+            // ── Indian job boards (routed to Python Scrapling microservice) ──────
+            case 'naukri':
+            case 'internshala':
+            case 'linkedin-india':
+            case 'foundit':
+            case 'shine': {
+                const indianResult = await indianBoardsService.scrapeIndianSource(source, options);
+                result = indianResult; // shape: { jobs: [...], stats: {...} }
+                break;
+            }
+
             default:
                 throw new Error(`Unsupported job source: ${source}`);
         }
@@ -267,6 +279,52 @@ export function getSupportedSources() {
             description: 'General jobs from Indeed RSS feeds',
             features: ['free', 'no-auth', 'limited-data'],
             limits: 'RSS feeds only, basic data'
+        },
+        // ── Indian job boards (via Python Scrapling microservice) ──────────────
+        {
+            name: 'naukri',
+            displayName: 'Naukri.com',
+            type: 'scraper',
+            country: 'IN',
+            description: "India's largest job portal — Naukri.com",
+            features: ['india-first', 'fresher-friendly', 'salary-data', 'skills-data'],
+            limits: '2-3 req/min safe, requires Python scraper service'
+        },
+        {
+            name: 'internshala',
+            displayName: 'Internshala',
+            type: 'scraper',
+            country: 'IN',
+            description: 'Indian internships and entry-level jobs — Internshala',
+            features: ['india-first', 'fresher-friendly', 'internships', 'entry-level'],
+            limits: 'Requires Python scraper service'
+        },
+        {
+            name: 'linkedin-india',
+            displayName: 'LinkedIn India',
+            type: 'scraper',
+            country: 'IN',
+            description: 'LinkedIn job search filtered for India — guest API',
+            features: ['india-first', 'global-companies', 'structured-data'],
+            limits: '2-3 pages/keyword, no auth required'
+        },
+        {
+            name: 'foundit',
+            displayName: 'Foundit (ex-Monster India)',
+            type: 'scraper',
+            country: 'IN',
+            description: 'Mid-level jobs from Foundit.in (formerly Monster India)',
+            features: ['india-first', 'mid-level', 'salary-data'],
+            limits: 'Requires Python scraper service'
+        },
+        {
+            name: 'shine',
+            displayName: 'Shine.com',
+            type: 'scraper',
+            country: 'IN',
+            description: 'Verified company jobs from Shine.com',
+            features: ['india-first', 'mid-level', 'verified-companies'],
+            limits: 'Requires Python scraper service'
         }
     ];
 }

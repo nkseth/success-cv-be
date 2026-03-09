@@ -28,7 +28,8 @@
     "seed:themes": "node drizzle/seeds/themes.seed.js",
     "seed:themes:images": "node drizzle/seeds/themes-with-images.seed.js",
     "seed:themes:full": "node drizzle/seeds/themes-with-images.seed.js --generate-images",
-    "generate:theme-images": "node drizzle/seeds/theme-image-downloader.js"
+    "generate:theme-images": "node drizzle/seeds/theme-image-downloader.js",
+    "db:generate": "drizzle-kit generate --config ./drizzle.config.js"
   },
   "keywords": [],
   "author": "",
@@ -46,6 +47,7 @@
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.44.6",
     "express": "^5.2.1",
+    "express-rate-limit": "^7.5.0",
     "formdata-node": "^6.0.3",
     "helmet": "^8.1.0",
     "ioredis": "^5.8.2",

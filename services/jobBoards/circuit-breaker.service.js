@@ -68,6 +68,47 @@ const BREAKER_CONFIGS = {
         rollingCountTimeout: 60000,
         volumeThreshold: 3,
         name: 'indeed-breaker'
+    },
+    // Indian boards — proxied through the Python Scrapling microservice
+    naukri: {
+        timeout: 120000,             // 2 min — browser scraper is slow
+        errorThresholdPercentage: 50,
+        resetTimeout: 600000,        // 10 min — Naukri rate-limits aggressively
+        rollingCountTimeout: 120000, // 2 min rolling window
+        volumeThreshold: 3,
+        name: 'naukri-breaker'
+    },
+    internshala: {
+        timeout: 60000,
+        errorThresholdPercentage: 50,
+        resetTimeout: 300000,
+        rollingCountTimeout: 60000,
+        volumeThreshold: 3,
+        name: 'internshala-breaker'
+    },
+    'linkedin-india': {
+        timeout: 60000,
+        errorThresholdPercentage: 50,
+        resetTimeout: 300000,
+        rollingCountTimeout: 60000,
+        volumeThreshold: 3,
+        name: 'linkedin-india-breaker'
+    },
+    foundit: {
+        timeout: 60000,
+        errorThresholdPercentage: 50,
+        resetTimeout: 300000,
+        rollingCountTimeout: 60000,
+        volumeThreshold: 3,
+        name: 'foundit-breaker'
+    },
+    shine: {
+        timeout: 60000,
+        errorThresholdPercentage: 50,
+        resetTimeout: 300000,
+        rollingCountTimeout: 60000,
+        volumeThreshold: 3,
+        name: 'shine-breaker'
     }
 };
 

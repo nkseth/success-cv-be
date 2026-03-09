@@ -5,6 +5,7 @@ import { sendSuccess } from "./utils/apiHelpers.js";
 import cors from "cors";
 import helmet from "helmet";
 import dotenv from "dotenv";
+import rateLimit from "express-rate-limit";
 import v1Routes from "./routes/v1/index.route.js";
 import swaggerUi from "swagger-ui-express";
 import { swaggerSpec } from "./config/swagger.config.js";
@@ -12,7 +13,7 @@ import { connectRedis, disconnectRedis, bullMQConnection, getRedisConnectionConf
 import { closeAllQueues } from "./queues/index.js";
 import pubSubService from "./services/pubsub.service.js";
 import sseService from "./services/sse.service.js";
-import { schedulePeriodicScraping } from "./queues/job-scraping.queue.js";
+import { schedulePeriodicScraping, scheduleIndianScraping } from "./queues/job-scraping.queue.js";
 
 // Load environment variables
 dotenv.config();
@@ -20,12 +21,88 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 8000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
+const isProduction = NODE_ENV === 'production';
+
+// Validate required environment variables
+const requiredEnvVars = [
+    'DATABASE_URL',
+    'JWT_SECRET_ACCESS_KEY',
+    'REDIS_HOST'
+];
+
+const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+
+if (missingEnvVars.length > 0) {
+    console.error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
+    if (isProduction) {
+        process.exit(1);
+    } else {
+        console.warn('⚠️  Running in development mode - missing env vars will cause runtime errors');
+    }
+}
+
+// Rate limiting configuration from environment
+const rateLimitConfig = {
+    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes default
+    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // 100 requests per window
+    message: { success: false, message: 'Too many requests, please try again later.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => {
+        // Skip rate limiting for health checks
+        return req.path === '/health' || req.path === '/health-check';
+    }
+};
+
+// Apply rate limiting
+const limiter = rateLimit(rateLimitConfig);
+app.use(limiter);
+
+// Request timeout configuration
+const requestTimeout = parseInt(process.env.REQUEST_TIMEOUT_MS) || 30000; // 30 seconds default
+app.use((req, res, next) => {
+    res.setTimeout(requestTimeout, () => {
+        logger.warn('Request timeout', { path: req.path, method: req.method });
+        res.status(503).json({
+            success: false,
+            message: 'Request timeout - please try again'
+        });
+    });
+    next();
+});
 
 // Log application startup
 logStartup(PORT, NODE_ENV);
 
-// Security middleware
-app.use(helmet());
+// Security middleware - Helmet with production optimizations
+app.use(helmet({
+    contentSecurityPolicy: isProduction ? {
+        directives: {
+            defaultSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            scriptSrc: ["'self'"],
+            imgSrc: ["'self'", "data:", "https:"],
+            fontSrc: ["'self'"],
+            connectSrc: ["'self'"],
+            frameAncestors: ["'none'"]
+        }
+    } : false,
+    hsts: isProduction ? {
+        maxAge: 31536000,
+        includeSubDomains: true,
+        preload: true
+    } : false,
+    crossOriginEmbedderPolicy: false // Allow embedding for API docs
+}));
+
+// Disable X-Powered-By header
+app.disable('x-powered-by');
+
+// Trust proxy for correct IP detection behind load balancers
+if (isProduction) {
+    app.set('trust proxy', 1);
+}
+
 app.use(cors({
     origin: (origin, callback) => {
         // Allow requests with no origin (like mobile apps or curl requests)
@@ -60,11 +137,11 @@ app.use(cors({
 // Request logging middleware (before all routes)
 app.use(requestLogger);
 
-// Body parsing middleware
-// Use verify option to capture raw body for webhook signature verification
-app.use(urlencoded({ extended: true, limit: '10mb' }));
+// Body parsing middleware with environment-based limits
+const bodyParserLimit = process.env.BODY_PARSER_LIMIT || '10mb';
+app.use(urlencoded({ extended: true, limit: bodyParserLimit }));
 app.use(json({ 
-    limit: '10mb',
+    limit: bodyParserLimit,
     verify: (req, res, buf) => {
         // Store raw body for webhook signature verification
         // Only capture for webhook endpoints
@@ -87,11 +164,14 @@ app.get("/", (req, res) => {
     sendSuccess(res, apiInfo, "Welcome to Success-CV Backend API");
 });
 
-// Swagger documentation
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-    customCss: '.swagger-ui .topbar { display: none }',
-    customSiteTitle: "Success-CV API Docs"
-}));
+// Swagger documentation (disabled in production by default)
+const swaggerEnabled = process.env.SWAGGER_ENABLED !== 'false';
+if (swaggerEnabled || !isProduction) {
+    app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+        customCss: '.swagger-ui .topbar { display: none }',
+        customSiteTitle: "Success-CV API Docs"
+    }));
+}
 
 // API routes
 app.use("/api/v1",v1Routes);
@@ -142,8 +222,11 @@ async function initializeServices() {
             }
         );
         
-        // Schedule periodic job scraping (every 6 hours)
+        // Schedule periodic job scraping (global sources: RemoteOK, Remotive, etc.)
         await schedulePeriodicScraping();
+
+        // Schedule Indian job board scraping (Naukri, Internshala, LinkedIn India, Foundit, Shine)
+        await scheduleIndianScraping();
         
         logger.info('All services initialized successfully');
     } catch (error) {
