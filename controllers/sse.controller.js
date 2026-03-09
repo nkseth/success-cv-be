@@ -25,15 +25,15 @@ export const connectToJob = async (req, res) => {
         const { jobId } = req.params;
         const { queueName } = req.query;
         const connectionId = uuidv4();
-        
+
         // Get subdomain context for logging (users vs candidates)
         const subdomainInfo = req.subdomainContext ? {
             userType: req.subdomainContext.userType,
             subdomain: req.subdomain,
             organisationSlug: req.organisationSlug
         } : { userType: 'unknown' };
-        
-        logger.info('SSE: Job connection established', { 
+
+        logger.info('SSE: Job connection established', {
             connectionId,
             jobId,
             queueName: queueName || 'none',
@@ -43,7 +43,7 @@ export const connectToJob = async (req, res) => {
 
         // Create SSE connection
         sseService.createConnection(connectionId, res, req);
-        
+
         // Automatically subscribe to the job
         await sseService.subscribeToJob(connectionId, jobId);
 
@@ -61,9 +61,9 @@ export const connectToJob = async (req, res) => {
         });
 
     } catch (error) {
-        logger.error('SSE: Job connection failed', { 
+        logger.error('SSE: Job connection failed', {
             error: error.message,
-            jobId: req.params.jobId 
+            jobId: req.params.jobId
         });
         return sendError(res, `Failed to establish job connection: ${error.message}`, 500);
     }
@@ -89,15 +89,15 @@ export const connectToRewriteJob = async (req, res) => {
     try {
         const { jobId } = req.params;
         const connectionId = uuidv4();
-        
+
         // Get subdomain context for logging
         const subdomainInfo = req.subdomainContext ? {
             userType: req.subdomainContext.userType,
             subdomain: req.subdomain,
             organisationSlug: req.organisationSlug
         } : { userType: 'unknown' };
-        
-        logger.info('SSE: Rewrite job connection established', { 
+
+        logger.info('SSE: Rewrite job connection established', {
             connectionId,
             jobId,
             queueName: 'resume-rewrite',
@@ -107,7 +107,7 @@ export const connectToRewriteJob = async (req, res) => {
 
         // Create SSE connection
         sseService.createConnection(connectionId, res, req);
-        
+
         // Automatically subscribe to the job
         await sseService.subscribeToJob(connectionId, jobId);
 
@@ -123,9 +123,9 @@ export const connectToRewriteJob = async (req, res) => {
         });
 
     } catch (error) {
-        logger.error('SSE: Rewrite job connection failed', { 
+        logger.error('SSE: Rewrite job connection failed', {
             error: error.message,
-            jobId: req.params.jobId 
+            jobId: req.params.jobId
         });
         return sendError(res, `Failed to establish rewrite job connection: ${error.message}`, 500);
     }
@@ -181,15 +181,15 @@ export const connectToManualAnalysisJob = async (req, res) => {
     try {
         const { jobId } = req.params;
         const connectionId = uuidv4();
-        
+
         // Get subdomain context for logging
         const subdomainInfo = req.subdomainContext ? {
             userType: req.subdomainContext.userType,
             subdomain: req.subdomain,
             organisationSlug: req.organisationSlug
         } : { userType: 'unknown' };
-        
-        logger.info('SSE: Manual analysis job connection established', { 
+
+        logger.info('SSE: Manual analysis job connection established', {
             connectionId,
             jobId,
             queueName: 'manual-resume-analysis',
@@ -199,7 +199,7 @@ export const connectToManualAnalysisJob = async (req, res) => {
 
         // Create SSE connection
         sseService.createConnection(connectionId, res, req);
-        
+
         // Automatically subscribe to the job
         await sseService.subscribeToJob(connectionId, jobId);
 
@@ -215,10 +215,116 @@ export const connectToManualAnalysisJob = async (req, res) => {
         });
 
     } catch (error) {
-        logger.error('SSE: Manual analysis job connection failed', { 
+        logger.error('SSE: Manual analysis job connection failed', {
             error: error.message,
-            jobId: req.params.jobId 
+            jobId: req.params.jobId
         });
         return sendError(res, `Failed to establish manual analysis job connection: ${error.message}`, 500);
+    }
+};
+
+/**
+ * Connect and subscribe to a career roadmap job
+ * GET /api/v1/sse/career-roadmap/:jobId
+ * 
+ * Specialized endpoint for monitoring career roadmap jobs
+ * Auto-subscribes to the career-roadmap queue for progress updates
+ */
+export const connectToCareerRoadmapJob = async (req, res) => {
+    try {
+        const { jobId } = req.params;
+        const connectionId = uuidv4();
+
+        // Get subdomain context for logging
+        const subdomainInfo = req.subdomainContext ? {
+            userType: req.subdomainContext.userType,
+            subdomain: req.subdomain,
+            organisationSlug: req.organisationSlug
+        } : { userType: 'unknown' };
+
+        logger.info('SSE: Career roadmap job connection established', {
+            connectionId,
+            jobId,
+            queueName: 'career-roadmap',
+            ip: req.ip,
+            ...subdomainInfo
+        });
+
+        // Create SSE connection
+        sseService.createConnection(connectionId, res, req);
+
+        // Automatically subscribe to the job
+        await sseService.subscribeToJob(connectionId, jobId);
+
+        // Subscribe to career-roadmap queue updates
+        await sseService.subscribeToQueue(connectionId, 'career-roadmap');
+
+        logger.info('SSE: Career roadmap subscriptions active', {
+            connectionId,
+            subscriptions: {
+                job: jobId,
+                queue: 'career-roadmap'
+            }
+        });
+
+    } catch (error) {
+        logger.error('SSE: Career roadmap job connection failed', {
+            error: error.message,
+            jobId: req.params.jobId
+        });
+        return sendError(res, `Failed to establish career roadmap job connection: ${error.message}`, 500);
+    }
+};
+
+/**
+ * Connect and subscribe to a detailed roadmap job
+ * GET /api/v1/sse/detailed-roadmap/:jobId
+ * 
+ * Specialized endpoint for monitoring detailed AI roadmap generation
+ * Auto-subscribes to the detailed-roadmap queue for progress updates
+ */
+export const connectToDetailedRoadmapJob = async (req, res) => {
+    try {
+        const { jobId } = req.params;
+        const connectionId = uuidv4();
+
+        // Get subdomain context for logging
+        const subdomainInfo = req.subdomainContext ? {
+            userType: req.subdomainContext.userType,
+            subdomain: req.subdomain,
+            organisationSlug: req.organisationSlug
+        } : { userType: 'unknown' };
+
+        logger.info('SSE: Detailed roadmap job connection established', {
+            connectionId,
+            jobId,
+            queueName: 'detailed-roadmap',
+            ip: req.ip,
+            ...subdomainInfo
+        });
+
+        // Create SSE connection
+        sseService.createConnection(connectionId, res, req);
+
+        // Automatically subscribe to the job
+        await sseService.subscribeToJob(connectionId, jobId);
+
+        // Subscribe to detailed-roadmap queue updates
+        await sseService.subscribeToQueue(connectionId, 'detailed-roadmap');
+
+        logger.info('SSE: Detailed roadmap subscriptions active', {
+            connectionId,
+            subscriptions: {
+                job: jobId,
+                queue: 'detailed-roadmap'
+            }
+        });
+
+    } catch (error) {
+        logger.error('SSE: Detailed roadmap job connection failed', {
+            error: error.message,
+            jobId: req.params.jobId
+        });
+        return sendError(res, `Failed to establish detailed roadmap job connection: ${error.message}`, 500);
     }
 };

@@ -50,11 +50,11 @@ export const destructureRequest = (req) => {
     const method = req.method;
     const url = req.url;
     const body = req.body;
-    
+
     // Enhanced token extraction with better validation
     let token = null;
     const authHeader = req.headers['authorization'];
-    
+
     if (authHeader) {
         if (authHeader.startsWith('Bearer ')) {
             token = authHeader.substring(7); // Remove 'Bearer ' prefix
@@ -64,18 +64,18 @@ export const destructureRequest = (req) => {
             // If no Bearer prefix, assume the entire header is the token
             token = authHeader;
         }
-        
+
         // Trim any whitespace
         token = token.trim();
-        
+
         // Validate token is not empty after processing
         if (token === '') {
             token = null;
         }
     }
-    
+
     const refreshToken = req.headers['x-refresh-token'] || null;
-    
+
     return { headers, method, url, body, token, refreshToken };
 }
 
@@ -84,3 +84,7 @@ export const removeTimestampFields = (obj) => {
     const { createdAt, updatedAt, id, ...cleanObj } = obj;
     return cleanObj;
 }
+
+export const getAppFrontendUrl = () => {
+    return process.env.FRONTEND_URL.replace(/^(https?:\/\/)(?!app\.)/, '$1app.');
+};

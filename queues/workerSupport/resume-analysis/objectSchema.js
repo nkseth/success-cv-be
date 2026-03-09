@@ -5,6 +5,7 @@ const JobFit = ["MAYBE", "FIT", "UNFIT"];
 
 // More flexible schema with many optional fields and defaults for resilient parsing
 export const candidateSchemaSimplified = z.object({
+  detected_language: z.string().default("en").describe("ISO 639-1 language code detected from resume content (e.g., 'en', 'es'). Required."),
   personal_info: z.object({
     name: z.string().default("").describe("Full name of the candidate. Required."),
     email: z.string().default("").describe("Email address. Extract from contact section. If not present, use empty string."),
@@ -137,7 +138,7 @@ export const candidateSchemaSimplified = z.object({
       realistic: false, investigative: false, artistic: false,
       social: false, enterprising: false, conventional: false
     }).describe("Candidate traits based on resume content."),
-    
+
     intelligence_types: z.object({
       linguistic: z.boolean().default(false).describe("Linguistic intelligence. If uncertain, use false."),
       logical_mathematical: z.boolean().default(false).describe("Logical intelligence. If uncertain, use false."),
@@ -152,7 +153,7 @@ export const candidateSchemaSimplified = z.object({
       bodily_kinesthetic: false, spatial: false, interpersonal: false,
       intrapersonal: false, naturalistic: false
     }).describe("Intelligence types based on resume content."),
-    
+
     personality_type: z.string().default("").describe("Personality type. If uncertain, use empty string."),
     secondary_alignment: z.string().default("").describe("Secondary alignment. If uncertain, use empty string."),
     personality_description: z.string().default("").describe("Personality description. If uncertain, use empty string."),
@@ -175,7 +176,7 @@ export const candidateSchemaSimplified = z.object({
     bodily_kinesthetic: false, spatial: false, interpersonal: false,
     intrapersonal: false, naturalistic: false
   }).describe("Fallback for intelligence_types if AI places at root level."),
-  
+
   personality_type: z.string().optional().default("").describe("Fallback for personality_type at root level."),
   secondary_alignment: z.string().optional().default("").describe("Fallback for secondary_alignment at root level."),
   personality_description: z.string().optional().default("").describe("Fallback for personality_description at root level."),
@@ -305,19 +306,19 @@ export const candidateSchemaSimplified = z.object({
       estimated_time: z.string().default("30 minutes").describe("Estimated time to complete."),
       priority: z.number().min(1).max(10).default(5).describe("Priority 1-10.")
     })).default([]).describe("Fixes for today (1 hour). Provide 3-5 tasks if applicable."),
-    
+
     short_term_improvements: z.array(z.object({
       task: z.string().default("Enhance content").describe("Task description."),
       estimated_time: z.string().default("1 hour").describe("Estimated time to complete."),
       priority: z.number().min(1).max(10).default(5).describe("Priority 1-10.")
     })).default([]).describe("Improvements for this week (3-5 hours). Provide 5-7 tasks if applicable."),
-    
+
     medium_term_enhancements: z.array(z.object({
       task: z.string().default("Build portfolio").describe("Task description."),
       estimated_time: z.string().default("1 week").describe("Estimated time to complete."),
       priority: z.number().min(1).max(10).default(5).describe("Priority 1-10.")
     })).default([]).describe("Enhancements for this month (10+ hours). Provide 3-5 tasks if applicable."),
-    
+
     long_term_positioning: z.array(z.object({
       goal: z.string().default("Career growth").describe("Long-term goal."),
       strategy: z.string().default("Continuous learning").describe("Strategy to achieve."),

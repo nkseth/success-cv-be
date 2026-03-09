@@ -215,8 +215,8 @@ export const createResumeFromAnalysis = async (userID, analysisID, analysisData,
         });
 
         // Parse analysis data if string
-        const parsed = typeof analysisData === 'string' 
-            ? JSON.parse(analysisData) 
+        const parsed = typeof analysisData === 'string'
+            ? JSON.parse(analysisData)
             : analysisData;
 
         // Extract and structure resume content
@@ -290,15 +290,15 @@ function extractResumeContent(analysisData) {
     logger.debug('[RESUME_SERVICE] Analysis data keys:', Object.keys(analysisData));
     // Extract social links for personal info
     const socialLinks = analysisData.social || [];
-    const linkedinProfile = socialLinks.find(s => 
+    const linkedinProfile = socialLinks.find(s =>
         s.name?.toLowerCase().includes('linkedin') || s.url?.toLowerCase().includes('linkedin')
     );
-    const websiteProfile = socialLinks.find(s => 
-        s.name?.toLowerCase().includes('website') || 
+    const websiteProfile = socialLinks.find(s =>
+        s.name?.toLowerCase().includes('website') ||
         s.name?.toLowerCase().includes('portfolio') ||
         (!s.url?.toLowerCase().includes('linkedin') && !s.url?.toLowerCase().includes('github'))
     );
-    const githubProfile = socialLinks.find(s => 
+    const githubProfile = socialLinks.find(s =>
         s.name?.toLowerCase().includes('github') || s.url?.toLowerCase().includes('github')
     );
 
@@ -327,14 +327,14 @@ function extractResumeContent(analysisData) {
         // Build HTML description from summary and highlights/achievements
         const summaryText = exp.summary || exp.description || '';
         const highlights = exp.highlights || exp.achievements || exp.bullet_points || [];
-        
+
         let description = '';
-        
+
         // Add summary paragraph if present (and not just whitespace)
         if (summaryText && summaryText.trim()) {
             description += `<p>${summaryText.trim()}</p>`;
         }
-        
+
         // Add highlights/achievements as bullet list
         // This ensures achievements are always included in the description as HTML
         if (highlights && highlights.length > 0) {
@@ -347,12 +347,12 @@ function extractResumeContent(analysisData) {
                 description += '</ul>';
             }
         }
-        
+
         // If no description was built, use empty string
         if (!description) {
             description = '';
         }
-        
+
         return {
             id: `exp_${idx + 1}`,
             company: exp.company || exp.organization || '',
@@ -387,12 +387,12 @@ function extractResumeContent(analysisData) {
     // The AI now provides a structured skills object with technical, soft, tools, industry arrays
     const structuredSkills = analysisData.skills || {};
     const otherSkills = analysisData.other_skills || [];
-    
+
     // Extract from structured skills field first (new format)
     let technicalSkills = [];
     let softSkills = [];
     let toolSkills = [];
-    
+
     // Check if we have the new structured skills format
     if (structuredSkills.technical && Array.isArray(structuredSkills.technical)) {
         technicalSkills = structuredSkills.technical.filter(Boolean);
@@ -403,48 +403,48 @@ function extractResumeContent(analysisData) {
     if (structuredSkills.tools && Array.isArray(structuredSkills.tools)) {
         toolSkills = structuredSkills.tools.filter(Boolean);
     }
-    
+
     // If structured skills are empty, fall back to other_skills array (legacy format)
     if (technicalSkills.length === 0 && softSkills.length === 0 && otherSkills.length > 0) {
         logger.info('[RESUME_SERVICE] Using legacy other_skills extraction');
-        
+
         // Try to categorize based on tags
         const technicalFromTags = otherSkills
-            .filter(s => s.tags?.some(t => 
+            .filter(s => s.tags?.some(t =>
                 ['technical', 'programming', 'software', 'technology', 'development', 'tool', 'framework', 'database', 'language', 'hard'].includes(t.toLowerCase())
             ) || s.description?.toLowerCase().includes('technical'))
             .map(s => s.name)
             .filter(Boolean);
-        
+
         const softFromTags = otherSkills
-            .filter(s => s.tags?.some(t => 
+            .filter(s => s.tags?.some(t =>
                 ['soft', 'communication', 'leadership', 'management', 'interpersonal', 'teamwork', 'problem-solving'].includes(t.toLowerCase())
             ) || s.description?.toLowerCase().includes('soft skill'))
             .map(s => s.name)
             .filter(Boolean);
-        
+
         const toolsFromTags = otherSkills
-            .filter(s => s.tags?.some(t => 
+            .filter(s => s.tags?.some(t =>
                 ['tool', 'platform', 'ide', 'devops'].includes(t.toLowerCase())
             ))
             .map(s => s.name)
             .filter(Boolean);
-        
+
         // If tag-based categorization didn't work, put all as technical
         const allSkillNames = otherSkills.map(s => s.name).filter(Boolean);
-        
+
         technicalSkills = technicalFromTags.length > 0 ? technicalFromTags : allSkillNames;
         softSkills = softFromTags;
         toolSkills = toolsFromTags;
     }
-    
+
     // Also include industry skills in technical if present
     if (structuredSkills.industry && Array.isArray(structuredSkills.industry)) {
         technicalSkills = [...new Set([...technicalSkills, ...structuredSkills.industry.filter(Boolean)])];
     }
-    
+
     // Extract languages from the languages array
-    const languagesList = (analysisData.languages || []).map(l => 
+    const languagesList = (analysisData.languages || []).map(l =>
         l.level ? `${l.name} (${l.level})` : l.name
     ).filter(Boolean);
 
@@ -465,7 +465,7 @@ function extractResumeContent(analysisData) {
         tools: toolSkills,
         certifications: certifications
     };
-    
+
     logger.info('[RESUME_SERVICE] Skills extraction complete', {
         technicalCount: skills.technical.length,
         softCount: skills.soft.length,
@@ -488,7 +488,7 @@ function extractResumeContent(analysisData) {
                 // Build HTML description from description and highlights
                 const descText = proj.description || '';
                 const highlights = proj.highlights || [];
-                
+
                 let description = '';
                 if (descText) {
                     description += `<p>${descText}</p>`;
@@ -502,7 +502,7 @@ function extractResumeContent(analysisData) {
                     });
                     description += '</ul>';
                 }
-                
+
                 return {
                     id: `proj_${idx + 1}`,
                     name: proj.name || proj.title || '',
@@ -575,7 +575,7 @@ function extractResumeContent(analysisData) {
                 // Build HTML description from description and highlights
                 const descText = vol.description || '';
                 const highlights = vol.highlights || [];
-                
+
                 let description = '';
                 if (descText) {
                     description += `<p>${descText}</p>`;
@@ -589,7 +589,7 @@ function extractResumeContent(analysisData) {
                     });
                     description += '</ul>';
                 }
-                
+
                 return {
                     id: `vol_${idx + 1}`,
                     organization: vol.organization || '',
@@ -639,13 +639,13 @@ function extractResumeContent(analysisData) {
         contentScore: analysisData.resume_quality?.content_quality_score || 0,
         formatScore: analysisData.resume_quality?.formatting_design_score || analysisData.resume_quality?.formatting_score || 0,
         overallScore: analysisData.relevance?.['Overall Score'] || analysisData.resume_quality?.overall_quality_score || 0,
-        
+
         // Job Fit & Relevance Scores
         jobFitScore: analysisData.JobFitScore || 0,
         skillsRelevanceScore: analysisData.relevance?.['Skills Relevance'] || 0,
         experienceRelevanceScore: analysisData.relevance?.['Work Experience'] || 0,
         educationRelevanceScore: analysisData.relevance?.['Education'] || 0,
-        
+
         // Additional Quality Scores
         grammarScore: analysisData.resume_quality?.grammar_language_score || 0,
         professionalBrandingScore: analysisData.resume_quality?.professional_branding_score || 0,
@@ -686,11 +686,11 @@ function extractResumeContent(analysisData) {
  */
 function extractAnalysisSummary(analysisData) {
     logger.info('[RESUME_SERVICE] Extracting lightweight analysis summary');
-    
+
     const criticalCount = (analysisData.critical_mistakes || []).length;
     const majorCount = (analysisData.major_issues || []).length;
     const minorCount = (analysisData.minor_improvements || []).length;
-    
+
     const analysisSummary = {
         // Issue counts by severity
         issuesCounts: {
@@ -698,30 +698,30 @@ function extractAnalysisSummary(analysisData) {
             major: majorCount,
             minor: minorCount
         },
-        
+
         // Initial summary message
-        improvementSummary: criticalCount > 0 
+        improvementSummary: criticalCount > 0
             ? `Found ${criticalCount} critical issue(s), ${majorCount} major issue(s), and ${minorCount} minor improvement(s)`
             : majorCount > 0
                 ? `Found ${majorCount} major issue(s) and ${minorCount} minor improvement(s)`
                 : minorCount > 0
                     ? `Found ${minorCount} minor improvement(s)`
                     : 'No significant issues found',
-        
+
         // No score change for initial analysis
         scoreChange: null,
-        
+
         // Version marker
         version: 'initial',
         updatedAt: new Date().toISOString()
     };
-    
+
     logger.info('[RESUME_SERVICE] ✅ Analysis summary extracted', {
         criticalCount,
         majorCount,
         minorCount
     });
-    
+
     return analysisSummary;
 }
 
@@ -828,7 +828,7 @@ export const getResumeByID = async (contentID, userID, userType = userTypeConsta
 export const getResumeByAnalysisID = async (analysisID, userID, userType = userTypeConstants.USER) => {
     try {
         const content = await resumeModel.getResumeContentByAnalysisID(analysisID, userID, userType);
-        
+
         if (!content) {
             return null;
         }
@@ -1009,25 +1009,25 @@ function validateSectionData(sectionName, data) {
  */
 export const createRewrite = async (userID, analysisID, options = {}) => {
     try {
-        const { 
-            userType = userTypeConstants.USER, 
+        const {
+            userType = userTypeConstants.USER,
             userPrompt,
             targetATSScore = 90,
             versionLabel,
             creditTransactionID,
-            ...otherOptions 
+            ...otherOptions
         } = options;
-        
+
         // Default prompt if none provided - general ATS optimization
         const DEFAULT_PROMPT = 'Optimize my resume for the best possible ATS score. Improve content clarity, use strong action verbs, and ensure professional formatting.';
-        
+
         // Use provided prompt or default to ATS optimization
         const effectivePrompt = (userPrompt && typeof userPrompt === 'string' && userPrompt.trim().length > 0)
             ? userPrompt.trim()
             : DEFAULT_PROMPT;
-        
+
         const isDefaultPrompt = effectivePrompt === DEFAULT_PROMPT;
-        
+
         logger.info('[RESUME_SERVICE] Creating rewrite', {
             userID,
             analysisID,
@@ -1053,7 +1053,7 @@ export const createRewrite = async (userID, analysisID, options = {}) => {
         // Get current resume content - this is what AI will optimize
         // IMPORTANT: Always fetches the CURRENT state (may have been rewritten before)
         const content = await resumeModel.getResumeContentByAnalysisID(analysisID, userID, userType);
-        
+
         if (!content) {
             throw new AppError('Resume content not found for this analysis', 404);
         }
@@ -1086,8 +1086,8 @@ export const createRewrite = async (userID, analysisID, options = {}) => {
             content.id,
             currentContent, // Pass current content for snapshot
             {
-                versionLabel: versionLabel || (isDefaultPrompt 
-                    ? 'ATS Optimized' 
+                versionLabel: versionLabel || (isDefaultPrompt
+                    ? 'ATS Optimized'
                     : `Optimized: ${sanitizedPrompt.substring(0, 50)}${sanitizedPrompt.length > 50 ? '...' : ''}`),
                 optimizationSettings
             },
@@ -1130,8 +1130,8 @@ export const createRewrite = async (userID, analysisID, options = {}) => {
             status: 'pending',
             basedOnVersion: content.version,
             isDefaultOptimization: isDefaultPrompt,
-            message: isDefaultPrompt 
-                ? 'ATS optimization job created and queued' 
+            message: isDefaultPrompt
+                ? 'ATS optimization job created and queued'
                 : 'Rewrite job created and queued'
         };
     } catch (error) {
@@ -1154,7 +1154,7 @@ export const createRewrite = async (userID, analysisID, options = {}) => {
 export const getRewrite = async (rewriteID, userID, userType = userTypeConstants.USER) => {
     try {
         const rewrite = await resumeModel.getRewriteByID(rewriteID, userID, userType);
-        
+
         return {
             id: rewrite.id,
             status: rewrite.status,
@@ -1192,7 +1192,7 @@ export const getRewritesByAnalysis = async (analysisID, userID, options = {}) =>
     try {
         const { userType = userTypeConstants.USER, ...otherOptions } = options;
         const { rewrites, totalCount } = await resumeModel.getRewritesByAnalysisID(analysisID, userID, { ...otherOptions, userType });
-        
+
         const formattedRewrites = rewrites.map(r => ({
             id: r.id,
             resumeId: r.resumeContentID,
@@ -1273,7 +1273,7 @@ export const applyRewrite = async (rewriteID, userID, userType = userTypeConstan
 
         // Get the rewrite details for response (includes theme)
         const rewrite = await resumeModel.getRewriteByID(rewriteID, userID, userType);
-        
+
         // Get the current theme after restoration
         const { getUserTheme } = await import('../models/theme.model.js');
         const currentTheme = await getUserTheme(updatedContent.id, userID, userType);
@@ -1367,7 +1367,7 @@ export const switchRewriteVersion = async (rewriteID, userID, userType = userTyp
 export const getActiveRewrite = async (analysisID, userID, userType = userTypeConstants.USER) => {
     try {
         const activeRewrite = await resumeModel.getActiveRewrite(analysisID, userID, userType);
-        
+
         if (!activeRewrite) {
             return null;
         }
@@ -1486,7 +1486,7 @@ export const compareRewriteVersions = async (rewriteID1, rewriteID2, userID, use
 export const getThemes = async (options = {}) => {
     try {
         const { themes, totalCount } = await themeModel.getAllThemes(options);
-        
+
         const formattedThemes = themes.map(t => ({
             id: t.id,
             name: t.name,
@@ -1698,7 +1698,7 @@ export const getResumeForRender = async (resumeContentID, userID, userType = use
 export const publishResume = async (resumeContentID, userID, userType = userTypeConstants.USER) => {
     try {
         const updated = await themeModel.publishResume(resumeContentID, userID, userType);
-        
+
         return {
             id: updated.id,
             isDraft: false,
@@ -1772,9 +1772,12 @@ export const optimizeResumeContent = async (currentContent, userPrompt, options 
 
         // Build prompt using the new user-driven approach
         const prompt = getUserDrivenOptimizationPrompt(currentContent, userPrompt, options);
-        
+
+        // Extract language from content or options, default to 'en'
+        const resumeLanguage = currentContent?.detected_language || options.detectedLanguage || 'en';
+
         // Get the user-driven system prompt with enhanced preservation rules
-        const systemPrompt = `${getUserDrivenSystemPrompt()}
+        const systemPrompt = `${getUserDrivenSystemPrompt(resumeLanguage)}
 
 ⚠️ CRITICAL DATA PRESERVATION RULES:
 1. DATES: Copy startDate, endDate, and current fields EXACTLY as provided - character-for-character
@@ -1832,13 +1835,13 @@ OUTPUT FORMAT:
 
         // Get original experiences from current content (for ID preservation)
         const originalExperiences = currentContent?.experience || [];
-        
+
         // Post-process experience to ensure critical fields are preserved
         // This is a safety net - ALWAYS use original dates and factual data
         // Only allow AI to change: description, position (enhancement), keywords
         const mergedExperience = (optimizedContent.experience || []).slice(0, originalExperiences.length).map((exp, idx) => {
             const originalExp = originalExperiences[idx] || {};
-            
+
             // Ensure we don't lose description content - use AI's enhanced version, or fall back to original
             let finalDescription = exp.description;
             if (!finalDescription || finalDescription.trim() === '' || finalDescription === '<ul></ul>') {
@@ -1849,7 +1852,7 @@ OUTPUT FORMAT:
                     company: originalExp.company
                 });
             }
-            
+
             return {
                 // ALWAYS preserve these fields from original - never use AI values
                 id: originalExp.id || exp.id || `exp_${idx + 1}`,
@@ -1885,12 +1888,12 @@ OUTPUT FORMAT:
         const originalScores = currentContent?.currentScores || {};
 
         const estimatedAtsScore = optimizedContent.estimatedAtsScore || options.targetATSScore || 85;
-        
+
         // Return content in a format ready for direct application
         // CRITICAL: Always preserve original content if AI returns null/empty
         const originalSkills = currentContent?.skills || {};
         const optimizedSkills = optimizedContent.skills || {};
-        
+
         // Merge skills - preserve original if AI didn't return anything
         const mergedSkills = {
             technical: optimizedSkills.technical?.length > 0 ? optimizedSkills.technical : (originalSkills.technical || []),
@@ -1899,7 +1902,7 @@ OUTPUT FORMAT:
             languages: optimizedSkills.languages?.length > 0 ? optimizedSkills.languages : (originalSkills.languages || []),
             certifications: originalSkills.certifications || [] // Always preserve certifications from original
         };
-        
+
         logger.info('[RESUME_SERVICE] Skills merge completed', {
             technicalCount: mergedSkills.technical.length,
             softCount: mergedSkills.soft.length,
@@ -1907,7 +1910,7 @@ OUTPUT FORMAT:
             languagesCount: mergedSkills.languages.length,
             certificationsPreserved: mergedSkills.certifications.length
         });
-        
+
         return {
             content: {
                 // Personal info is preserved from original (not modified by optimization)
@@ -1930,13 +1933,13 @@ OUTPUT FORMAT:
                 contentScore: Math.min(95, (originalScores.contentScore || 70) + 15),
                 formatScore: Math.min(95, (originalScores.formatScore || 70) + 10),
                 overallScore: estimatedAtsScore,
-                
+
                 // Preserved or estimated scores
                 jobFitScore: originalScores.jobFitScore || 0,
                 skillsRelevanceScore: originalScores.skillsRelevanceScore || 0,
                 experienceRelevanceScore: originalScores.experienceRelevanceScore || 0,
                 educationRelevanceScore: originalScores.educationRelevanceScore || 0,
-                
+
                 // Additional Quality Scores (improved by rewrite)
                 grammarScore: Math.min(95, (originalScores.grammarScore || 70) + 10),
                 professionalBrandingScore: Math.min(95, (originalScores.professionalBrandingScore || 70) + 10),

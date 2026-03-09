@@ -11,7 +11,7 @@
  */
 export const escapeHtml = (str) => {
     if (str === null || str === undefined) return '';
-    
+
     return String(str)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -27,7 +27,7 @@ export const escapeHtml = (str) => {
  */
 export const formatDate = (dateStr) => {
     if (!dateStr) return '';
-    
+
     // Handle "Present" or similar keywords
     const lowerDate = String(dateStr).toLowerCase();
     if (lowerDate === 'present' || lowerDate === 'current' || lowerDate === 'now') {
@@ -37,7 +37,7 @@ export const formatDate = (dateStr) => {
     try {
         // Try to parse the date
         let date;
-        
+
         // Check for year-month format (YYYY-MM)
         if (/^\d{4}-\d{2}$/.test(dateStr)) {
             const [year, month] = dateStr.split('-');
@@ -58,8 +58,8 @@ export const formatDate = (dateStr) => {
         }
 
         // Format to "MMM YYYY"
-        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         return `${months[date.getMonth()]} ${date.getFullYear()}`;
     } catch {
         return dateStr; // Return original on error
@@ -114,16 +114,16 @@ export const nl2br = (text) => {
 export const sanitizeHtml = (html) => {
     if (html === null || html === undefined) return '';
     if (typeof html !== 'string') return String(html);
-    
+
     // If content doesn't look like HTML, escape it
     if (!/<[a-z][\s\S]*>/i.test(html)) {
         return escapeHtml(html);
     }
-    
+
     // Allow safe HTML tags commonly used in rich text editors
     const allowedTags = ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 'ul', 'ol', 'li', 'span', 'div', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
     const allowedAttributes = ['href', 'target', 'class', 'style'];
-    
+
     // Remove script tags and event handlers completely
     let sanitized = html
         .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
@@ -131,14 +131,14 @@ export const sanitizeHtml = (html) => {
         .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '')
         .replace(/on\w+\s*=\s*[^\s>]+/gi, '')
         .replace(/javascript:/gi, '');
-    
+
     // Remove disallowed tags but keep their content
     sanitized = sanitized.replace(/<(\/?)([a-z][a-z0-9]*)([^>]*)>/gi, (match, close, tag, attrs) => {
         const lowerTag = tag.toLowerCase();
         if (!allowedTags.includes(lowerTag)) {
             return ''; // Remove disallowed tags
         }
-        
+
         // Filter attributes for allowed tags
         if (!close && attrs) {
             const filteredAttrs = attrs.replace(/([a-z-]+)\s*=\s*["']([^"']*)["']/gi, (attrMatch, attrName, attrValue) => {
@@ -153,10 +153,10 @@ export const sanitizeHtml = (html) => {
             });
             return `<${close}${tag}${filteredAttrs}>`;
         }
-        
+
         return match;
     });
-    
+
     return sanitized;
 };
 
@@ -189,7 +189,7 @@ export const isEmpty = (value) => {
  */
 export const toStyleString = (styles) => {
     if (!styles || typeof styles !== 'object') return '';
-    
+
     return Object.entries(styles)
         .map(([key, value]) => {
             // Convert camelCase to kebab-case

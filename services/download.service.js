@@ -26,7 +26,7 @@ const PDF_CACHE_TTL = 900;
 export const downloadResumePDF = async (resumeContentID, userID, options = {}) => {
     const startTime = Date.now();
     const { userType = userTypeConstants.USER, ...otherOptions } = options;
-    
+
     try {
         logger.info('[DOWNLOAD_SERVICE] Starting PDF download', {
             resumeContentID,
@@ -141,7 +141,7 @@ export const downloadResumePDF = async (resumeContentID, userID, options = {}) =
 export const downloadRewritePDF = async (rewriteID, userID, options = {}) => {
     const startTime = Date.now();
     const { userType = userTypeConstants.USER, ...otherOptions } = options;
-    
+
     try {
         logger.info('[DOWNLOAD_SERVICE] Starting rewrite PDF download', {
             rewriteID,
@@ -213,7 +213,7 @@ export const downloadRewritePDF = async (rewriteID, userID, options = {}) => {
  */
 export const getPreviewPDF = async (resumeContentID, userID, options = {}) => {
     const { userType = userTypeConstants.USER, ...otherOptions } = options;
-    
+
     try {
         logger.info('[DOWNLOAD_SERVICE] Generating PDF preview', {
             resumeContentID,
@@ -252,7 +252,7 @@ export const getPreviewPDF = async (resumeContentID, userID, options = {}) => {
  */
 export const getHTMLPreview = async (resumeContentID, userID, options = {}) => {
     const { userType = userTypeConstants.USER, ...otherOptions } = options;
-    
+
     try {
         const resumeData = await downloadModel.getResumeForDownload(resumeContentID, userID, userType);
         const themeConfig = buildThemeConfig(resumeData.theme, otherOptions.themeOverrides);
@@ -282,7 +282,7 @@ export const getHTMLPreview = async (resumeContentID, userID, options = {}) => {
  */
 export const downloadResumePDFByAnalysis = async (analysisID, userID, options = {}) => {
     const { userType = userTypeConstants.USER, ...otherOptions } = options;
-    
+
     try {
         logger.info('[DOWNLOAD_SERVICE] Downloading resume by analysis', {
             analysisID,
@@ -291,7 +291,7 @@ export const downloadResumePDFByAnalysis = async (analysisID, userID, options = 
         });
 
         const resumeData = await downloadModel.getResumeForDownloadByAnalysisID(analysisID, userID, userType);
-        
+
         // Use the regular download flow with the content ID
         return await downloadResumePDF(resumeData.metadata.id, userID, { ...otherOptions, userType });
     } catch (error) {
@@ -314,13 +314,13 @@ export const downloadResumePDFByAnalysis = async (analysisID, userID, options = 
  * @returns {Object} Complete theme config
  */
 const buildThemeConfig = (userTheme, overrides = null) => {
-    // Start with base theme config from the database
+    // Start with base theme config from the database, or fall back to default
     const baseThemeConfig = userTheme?.config || null;
-    
+
     // User's custom overrides (stored when they customize the theme)
     const userCustomOverrides = userTheme?.customOverrides || null;
-    
-    // First merge: base theme with user's saved customizations
+
+    // First merge: base theme with user's saved customizations (or default if null)
     let mergedConfig = mergeThemeConfig(baseThemeConfig, userCustomOverrides);
 
     // Apply section visibility from user theme settings
@@ -358,12 +358,12 @@ const buildFilename = (resumeData, options = {}) => {
         .replace(/[^a-zA-Z0-9\s]/g, '')
         .replace(/\s+/g, '_')
         .substring(0, 50);
-    
+
     const suffix = options.suffix || '';
-    const timestamp = options.includeTimestamp 
+    const timestamp = options.includeTimestamp
         ? `_${new Date().toISOString().split('T')[0]}`
         : '';
-    
+
     return `${cleanName}${suffix}${timestamp}.pdf`;
 };
 
@@ -384,14 +384,14 @@ const buildCacheKey = (type, id, options = {}) => {
         sectionOrder: options.sectionOrder,
         userType: options.userType
     });
-    
+
     // Simple hash function
     let hash = 0;
     for (let i = 0; i < optionsHash.length; i++) {
         hash = ((hash << 5) - hash) + optionsHash.charCodeAt(i);
         hash = hash & hash;
     }
-    
+
     return `resume:${type}:${id}:${hash}`;
 };
 

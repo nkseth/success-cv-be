@@ -16,6 +16,7 @@ import { profileRoutes } from "./profile.route.js";
 import { dashboardRoutes } from "./dashboard.route.js";
 import jobRoutes from "./job.route.js";
 import billingRoutes from "./billing.route.js";
+import careerRoadmapRoutes from "./career-roadmap.route.js";
 
 const router = Router();
 
@@ -54,6 +55,9 @@ router.use('/resumes', resumeRoutes);
 
 // Billing routes
 router.use('/billing', billingRoutes);
+
+// Career Roadmap routes
+router.use('/career-roadmap', careerRoadmapRoutes);
 
 // Job routes
 router.use('/', jobRoutes);

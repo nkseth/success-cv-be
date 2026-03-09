@@ -44,11 +44,11 @@ async function initPubSubService(maxRetries = 3, delayMs = 2000) {
             logger.info('✅ PubSub service initialized successfully in worker');
             return true;
         } catch (error) {
-            logger.error(`❌ PubSub initialization failed (attempt ${attempt}/${maxRetries})`, { 
+            logger.error(`❌ PubSub initialization failed (attempt ${attempt}/${maxRetries})`, {
                 error: error.message,
-                stack: error.stack 
+                stack: error.stack
             });
-            
+
             if (attempt < maxRetries) {
                 logger.info(`Retrying PubSub initialization in ${delayMs}ms...`);
                 await new Promise(resolve => setTimeout(resolve, delayMs));
@@ -68,9 +68,9 @@ try {
         parseInt(process.env.PUBSUB_INIT_DELAY_MS || '2000')
     );
 } catch (error) {
-    logger.error('🛑 Worker startup failed - PubSub initialization error', { 
+    logger.error('🛑 Worker startup failed - PubSub initialization error', {
         error: error.message,
-        stack: error.stack 
+        stack: error.stack
     });
     logger.error('Worker cannot start without PubSub service. Exiting...');
     process.exit(1);
@@ -89,9 +89,9 @@ import { extractFileContent } from '../../utils/fileExtraction.js';
 import { executeWithProgress, publishJobUpdate } from '../../utils/progressTracking.js';
 import { validateResumeData, isValidResume, extractEmail } from '../../utils/resumeSchema.js';
 import { db } from '../../config/db.js';
-import { 
-    analysisTable, 
-    userDocumentTable, 
+import {
+    analysisTable,
+    userDocumentTable,
     processedAndRawDataTable,
     candidateAnalysisTable,
     candidateDocumentTable,
@@ -106,6 +106,13 @@ import resumeService from '../../services/resume.service.js';
 import { isCandidate as checkIsCandidate } from '../../utils/dynamic-tables.js';
 import { userTypeConstants } from '../../utils/constants.js';
 import billingModel from '../../models/billing.model.js';
+
+// Multi-step analysis imports
+import { detectLanguage } from '../../utils/languageDetection.js';
+import { getParsingPrompt } from '../workerSupport/resume-analysis/parsingPrompt.js';
+import { parsingSchema } from '../workerSupport/resume-analysis/parsingSchema.js';
+import { getScoringPrompt } from '../workerSupport/resume-analysis/scoringPrompt.js';
+import { scoringSchema } from '../workerSupport/resume-analysis/scoringSchema.js';
 
 /**
  * Get tables for user type
@@ -131,11 +138,11 @@ function getTablesForUserType(userType) {
 async function processResumeAnalysis(job) {
     const { analysisID, userID, resumeId, documentData, meta, userType = userTypeConstants.USER, creditTransactionID } = job.data;
     const { title, fileURL } = documentData || {};
-    
+
     // Get appropriate tables based on userType
     const tables = getTablesForUserType(userType);
-    
-    logger.info('[RESUME_ANALYSIS] Starting job', { 
+
+    logger.info('[RESUME_ANALYSIS] Starting job', {
         jobId: job.id,
         analysisID,
         userID,
@@ -153,7 +160,7 @@ async function processResumeAnalysis(job) {
                     updatedAt: new Date()
                 })
                 .where(eq(tables.analysisTable.id, analysisID));
-                
+
             logger.info('[RESUME_ANALYSIS] Analysis record updated to processing');
         });
 
@@ -161,24 +168,24 @@ async function processResumeAnalysis(job) {
         let accessUrl;
         await executeWithProgress(job.id, 'DOWNLOADING', async () => {
             logger.info('[RESUME_ANALYSIS] Generating access URL for file:', fileURL);
-            
+
             // Extract container and blob name from the fileURL
             // Format: https://{account}.blob.core.windows.net/{container}/{blobName}
             const urlParts = new URL(fileURL);
             const pathParts = urlParts.pathname.split('/').filter(Boolean);
-            
+
             if (pathParts.length < 2) {
                 throw new Error(`Invalid file URL format: ${fileURL}`);
             }
-            
+
             const containerName = pathParts[0];
             const blobName = pathParts.slice(1).join('/');
-            
+
             logger.info('[RESUME_ANALYSIS] File details:', { containerName, blobName });
-            
+
             // Generate SAS token URL with read permissions (60 minute expiry)
             accessUrl = await getFileAccessUrl(containerName, blobName, 60);
-            
+
             logger.info('[RESUME_ANALYSIS] ✅ Generated access URL (expires in 60 minutes)');
         });
 
@@ -187,42 +194,53 @@ async function processResumeAnalysis(job) {
         fileContent = await executeWithProgress(job.id, 'EXTRACTING', async () => {
             logger.info('[RESUME_ANALYSIS] Extracting content from file using access URL');
             const content = await extractFileContent(accessUrl);
-            
+
             if (!content || content.trim().length === 0) {
                 throw new Error('Extracted content is empty - file may be corrupted or unsupported');
             }
-            
+
             logger.info('[RESUME_ANALYSIS] ✅ Extracted', content.length, 'characters');
             return content;
         });
 
-        // Step 4: Parse resume content using AI
-        const parsedData = await executeWithProgress(job.id, 'PARSING', async () => {
-            logger.info('[RESUME_ANALYSIS] Parsing resume content with AI');
-            
-            // Use AI to parse and analyze resume
-            const result = await generateAiResponseObject({
-                filePath: fileContent, // Use extracted text content
-                schema: candidateSchemaSimplified,
-                system: getResumeAnalysisPrompt(),
-                content: `Analyze this resume and identify all mistakes, issues, and improvement opportunities:\n\n${fileContent}`
+        // Step 3.5: Detect resume language
+        let languageInfo;
+        await executeWithProgress(job.id, 'DETECTING_LANGUAGE', async () => {
+            languageInfo = detectLanguage(fileContent);
+            logger.info('[RESUME_ANALYSIS] 🌍 Language detected', {
+                language: languageInfo.language,
+                languageName: languageInfo.languageName,
+                confidence: languageInfo.confidence
             });
-            
-            // Validate experience bullet points are extracted
-            const experiencesWithBullets = (result.experiences || []).filter(exp => 
-                (exp.highlights && exp.highlights.length > 0) || 
+        });
+
+        // Step 4: STEP 1 of 2 — Parse resume content (focused extraction only)
+        let parsedData;
+        parsedData = await executeWithProgress(job.id, 'PARSING', async () => {
+            logger.info('[RESUME_ANALYSIS] Step 1/2: Parsing resume content with focused extraction AI');
+
+            const result = await generateAiResponseObject({
+                schema: parsingSchema,
+                system: getParsingPrompt(languageInfo),
+                content: `Extract all structured data from this resume. The resume is in ${languageInfo.languageName}.\n\n${fileContent}`
+            });
+
+            // Validate critical fields were extracted
+            const hasName = !!result.personal_info?.name;
+            const hasExperiences = (result.experiences || []).length > 0;
+            const experiencesWithBullets = (result.experiences || []).filter(exp =>
+                (exp.highlights && exp.highlights.length > 0) ||
                 (exp.summary && exp.summary.trim().length > 0)
             );
-            
-            // Validate projects bullet points are extracted
-            const projectsWithDetails = (result.projects || []).filter(proj => 
-                (proj.highlights && proj.highlights.length > 0) || 
+            const projectsWithDetails = (result.projects || []).filter(proj =>
+                (proj.highlights && proj.highlights.length > 0) ||
                 (proj.description && proj.description.trim().length > 0)
             );
-            
-            logger.info('[RESUME_ANALYSIS] AI parsing completed:', {
+
+            logger.info('[RESUME_ANALYSIS] Step 1/2 parsing completed:', {
+                detectedLanguage: result.detected_language || languageInfo.language,
                 hasPersonalInfo: !!result.personal_info,
-                hasName: !!result.personal_info?.name,
+                hasName,
                 hasEmail: !!result.personal_info?.email,
                 hasSummary: !!result.personal_info?.summary,
                 experienceCount: result.experiences?.length || 0,
@@ -240,47 +258,108 @@ async function processResumeAnalysis(job) {
                 awardsCount: result.awards?.length || 0,
                 publicationsCount: result.publications?.length || 0,
                 volunteersCount: result.volunteers?.length || 0,
-                languagesCount: result.languages?.length || 0,
-                criticalMistakes: result.critical_mistakes?.length || 0,
-                majorIssues: result.major_issues?.length || 0,
-                minorImprovements: result.minor_improvements?.length || 0,
-                overallScore: result.relevance?.['Overall Score'] || 0,
-                atsScore: result.resume_quality?.ats_compatibility_score || 0
+                languagesCount: result.languages?.length || 0
             });
-            
-            // Warn if important data might be missing
-            if (result.experiences?.length > 0 && experiencesWithBullets.length === 0) {
-                logger.warn('[RESUME_ANALYSIS] ⚠️ Experiences found but no bullet points extracted - check extraction');
+
+            // Retry once if critical data is missing (name or any experience bullets)
+            if (!hasName && hasExperiences && experiencesWithBullets.length === 0) {
+                logger.warn('[RESUME_ANALYSIS] ⚠️ Critical data missing from Step 1 parse — retrying with emphasis');
+
+                const retryResult = await generateAiResponseObject({
+                    schema: parsingSchema,
+                    system: getParsingPrompt(languageInfo),
+                    content: `IMPORTANT: The previous extraction missed critical data. Please try again with extra care to extract ALL bullet points and the candidate's name.\n\nResume language: ${languageInfo.languageName}\n\n${fileContent}`
+                });
+
+                // Use retry result if it's better
+                const retryHasName = !!retryResult.personal_info?.name;
+                const retryBullets = (retryResult.experiences || []).filter(exp =>
+                    (exp.highlights && exp.highlights.length > 0)
+                ).length;
+
+                if (retryHasName || retryBullets > experiencesWithBullets.length) {
+                    logger.info('[RESUME_ANALYSIS] ✅ Retry yielded better results, using retry data');
+                    return retryResult;
+                }
             }
-            
+
+            if (result.experiences?.length > 0 && experiencesWithBullets.length === 0) {
+                logger.warn('[RESUME_ANALYSIS] ⚠️ Experiences found but no bullet points extracted');
+            }
+
             return result;
         });
 
-        // Step 5: Validate resume data
+        // Step 5: STEP 2 of 2 — Analyze and score (focused analysis only)
+        let analysisData;
         let resumeData;
         await executeWithProgress(job.id, 'ANALYZING', async () => {
-            logger.info('[RESUME_ANALYSIS] Validating AI-parsed resume data');
-            
-            // The AI already validated and structured the data
-            resumeData = parsedData;
-            
+            logger.info('[RESUME_ANALYSIS] Step 2/2: Analyzing and scoring parsed resume data');
+
+            // Build a concise summary of parsed data for the scoring AI
+            const parsedSummary = {
+                personal_info: parsedData.personal_info,
+                experiences: (parsedData.experiences || []).map(exp => ({
+                    company: exp.company,
+                    position: exp.position,
+                    start_date: exp.start_date,
+                    end_date: exp.end_date,
+                    highlights: exp.highlights,
+                    summary: exp.summary
+                })),
+                education: parsedData.education,
+                skills: parsedData.skills,
+                projects: (parsedData.projects || []).map(proj => ({
+                    name: proj.name,
+                    description: proj.description,
+                    technologies: proj.technologies,
+                    highlights: proj.highlights
+                })),
+                certificates: parsedData.certificates,
+                achievements: parsedData.achievements,
+                languages: parsedData.languages,
+                detected_language: parsedData.detected_language || languageInfo.language
+            };
+
+            analysisData = await generateAiResponseObject({
+                schema: scoringSchema,
+                system: getScoringPrompt(languageInfo),
+                content: `Analyze and score this parsed resume data. Provide detailed scoring, mistake analysis, and improvement recommendations.\n\nParsed Resume Data:\n${JSON.stringify(parsedSummary, null, 2)}`
+            });
+
+            // Merge parsed data + analysis data into combined format
+            // This preserves the same shape that downstream code expects
+            resumeData = {
+                ...parsedData,
+                ...analysisData,
+                detected_language: parsedData.detected_language || languageInfo.language
+            };
+
+            logger.info('[RESUME_ANALYSIS] Step 2/2 analysis completed:', {
+                overallScore: analysisData.relevance?.['Overall Score'] || 0,
+                jobFitScore: analysisData.JobFitScore || 0,
+                atsScore: analysisData.resume_quality?.ats_compatibility_score || 0,
+                criticalMistakes: analysisData.critical_mistakes?.length || 0,
+                majorIssues: analysisData.major_issues?.length || 0,
+                minorImprovements: analysisData.minor_improvements?.length || 0,
+                weakBulletRewrites: analysisData.weak_bullet_rewrites?.length || 0
+            });
+
             // Additional validation checks
             if (!parsedData.personal_info?.email) {
                 logger.warn('[RESUME_ANALYSIS] No email found in resume');
             }
-            
             if (!parsedData.experiences || parsedData.experiences.length === 0) {
                 logger.warn('[RESUME_ANALYSIS] No work experience found in resume');
             }
-            
-            logger.info('[RESUME_ANALYSIS] ✅ Resume data validated successfully');
+
+            logger.info('[RESUME_ANALYSIS] ✅ Multi-step analysis completed successfully');
         });
 
         // Step 6: Extract scores from AI analysis
         await executeWithProgress(job.id, 'SCORING', async () => {
-            logger.info('[RESUME_ANALYSIS] Extracting scores from AI analysis');
-            
-            // AI already calculated all scores in the schema
+            logger.info('[RESUME_ANALYSIS] Extracting scores from analysis');
+
             const scores = {
                 overall_score: resumeData.relevance?.['Overall Score'] || 0,
                 job_fit_score: resumeData.JobFitScore || 0,
@@ -290,7 +369,13 @@ async function processResumeAnalysis(job) {
                 experience_score: resumeData.relevance?.['Work Experience'] || 0,
                 education_score: resumeData.relevance?.['Education'] || 0
             };
-            
+
+            // Sanity check: if all scores are still at defaults, log warning
+            const allDefaults = Object.values(scores).every(s => s === 0 || s === 50 || s === 70);
+            if (allDefaults) {
+                logger.warn('[RESUME_ANALYSIS] ⚠️ All scores appear to be defaults — analysis may have been incomplete');
+            }
+
             logger.info('[RESUME_ANALYSIS] Scores extracted:', {
                 overall: scores.overall_score,
                 jobFit: scores.job_fit_score,
@@ -299,7 +384,7 @@ async function processResumeAnalysis(job) {
                 criticalMistakes: resumeData.critical_mistakes?.length || 0,
                 majorIssues: resumeData.major_issues?.length || 0
             });
-            
+
             // Store scores for easy access
             resumeData._scores = scores;
         });
@@ -307,23 +392,23 @@ async function processResumeAnalysis(job) {
         // Step 7: Save results to database
         await executeWithProgress(job.id, 'SAVING', async () => {
             logger.info('[RESUME_ANALYSIS] Saving results to database');
-            
+
             const scores = resumeData._scores || {};
-            
+
             // Update document title with candidate name from parsed data
             const candidateName = resumeData.personal_info?.name || 'Unknown Candidate';
             const timestamp = new Date().toISOString().split('T')[0];
             const updatedTitle = `${candidateName} - ${timestamp}`;
-            
+
             await db.update(tables.documentTable)
                 .set({
                     title: updatedTitle,
                     updatedAt: new Date()
                 })
                 .where(eq(tables.documentTable.id, resumeId));
-            
+
             logger.info('[RESUME_ANALYSIS] Updated document title:', updatedTitle);
-            
+
             // Save processed data to processedAndRawDataTable
             const [processedDataRecord] = await db.insert(tables.processedDataTable)
                 .values({
@@ -340,7 +425,7 @@ async function processResumeAnalysis(job) {
                     })
                 })
                 .returning();
-            
+
             // Update analysis status to completed
             await db.update(tables.analysisTable)
                 .set({
@@ -361,7 +446,7 @@ async function processResumeAnalysis(job) {
                     })
                 })
                 .where(eq(tables.analysisTable.id, analysisID));
-            
+
             logger.info('[RESUME_ANALYSIS] ✅ Results saved to database', {
                 processedDataID: processedDataRecord.id
             });
@@ -396,7 +481,7 @@ async function processResumeAnalysis(job) {
                     hasLanguages: !!resumeData.languages,
                     languagesCount: resumeData.languages?.length || 0
                 });
-                
+
                 const resumeContent = await resumeService.createResumeFromAnalysis(
                     userID,
                     analysisID,
@@ -419,7 +504,7 @@ async function processResumeAnalysis(job) {
         // Step 8: Complete
         await executeWithProgress(job.id, 'COMPLETE', async () => {
             const scores = resumeData._scores || {};
-            
+
             // Confirm credit deduction (task completed successfully)
             if (creditTransactionID) {
                 try {
@@ -433,7 +518,7 @@ async function processResumeAnalysis(job) {
                     // Don't fail the job for billing issues
                 }
             }
-            
+
             await publishJobUpdate(job.id, {
                 progress: 100,
                 status: 'completed',
@@ -522,8 +607,8 @@ async function processResumeAnalysis(job) {
                 })
                 .where(eq(tables.analysisTable.id, analysisID));
         } catch (dbError) {
-            logger.error('[RESUME_ANALYSIS] Failed to update error status', { 
-                error: dbError.message 
+            logger.error('[RESUME_ANALYSIS] Failed to update error status', {
+                error: dbError.message
             });
         }
 
@@ -567,17 +652,17 @@ export function createResumeAnalysisWorker(concurrency = 5) {
 
     // Worker event listeners
     worker.on('completed', (job) => {
-        logger.info('Worker: Job completed', { 
-            jobId: job.id, 
-            resumeId: job.data.resumeId 
+        logger.info('Worker: Job completed', {
+            jobId: job.id,
+            resumeId: job.data.resumeId
         });
     });
 
     worker.on('failed', (job, error) => {
-        logger.error('Worker: Job failed', { 
-            jobId: job?.id, 
+        logger.error('Worker: Job failed', {
+            jobId: job?.id,
             resumeId: job?.data?.resumeId,
-            error: error.message 
+            error: error.message
         });
     });
 
@@ -590,15 +675,15 @@ export function createResumeAnalysisWorker(concurrency = 5) {
     });
 
     worker.on('active', (job) => {
-        logger.info('Worker: Job active', { 
-            jobId: job.id, 
-            resumeId: job.data.resumeId 
+        logger.info('Worker: Job active', {
+            jobId: job.id,
+            resumeId: job.data.resumeId
         });
     });
 
-    logger.info('Resume analysis worker started', { 
+    logger.info('Resume analysis worker started', {
         concurrency,
-        queue: 'resume-analysis' 
+        queue: 'resume-analysis'
     });
 
     return worker;
@@ -621,7 +706,7 @@ export async function shutdownWorker(worker) {
 // If this file is run directly, start the worker
 if (import.meta.url === `file://${process.argv[1]}`) {
     logger.info('Starting resume analysis worker process...');
-    
+
     const worker = createResumeAnalysisWorker(
         parseInt(process.env.WORKER_CONCURRENCY || '5')
     );

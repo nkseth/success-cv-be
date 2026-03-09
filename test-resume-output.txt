@@ -1,0 +1,83 @@
+Starting Multi-Language Resume Tests...
+
+===========================================
+TESTING: Resume_Abhay_Verma.pdf
+===========================================
+
+[TEST] Extracting text from /home/danko/projects/success-cv-be/sample/Resume_Abhay_Verma.pdf
+[TEST] ✅ Extracted 2342 characters of text.
+
+[TEST] 🌍 Detected Language: English (en) - Confidence: high
+
+[TEST] 🤖 Starting Step 1: AI Parsing...
+AI object generation attempt 1/3
+AI response object keys: [
+  'detected_language', 'personal_info',
+  'experiences',       'education',
+  'social',            'certificates',
+  'achievements',      'languages',
+  'interests',         'hobbies',
+  'skills',            'other_skills',
+  'projects',          'awards',
+  'publications',      'volunteers'
+]
+AI object generation successful on attempt 1
+[TEST] ✅ Parsing complete.
+   - Name: Abhay Verma
+   - Email: abhayverma490@gmail.com
+   - Experiences parsed: 3
+   - Total experience bullets: 7
+   - Skills parsed: 20
+   - Detected Language in Schema: en
+
+[TEST] 🤖 Starting Step 2: AI Scoring & Analysis...
+AI object generation attempt 1/3
+AI response object keys: [
+  'relevance',
+  'JobFitScore',
+  'jobFitReason',
+  'resume_quality',
+  'weak_bullet_rewrites',
+  'missing_skills_analysis',
+  'ats_keyword_analysis',
+  'first_impression',
+  'critical_mistakes',
+  'major_issues',
+  'minor_improvements',
+  'optimization_opportunities',
+  'improvement_plan',
+  'impact_analysis',
+  'personality_job_fit'
+]
+AI object generation successful on attempt 1
+[TEST] ✅ Scoring & Analysis complete.
+   - Overall Score: 63
+   - ATS Content Score: 80
+   - Critical Mistakes: 5
+   - Job Fit Score: 70
+   - Top Mistake: Address formatting is inconsistent and overly detailed for a resume.
+
+✅ TEST PASSED FOR Resume_Abhay_Verma.pdf
+
+
+===========================================
+TESTING: CVJuanCarlosRamírezMartínez.pdf
+===========================================
+
+[TEST] Extracting text from /home/danko/projects/success-cv-be/sample/CVJuanCarlosRamírezMartínez.pdf
+
+❌ TEST FAILED FOR CVJuanCarlosRamírezMartínez.pdf
+Error: ENOENT: no such file or directory, open '/home/danko/projects/success-cv-be/sample/CVJuanCarlosRamírezMartínez.pdf'
+    at Object.openSync (node:fs:556:18)
+    at Object.readFileSync (node:fs:440:35)
+    at extractLocalFileContent (file:///home/danko/projects/success-cv-be/scripts/test-multi-lang-resume.js:16:27)
+    at runTest (file:///home/danko/projects/success-cv-be/scripts/test-multi-lang-resume.js:54:35)
+    at main (file:///home/danko/projects/success-cv-be/scripts/test-multi-lang-resume.js:128:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: '/home/danko/projects/success-cv-be/sample/CVJuanCarlosRamírezMartínez.pdf'
+}
+
+All tests finished.

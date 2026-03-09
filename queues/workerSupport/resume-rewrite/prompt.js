@@ -8,7 +8,7 @@
  * @returns {string} System prompt
  */
 export const getResumeRewriteSystemPrompt = () => {
-    return `You are an expert resume writer and ATS (Applicant Tracking System) optimization specialist with over 15 years of experience. Your expertise includes:
+   return `You are an expert resume writer and ATS (Applicant Tracking System) optimization specialist with over 15 years of experience. Your expertise includes:
 
 - Crafting compelling, achievement-focused resume content
 - Maximizing ATS compatibility scores (90%+ success rate)
@@ -38,13 +38,13 @@ Always provide specific, actionable improvements with clear reasoning.`;
  * @returns {string} Professional summary prompt
  */
 export const getProfessionalSummaryPrompt = (analysisData, options) => {
-    const personalInfo = analysisData.personal_info || {};
-    const experiences = analysisData.experiences || [];
-    const skills = analysisData.skills || [];
-    const strengthsObj = analysisData.strengths || {};
-    const strengths = strengthsObj.general || strengthsObj.technical || '';
+   const personalInfo = analysisData.personal_info || {};
+   const experiences = analysisData.experiences || [];
+   const skills = analysisData.skills || [];
+   const strengthsObj = analysisData.strengths || {};
+   const strengths = strengthsObj.general || strengthsObj.technical || '';
 
-    return `Create a compelling, ATS-optimized professional summary based on the candidate's profile:
+   return `Create a compelling, ATS-optimized professional summary based on the candidate's profile:
 
 **Candidate Profile:**
 - Skills: ${skills.slice(0, 10).join(', ')}
@@ -79,7 +79,7 @@ Return the optimized summary with keywords and improvements noted.`;
  * @returns {string} Work experience prompt
  */
 export const getWorkExperiencePrompt = (experiences, options) => {
-    return `Optimize the following work experience entries for maximum ATS score and impact:
+   return `Optimize the following work experience entries for maximum ATS score and impact:
 
 **Current Experience Entries:**
 ${JSON.stringify(experiences, null, 2)}
@@ -134,7 +134,7 @@ Transform responsibilities into achievements. Focus on what changed because of t
  * @returns {string} Skills section prompt
  */
 export const getSkillsPrompt = (skills, experiences, options) => {
-    return `Optimize this skills list for ATS compatibility and relevance:
+   return `Optimize this skills list for ATS compatibility and relevance:
 
 **Current Skills:**
 ${skills.join(', ')}
@@ -190,7 +190,7 @@ Focus on skills that are both accurate and marketable.`;
  * @returns {string} Education section prompt
  */
 export const getEducationPrompt = (education, options) => {
-    return `Optimize the education section for ATS compatibility:
+   return `Optimize the education section for ATS compatibility:
 
 **Current Education:**
 ${JSON.stringify(education, null, 2)}
@@ -236,11 +236,11 @@ Keep it concise but comprehensive.`;
  * @returns {string} ATS keywords prompt
  */
 export const getATSKeywordsPrompt = (analysisData, options) => {
-    const skills = analysisData.skills || [];
-    const experiences = analysisData.experiences || [];
-    const education = analysisData.education || [];
+   const skills = analysisData.skills || [];
+   const experiences = analysisData.experiences || [];
+   const education = analysisData.education || [];
 
-    return `Generate a comprehensive ATS keyword strategy for this candidate:
+   return `Generate a comprehensive ATS keyword strategy for this candidate:
 
 **Candidate Profile:**
 - Skills: ${skills.join(', ')}
@@ -301,9 +301,9 @@ Target ATS Score: ${options.targetATSScore || 90}`;
  * @returns {string} Formatting recommendations prompt
  */
 export const getFormattingPrompt = (analysisData, options) => {
-    const atsScore = analysisData.resume_quality?.ats_compatibility_score || 0;
-    
-    return `Provide ATS-compatible formatting recommendations:
+   const atsScore = analysisData.resume_quality?.ats_compatibility_score || 0;
+
+   return `Provide ATS-compatible formatting recommendations:
 
 **Current ATS Score:** ${atsScore}/100
 **Target Score:** ${options.targetATSScore || 90}
@@ -366,25 +366,25 @@ Focus on maintaining professional appearance while maximizing ATS parseability.`
  * @returns {number} Total years of experience
  */
 function calculateTotalExperience(experiences) {
-    if (!experiences || experiences.length === 0) return 0;
+   if (!experiences || experiences.length === 0) return 0;
 
-    let totalMonths = 0;
-    experiences.forEach(exp => {
-        if (exp.duration) {
-            const match = exp.duration.match(/(\d+)\s*years?|(\d+)\s*months?/gi);
-            if (match) {
-                match.forEach(m => {
-                    if (m.includes('year')) {
-                        totalMonths += parseInt(m) * 12;
-                    } else if (m.includes('month')) {
-                        totalMonths += parseInt(m);
-                    }
-                });
-            }
-        }
-    });
+   let totalMonths = 0;
+   experiences.forEach(exp => {
+      if (exp.duration) {
+         const match = exp.duration.match(/(\d+)\s*years?|(\d+)\s*months?/gi);
+         if (match) {
+            match.forEach(m => {
+               if (m.includes('year')) {
+                  totalMonths += parseInt(m) * 12;
+               } else if (m.includes('month')) {
+                  totalMonths += parseInt(m);
+               }
+            });
+         }
+      }
+   });
 
-    return Math.round(totalMonths / 12 * 10) / 10; // Round to 1 decimal
+   return Math.round(totalMonths / 12 * 10) / 10; // Round to 1 decimal
 }
 
 /**
@@ -398,25 +398,25 @@ function calculateTotalExperience(experiences) {
  * @returns {string} Optimization prompt
  */
 export const getResumeContentRewritePrompt = (currentContent, analysisData, options = {}) => {
-    // Extract current content sections
-    const summary = currentContent?.summary?.text || currentContent?.professional_summary || currentContent?.summary || '';
-    const experiences = currentContent?.experiences || currentContent?.experience || [];
-    const skills = currentContent?.skills || [];
-    const personalInfo = currentContent?.personal_info || currentContent?.personalInfo || {};
-    
-    // Extract issues from analysis
-    const criticalMistakes = analysisData?.critical_mistakes || [];
-    const majorIssues = analysisData?.major_issues || [];
-    const minorImprovements = analysisData?.minor_improvements || [];
-    
-    // Build issues summary for the AI
-    const issuesList = [
-        ...criticalMistakes.map(m => `CRITICAL: ${m.section} - ${m.issue}. Fix: ${m.fix}`),
-        ...majorIssues.map(m => `MAJOR: ${m.section} - ${m.issue}. Fix: ${m.fix}`),
-        ...minorImprovements.slice(0, 5).map(m => `MINOR: ${m.section} - ${m.suggestion}`)
-    ].join('\n');
-    
-    return `Apply the identified fixes to optimize this resume for ATS compatibility.
+   // Extract current content sections
+   const summary = currentContent?.summary?.text || currentContent?.professional_summary || currentContent?.summary || '';
+   const experiences = currentContent?.experiences || currentContent?.experience || [];
+   const skills = currentContent?.skills || [];
+   const personalInfo = currentContent?.personal_info || currentContent?.personalInfo || {};
+
+   // Extract issues from analysis
+   const criticalMistakes = analysisData?.critical_mistakes || [];
+   const majorIssues = analysisData?.major_issues || [];
+   const minorImprovements = analysisData?.minor_improvements || [];
+
+   // Build issues summary for the AI
+   const issuesList = [
+      ...criticalMistakes.map(m => `CRITICAL: ${m.section} - ${m.issue}. Fix: ${m.fix}`),
+      ...majorIssues.map(m => `MAJOR: ${m.section} - ${m.issue}. Fix: ${m.fix}`),
+      ...minorImprovements.slice(0, 5).map(m => `MINOR: ${m.section} - ${m.suggestion}`)
+   ].join('\n');
+
+   return `Apply the identified fixes to optimize this resume for ATS compatibility.
 
 **CURRENT RESUME CONTENT:**
 
@@ -478,13 +478,13 @@ ${issuesList || 'No specific issues identified - apply general ATS optimization'
  * @returns {string} Complete optimization prompt
  */
 export const getCompleteResumePrompt = (analysisData, rawData, options = {}) => {
-    const personalInfo = analysisData?.personal_info || {};
-    const experiences = analysisData?.experiences || [];
-    const skills = analysisData?.skills || [];
-    const education = analysisData?.education || [];
-    const summary = analysisData?.professional_summary || analysisData?.summary || '';
-    
-    return `Optimize this complete resume for maximum ATS score and recruiter impact.
+   const personalInfo = analysisData?.personal_info || {};
+   const experiences = analysisData?.experiences || [];
+   const skills = analysisData?.skills || [];
+   const education = analysisData?.education || [];
+   const summary = analysisData?.professional_summary || analysisData?.summary || '';
+
+   return `Optimize this complete resume for maximum ATS score and recruiter impact.
 
 **CANDIDATE PROFILE:**
 Name: ${personalInfo.name || 'N/A'}
@@ -533,8 +533,21 @@ Make all content specific, quantifiable, and action-oriented.`;
  * This is the new simplified approach where user provides their goal
  * @returns {string} System prompt
  */
-export const getUserDrivenSystemPrompt = () => {
-    return `You are an expert resume writer and ATS (Applicant Tracking System) optimization specialist with 15+ years of experience helping candidates land jobs at top companies.
+export const getUserDrivenSystemPrompt = (resumeLanguage = 'en') => {
+   const languageName = resumeLanguage === 'es' ? 'Spanish' : 'English';
+   const multiLangInstructions = resumeLanguage !== 'en'
+      ? `
+🌍 MULTI-LANGUAGE REWRITING (CRITICAL):
+- The resume content is in **${languageName}**
+- You MUST write ALL rewritten content (summary, descriptions, bullet points) in **${languageName}**
+- Do NOT translate content to English unless the user specifically asks for translation
+- Use strong action verbs appropriate for ${languageName} (e.g., Spanish: Lideré, Desarrollé, Implementé, Gestioné, Diseñé, Optimicé)
+- Apply ATS optimization using ${languageName}-language keywords relevant to the candidate's industry
+- Maintain professional tone appropriate for ${languageName}-speaking job markets
+`
+      : '';
+
+   return `You are an expert resume writer and ATS (Applicant Tracking System) optimization specialist with 15+ years of experience helping candidates land jobs at top companies.
 
 YOUR EXPERTISE:
 - Crafting compelling, achievement-focused resume content
@@ -545,7 +558,7 @@ YOUR EXPERTISE:
 - Modern resume formatting and structure
 - Action-oriented language using power verbs
 - STAR method (Situation, Task, Action, Result) for achievements
-
+${multiLangInstructions}
 YOUR APPROACH:
 1. Understand the user's optimization goal
 2. Tailor content specifically for that goal
@@ -599,20 +612,20 @@ EXPERIENCE DESCRIPTION FORMAT:
  * @returns {string} Optimization prompt
  */
 export const getUserDrivenOptimizationPrompt = (currentContent, userPrompt, options = {}) => {
-    // Extract current content sections
-    const personalInfo = currentContent?.personalInfo || {};
-    const summary = currentContent?.summary?.text || currentContent?.summary || '';
-    const experiences = currentContent?.experience || [];
-    const education = currentContent?.education || [];
-    const skills = currentContent?.skills || {};
-    const additionalSections = currentContent?.additionalSections || [];
-    
-    // Build experience with IDs (IMPORTANT: AI must preserve these IDs)
-    const experienceWithIds = experiences.map((exp, idx) => {
-        const desc = typeof exp.description === 'string' 
-            ? exp.description.replace(/<[^>]*>/g, ' ').substring(0, 400) 
-            : '';
-        return `Experience #${idx + 1}:
+   // Extract current content sections
+   const personalInfo = currentContent?.personalInfo || {};
+   const summary = currentContent?.summary?.text || currentContent?.summary || '';
+   const experiences = currentContent?.experience || [];
+   const education = currentContent?.education || [];
+   const skills = currentContent?.skills || {};
+   const additionalSections = currentContent?.additionalSections || [];
+
+   // Build experience with IDs (IMPORTANT: AI must preserve these IDs)
+   const experienceWithIds = experiences.map((exp, idx) => {
+      const desc = typeof exp.description === 'string'
+         ? exp.description.replace(/<[^>]*>/g, ' ').substring(0, 400)
+         : '';
+      return `Experience #${idx + 1}:
    - ID: "${exp.id || `exp_${idx + 1}`}" (PRESERVE THIS EXACTLY)
    - Company: "${exp.company || 'Company'}" (PRESERVE THIS EXACTLY)
    - Position: "${exp.position || 'Position'}"
@@ -620,21 +633,21 @@ export const getUserDrivenOptimizationPrompt = (currentContent, userPrompt, opti
    - Dates: "${exp.startDate || ''}" to "${exp.endDate || 'Present'}"
    - Current: ${exp.current || false}
    - Description: ${desc}${desc.length >= 400 ? '...' : ''}`;
-    }).join('\n\n');
-    
-    // Build skills summary
-    const allSkills = [
-        ...(skills.technical || []),
-        ...(skills.soft || []),
-        ...(skills.tools || [])
-    ].slice(0, 20);
-    
-    // Build education summary
-    const educationSummary = education.map(edu => 
-        `${edu.degree || ''} ${edu.field ? `in ${edu.field}` : ''} - ${edu.institution || ''}`
-    ).join(', ');
-    
-    return `OPTIMIZATION REQUEST FROM USER:
+   }).join('\n\n');
+
+   // Build skills summary
+   const allSkills = [
+      ...(skills.technical || []),
+      ...(skills.soft || []),
+      ...(skills.tools || [])
+   ].slice(0, 20);
+
+   // Build education summary
+   const educationSummary = education.map(edu =>
+      `${edu.degree || ''} ${edu.field ? `in ${edu.field}` : ''} - ${edu.institution || ''}`
+   ).join(', ');
+
+   return `OPTIMIZATION REQUEST FROM USER:
 "${userPrompt}"
 
 ---
@@ -714,16 +727,16 @@ Based on the user's request "${userPrompt}", REWRITE (not add to) this resume:
 };
 
 export default {
-    getResumeRewriteSystemPrompt,
-    getProfessionalSummaryPrompt,
-    getWorkExperiencePrompt,
-    getSkillsPrompt,
-    getEducationPrompt,
-    getATSKeywordsPrompt,
-    getFormattingPrompt,
-    getResumeContentRewritePrompt,
-    getCompleteResumePrompt,
-    // New user-driven approach
-    getUserDrivenSystemPrompt,
-    getUserDrivenOptimizationPrompt
+   getResumeRewriteSystemPrompt,
+   getProfessionalSummaryPrompt,
+   getWorkExperiencePrompt,
+   getSkillsPrompt,
+   getEducationPrompt,
+   getATSKeywordsPrompt,
+   getFormattingPrompt,
+   getResumeContentRewritePrompt,
+   getCompleteResumePrompt,
+   // New user-driven approach
+   getUserDrivenSystemPrompt,
+   getUserDrivenOptimizationPrompt
 };

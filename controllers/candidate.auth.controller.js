@@ -61,7 +61,7 @@ export const registerBulkController = asyncHandler(async (req, res, next) => {
 
         // Create a more informative message
         let message = `Bulk registration completed: ${results.successful} successful, ${results.failed} failed`;
-        
+
         // If all failed and there are duplicates, make it clear
         if (results.successful === 0 && results.duplicateEmails.length > 0) {
             if (results.duplicateEmails.length === candidates.length) {
@@ -107,7 +107,7 @@ export const forgotPasswordController = asyncHandler(async (req, res, next) => {
     if (!resetToken) {
         return next(new AppError('Failed to generate password reset token', 500));
     }
-    
+
     // Queue the password reset email for non-blocking delivery
     addPasswordResetEmailJob({
         to: email,

@@ -63,3 +63,8 @@ export {
     paymentOrdersTable,
     razorpayWebhooksTable
 } from './schema/billing.js';
+
+// Career Roadmap system tables
+export {
+    careerRoadmapsTable
+} from './schema/career-roadmap.schema.js';

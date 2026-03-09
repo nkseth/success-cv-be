@@ -3,6 +3,8 @@ import { resumeAnalysisQueue } from './resume-analysis.queue.js';
 import { jobScrapingQueue } from './job-scraping.queue.js';
 import { getJobMatchingQueue } from './job-matching.queue.js';
 import { manualAnalysisQueue } from './manual-analysis.queue.js';
+import { careerRoadmapQueue } from './career-roadmap.queue.js';
+import { detailedRoadmapQueue } from './detailed-roadmap.queue.js';
 
 /**
  * Central export for all queues
@@ -47,7 +49,12 @@ export const queues = {
     jobScraping: jobScrapingQueue,
     jobMatching: getJobMatchingQueue(),
     manualAnalysis: manualAnalysisQueue,
+    careerRoadmap: careerRoadmapQueue,
+    detailedRoadmap: detailedRoadmapQueue,
 };
+
+// Export career roadmap queue functions
+export { careerRoadmapQueue, addCareerRoadmapJob, getJobStatus as getCareerRoadmapJobStatus, closeQueue as closeCareerRoadmapQueue } from './career-roadmap.queue.js';
 
 // Export job matching queue
 export { getJobMatchingQueue, addMatchJobsForUserJob, addRematchJobsForUserJob, triggerMatchingAfterAnalysis } from './job-matching.queue.js';

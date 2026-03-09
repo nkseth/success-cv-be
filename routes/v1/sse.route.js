@@ -3,7 +3,9 @@ import {
     connectToJob,
     connectToRewriteJob,
     connectToManualAnalysisJob,
-    getStats
+    connectToCareerRoadmapJob,
+    getStats,
+    connectToDetailedRoadmapJob
 } from '../../controllers/sse.controller.js';
 
 /**
@@ -45,6 +47,19 @@ router.get('/rewrite/:jobId', connectToRewriteJob);
 
 // Specialized SSE route for manual analysis jobs - auto-subscribes to manual-resume-analysis queue
 router.get('/manual-analysis/:jobId', connectToManualAnalysisJob);
+
+// Specialized SSE route for career roadmap jobs - auto-subscribes to career-roadmap queue
+/**
+ * @route GET /api/v1/sse/career-roadmap/:jobId
+ * @desc  Connect to SSE stream for career roadmap job updates
+ */
+router.get('/career-roadmap/:jobId', connectToCareerRoadmapJob);
+
+/**
+ * @route GET /api/v1/sse/detailed-roadmap/:jobId
+ * @desc  Connect to SSE stream for detailed roadmap job updates
+ */
+router.get('/detailed-roadmap/:jobId', connectToDetailedRoadmapJob);
 
 // Statistics endpoint (optional, for monitoring)
 router.get('/stats', getStats);

@@ -565,14 +565,14 @@ export const sendCandidateVerificationEmailWithToken = async (candidate, passwor
     try {
         // Generate verification token
         const verificationToken = await generateCandidateVerificationToken(candidate.id);
-        
+
         // Get organisation slug
         const organisation = await getOrgByID(candidate.organisationID);
         const orgSlug = organisation?.slug || '';
-        
+
         // Build verification URL with subdomain
         const verificationUrl = `https://${orgSlug}.${process.env.FRONTEND_URL}/auth/verify?token=${verificationToken.id}`;
-        
+
         // Queue the candidate verification email for non-blocking delivery
         await addCandidateVerificationEmailJob({
             to: candidate.email,
@@ -581,17 +581,17 @@ export const sendCandidateVerificationEmailWithToken = async (candidate, passwor
             verificationUrl: verificationUrl
         }).catch(error => {
             // Log error but don't fail
-            logger.error('Failed to queue candidate verification email', { 
-                error: error.message, 
-                email: candidate.email 
+            logger.error('Failed to queue candidate verification email', {
+                error: error.message,
+                email: candidate.email
             });
         });
 
         return { success: true, tokenId: verificationToken.id };
     } catch (error) {
-        logger.error(`Failed to send verification email to ${candidate.email}:`, { 
-            error: error.message, 
-            stack: error.stack 
+        logger.error(`Failed to send verification email to ${candidate.email}:`, {
+            error: error.message,
+            stack: error.stack
         });
         // Don't throw - we don't want email failure to break registration
         return { success: false, error: error.message };

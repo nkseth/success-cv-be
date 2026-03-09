@@ -3,7 +3,7 @@ import { AppError, asyncHandler } from "../middleware/error.js";
 import { forgotpasswordTokenGeneration, GenerateVerificationTokenModel, getActiveVerificationDataByToken, markVerificationTokenAsUsedModel, resetPasswordUsingToken } from "../models/auth.model.js";
 import { createUserModel, getUserByEmailModel, verifyUserModel } from "../models/user.model.js";
 import { addVerificationEmailJob, addPasswordResetEmailJob } from "../queues/email.queue.js";
-import { destructureRequest, sendSuccess } from "../utils/apiHelpers.js";
+import { destructureRequest, sendSuccess, getAppFrontendUrl } from "../utils/apiHelpers.js";
 import { userTypeConstants } from "../utils/constants.js";
 import { validateEmail, validateString } from "../utils/validate-helper.js";
 import { comparePassword } from '../utils/security-helper.js';
@@ -42,27 +42,27 @@ export const registerController = asyncHandler(async (req, res, next) => {
     const verificationId = await GenerateVerificationTokenModel(email, userTypeConstants.USER);
 
     if (verificationId && verificationId.id) {
-        logger.info('Queueing verification email', { 
-            email, 
+        logger.info('Queueing verification email', {
+            email,
             verificationId: verificationId.id,
-            verificationUrl: `${process.env.FRONTEND_URL}/auth/verify?token=${verificationId.id}`
+            verificationUrl: `${getAppFrontendUrl()}/auth/verify?token=${verificationId.id}`
         });
-        
+
         // Queue the verification email for non-blocking delivery
         addVerificationEmailJob({
             to: email,
             name: fullname,
-            verificationUrl: `${process.env.FRONTEND_URL}/auth/verify?token=${verificationId.id}`
+            verificationUrl: `${getAppFrontendUrl()}/auth/verify?token=${verificationId.id}`
         }).then(job => {
-            logger.info('Verification email queued successfully', { 
-                email, 
+            logger.info('Verification email queued successfully', {
+                email,
                 jobId: job.id,
                 verificationId: verificationId.id
             });
         }).catch(error => {
             // Log error but don't fail registration
-            logger.error('Failed to queue verification email', { 
-                error: error.message, 
+            logger.error('Failed to queue verification email', {
+                error: error.message,
                 email,
                 verificationId: verificationId.id,
                 stack: error.stack
@@ -94,27 +94,27 @@ export const sendVerificationCodeController = asyncHandler(async (req, res, next
     const verificationId = await GenerateVerificationTokenModel(email, userTypeConstants.USER);
 
     if (verificationId && verificationId.id) {
-        logger.info('Queueing resend verification email', { 
-            email, 
+        logger.info('Queueing resend verification email', {
+            email,
             verificationId: verificationId.id,
-            verificationUrl: `${process.env.FRONTEND_URL}/auth/verify?token=${verificationId.id}`
+            verificationUrl: `${getAppFrontendUrl()}/auth/verify?token=${verificationId.id}`
         });
-        
+
         // Queue the verification email for non-blocking delivery
         addVerificationEmailJob({
             to: email,
             name: existingUser.fullname,
-            verificationUrl: `${process.env.FRONTEND_URL}/auth/verify?token=${verificationId.id}`
+            verificationUrl: `${getAppFrontendUrl()}/auth/verify?token=${verificationId.id}`
         }).then(job => {
-            logger.info('Resend verification email queued successfully', { 
-                email, 
+            logger.info('Resend verification email queued successfully', {
+                email,
                 jobId: job.id,
                 verificationId: verificationId.id
             });
         }).catch(error => {
             // Log error but don't fail the request
-            logger.error('Failed to queue resend verification email', { 
-                error: error.message, 
+            logger.error('Failed to queue resend verification email', {
+                error: error.message,
                 email,
                 verificationId: verificationId.id,
                 stack: error.stack
@@ -162,12 +162,12 @@ export const forgotPasswordController = asyncHandler(async (req, res, next) => {
     if (!resetToken) {
         return next(new AppError('Failed to generate password reset token', 500));
     }
-    
+
     // Queue the password reset email for non-blocking delivery
     addPasswordResetEmailJob({
         to: email,
         name: user.fullname,
-        resetUrl: `${process.env.FRONTEND_URL}/auth/reset-password?token=${resetToken}`
+        resetUrl: `${getAppFrontendUrl()}/auth/reset-password?token=${resetToken}`
     }).catch(error => {
         // Log error but don't fail the request
         logger.error('Failed to queue password reset email', { error: error.message, email });

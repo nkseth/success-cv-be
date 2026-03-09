@@ -9,7 +9,7 @@ const azure = createAzure({
 
 const generateAiResponseObject = async ({ system, content, schema, model = 'gpt-35-turbo-0613', retries = 3 }) => {
   let lastError;
-  
+
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       if (!system || !content || !schema) {
@@ -77,28 +77,29 @@ const generateAiResponseObject = async ({ system, content, schema, model = 'gpt-
       console.log('AI response object keys:', Object.keys(completion.object));
 
       // Validate that we have at least the minimum required fields
-      // Support both resume parsing schema (personal_info, experiences, education)
-      // and resume optimization schema (summary, experience, skills)
+      // Support parsing schema, optimization schema, scoring schema, and roadmap schema
       const obj = completion.object;
-      const hasParsingData = obj.personal_info || 
-                            (obj.experiences && obj.experiences.length > 0) ||
-                            (obj.education && obj.education.length > 0);
-      const hasOptimizationData = obj.summary || 
-                                  (obj.experience && obj.experience.length > 0) ||
-                                  obj.skills;
-      const hasMinimumData = hasParsingData || hasOptimizationData;
-      
+      const hasParsingData = obj.personal_info ||
+        (obj.experiences && obj.experiences.length > 0) ||
+        (obj.education && obj.education.length > 0);
+      const hasOptimizationData = obj.summary ||
+        (obj.experience && obj.experience.length > 0) ||
+        obj.skills;
+      const hasScoringData = obj.relevance || obj.resume_quality || obj.JobFitScore !== undefined || obj.critical_mistakes;
+      const hasRoadmapData = obj.paths && obj.paths.length > 0;
+      const hasMinimumData = hasParsingData || hasOptimizationData || hasScoringData || hasRoadmapData;
+
       if (!hasMinimumData) {
         console.error('AI response object (first 500 chars):', JSON.stringify(completion.object).substring(0, 500));
-        throw new Error('Generated object lacks minimum required data (personal_info/experiences/education for parsing, or summary/experience/skills for optimization)');
+        throw new Error('Generated object lacks minimum required data (parsing/scoring/optimization/roadmap fields)');
       }
 
       console.log('AI object generation successful on attempt', attempt);
       return completion.object;
-      
+
     } catch (error) {
       lastError = error;
-      
+
       console.error(`AI Response Generation Error (attempt ${attempt}/${retries}):`, {
         message: error.message,
         name: error.name,
@@ -106,7 +107,7 @@ const generateAiResponseObject = async ({ system, content, schema, model = 'gpt-
         responseText: error.text || error.response?.text || 'No response text available',
         model: model
       });
-      
+
       // Enhanced error handling with more specific error messages
       if (error.message.includes('rate limit')) {
         console.log(`Rate limit hit, waiting before retry ${attempt}/${retries}...`);
@@ -121,7 +122,7 @@ const generateAiResponseObject = async ({ system, content, schema, model = 'gpt-
         console.error('Token limit exceeded, cannot retry');
         throw new Error(`Token limit exceeded: ${error.message}`);
       }
-      
+
       // For schema validation errors or generic failures, retry with backoff
       if (attempt < retries) {
         const waitTime = 1000 * attempt;
@@ -131,10 +132,10 @@ const generateAiResponseObject = async ({ system, content, schema, model = 'gpt-
       }
     }
   }
-  
+
   // All retries exhausted
   console.error('All retry attempts exhausted');
-  
+
   if (lastError?.message?.includes('schema')) {
     throw new Error(`Schema validation failed after ${retries} attempts: The AI response did not match the expected schema structure. This may be due to schema complexity or content length. ${lastError.message}`);
   } else if (lastError?.message?.includes('No object generated')) {

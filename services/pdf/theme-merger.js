@@ -184,8 +184,8 @@ const validateThemeConfig = (config) => {
     // Validate font size
     if (config.typography.baseFontSize) {
         config.typography.baseFontSize = clamp(
-            config.typography.baseFontSize, 
-            FONT_SIZE_CONSTRAINTS.min, 
+            config.typography.baseFontSize,
+            FONT_SIZE_CONSTRAINTS.min,
             FONT_SIZE_CONSTRAINTS.max
         );
     }
@@ -289,7 +289,7 @@ const clamp = (value, min, max) => {
 export const getThemeCSSVariables = (themeConfig) => {
     const config = mergeThemeConfig(themeConfig);
     const sidebarBg = config.twoColumn?.sidebarBg || config.colors.headerBg;
-    
+
     return `
         :root {
             /* Colors - from theme (--rp- prefix for frontend sync) */
@@ -307,24 +307,24 @@ export const getThemeCSSVariables = (themeConfig) => {
             --rp-font-family: ${config.typography.fontFamily};
             --rp-font-family-header: ${config.typography.headerFontFamily || config.typography.fontFamily};
             --rp-font-size-base: ${config.typography.baseFontSize}pt;
-            --rp-font-size-name: ${config.typography.sizes?.name || 24}pt;
-            --rp-font-size-title: ${config.typography.sizes?.title || 14}pt;
-            --rp-font-size-section: ${config.typography.sizes?.sectionHeading || 12}pt;
-            --rp-font-size-subheading: ${config.typography.sizes?.subheading || 11}pt;
-            --rp-font-size-body: ${config.typography.sizes?.body || 10}pt;
-            --rp-font-size-small: ${config.typography.sizes?.small || 9}pt;
-            --rp-font-weight-light: ${config.typography.weights?.light || 300};
-            --rp-font-weight-regular: ${config.typography.weights?.regular || 400};
-            --rp-font-weight-medium: ${config.typography.weights?.medium || 500};
-            --rp-font-weight-semibold: ${config.typography.weights?.semibold || 600};
-            --rp-font-weight-bold: ${config.typography.weights?.bold || 700};
-            --rp-line-height: ${config.typography.lineHeight || PRINT_SETTINGS.lineHeight};
+            --rp-font-size-name: ${config.typography.sizes?.name ?? 24}pt;
+            --rp-font-size-title: ${config.typography.sizes?.title ?? 14}pt;
+            --rp-font-size-section: ${config.typography.sizes?.sectionHeading ?? 12}pt;
+            --rp-font-size-subheading: ${config.typography.sizes?.subheading ?? 11}pt;
+            --rp-font-size-body: ${config.typography.sizes?.body ?? 10}pt;
+            --rp-font-size-small: ${config.typography.sizes?.small ?? 9}pt;
+            --rp-font-weight-light: ${config.typography.weights?.light ?? 300};
+            --rp-font-weight-regular: ${config.typography.weights?.regular ?? 400};
+            --rp-font-weight-medium: ${config.typography.weights?.medium ?? 500};
+            --rp-font-weight-semibold: ${config.typography.weights?.semibold ?? 600};
+            --rp-font-weight-bold: ${config.typography.weights?.bold ?? 700};
+            --rp-line-height: ${config.typography.lineHeight ?? PRINT_SETTINGS.lineHeight};
 
             /* Spacing - from theme (in points) */
             --rp-spacing-section: ${config.layout.spacing.section}pt;
             --rp-spacing-item: ${config.layout.spacing.item}pt;
             --rp-spacing-line: ${config.layout.spacing.line}pt;
-            --rp-spacing-paragraph: ${config.layout.spacing.paragraph || 6}pt;
+            --rp-spacing-paragraph: ${config.layout.spacing.paragraph ?? 6}pt;
 
             /* Style - from theme */
             --rp-border-radius: ${config.style.borderRadius}px;
@@ -339,8 +339,8 @@ export const getThemeCSSVariables = (themeConfig) => {
             --rp-margin-left: ${config.layout.margins.left}in;
 
             /* Two-column layout */
-            --rp-sidebar-width: ${config.twoColumn?.sidebarWidth || 35}%;
-            --rp-sidebar-padding: ${config.twoColumn?.sidebarPadding || 16}pt;
+            --rp-sidebar-width: ${config.twoColumn?.sidebarWidth ?? 35}%;
+            --rp-sidebar-padding: ${config.twoColumn?.sidebarPadding ?? 16}pt;
         }
     `;
 };
@@ -353,7 +353,7 @@ export const getThemeCSSVariables = (themeConfig) => {
  */
 export const exportThemeForFrontend = (themeConfig) => {
     const config = mergeThemeConfig(themeConfig);
-    
+
     return {
         layout: {
             pageSize: config.layout.pageSize,

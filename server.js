@@ -61,13 +61,26 @@ app.use(limiter);
 // Request timeout configuration
 const requestTimeout = parseInt(process.env.REQUEST_TIMEOUT_MS) || 30000; // 30 seconds default
 app.use((req, res, next) => {
+    // Skip timeout for SSE connections as they are long-lived by design
+    if (req.headers.accept && req.headers.accept.includes('text/event-stream')) {
+        return next();
+    }
+
+    // Also skip if path includes sse 
+    if (req.originalUrl && req.originalUrl.includes('/sse/')) {
+        return next();
+    }
+
     res.setTimeout(requestTimeout, () => {
-        logger.warn('Request timeout', { path: req.path, method: req.method });
-        res.status(503).json({
-            success: false,
-            message: 'Request timeout - please try again'
-        });
+        logger.warn('Request timeout', { path: req.originalUrl || req.path, method: req.method });
+        if (!res.headersSent) {
+            res.status(503).json({
+                success: false,
+                message: 'Request timeout - please try again'
+            });
+        }
     });
+
     next();
 });
 
@@ -107,23 +120,23 @@ app.use(cors({
     origin: (origin, callback) => {
         // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin) return callback(null, true);
-        
+
         // Get allowed origins from environment or use defaults
         const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'];
-        
+
         // Check if origin matches any allowed origin
         const isAllowed = allowedOrigins.some(allowedOrigin => {
             if (origin === allowedOrigin) return true;
-            
+
             // Check for subdomain pattern (e.g., *.localhost:3000)
             if (allowedOrigin.startsWith('*.')) {
                 const domain = allowedOrigin.substring(2); // Remove '*.'
                 return origin.endsWith(`.${domain}`) || origin === `http://${domain}` || origin === `https://${domain}`;
             }
-            
+
             return false;
         });
-        
+
         if (isAllowed) {
             callback(null, true);
         } else {
@@ -140,7 +153,7 @@ app.use(requestLogger);
 // Body parsing middleware with environment-based limits
 const bodyParserLimit = process.env.BODY_PARSER_LIMIT || '10mb';
 app.use(urlencoded({ extended: true, limit: bodyParserLimit }));
-app.use(json({ 
+app.use(json({
     limit: bodyParserLimit,
     verify: (req, res, buf) => {
         // Store raw body for webhook signature verification
@@ -174,7 +187,7 @@ if (swaggerEnabled || !isProduction) {
 }
 
 // API routes
-app.use("/api/v1",v1Routes);
+app.use("/api/v1", v1Routes);
 
 // Health check routes (both /health and /health-check for compatibility)
 app.get("/health", (req, res) => {
@@ -209,7 +222,7 @@ async function initializeServices() {
     try {
         // Connect to Redis
         await connectRedis();
-        
+
         // Initialize PubSub service with Redis configuration
         await pubSubService.initialize(
             getRedisConnectionConfig({
@@ -221,13 +234,13 @@ async function initializeServices() {
                 connectionNamePrefix: 'pubsub:api'
             }
         );
-        
+
         // Schedule periodic job scraping (global sources: RemoteOK, Remotive, etc.)
         await schedulePeriodicScraping();
 
         // Schedule Indian job board scraping (Naukri, Internshala, LinkedIn India, Foundit, Shine)
         await scheduleIndianScraping();
-        
+
         logger.info('All services initialized successfully');
     } catch (error) {
         logger.error('Failed to initialize services', { error: error.message });
@@ -238,20 +251,20 @@ async function initializeServices() {
 // Graceful shutdown handling
 const gracefulShutdown = async (signal) => {
     logger.info(`${signal} received, starting graceful shutdown...`);
-    
+
     try {
         // Close SSE connections
         await sseService.closeAllConnections();
-        
+
         // Disconnect PubSub service
         await pubSubService.disconnect();
-        
+
         // Close Redis connections
         await disconnectRedis();
-        
+
         // Close all queue connections
         await closeAllQueues();
-        
+
         logShutdown(signal);
         process.exit(0);
     } catch (error) {
@@ -288,13 +301,13 @@ const server = app.listen(PORT, async () => {
         environment: NODE_ENV,
         timestamp: new Date().toISOString()
     });
-    
+
     // Initialize services after server starts
     try {
         await initializeServices();
     } catch (error) {
-        logger.error('Failed to initialize services (Redis/Queues)', { 
-            error: error.message 
+        logger.error('Failed to initialize services (Redis/Queues)', {
+            error: error.message
         });
         logger.warn('⚠️  Server is running without Redis - queue and caching features disabled');
         logger.warn('⚠️  Email sending, resume analysis, and other background jobs will not work');

@@ -25,7 +25,7 @@ class SSEService {
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
         res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
-        
+
         // Enable CORS for SSE - use the origin from the request
         const origin = req.headers.origin;
         if (origin) {
@@ -77,7 +77,7 @@ class SSEService {
      */
     sendEvent(connectionId, eventType, data) {
         const client = this.clients.get(connectionId);
-        
+
         if (!client) {
             logger.warn('SSE: Client not found', { connectionId });
             return false;
@@ -92,21 +92,21 @@ class SSEService {
 
             // Format SSE message
             const message = `event: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`;
-            
+
             client.res.write(message);
             client.lastHeartbeat = Date.now();
 
-            logger.debug('SSE: Event sent', { 
-                connectionId, 
-                eventType 
+            logger.debug('SSE: Event sent', {
+                connectionId,
+                eventType
             });
 
             return true;
         } catch (error) {
-            logger.error('SSE: Failed to send event', { 
-                connectionId, 
+            logger.error('SSE: Failed to send event', {
+                connectionId,
                 eventType,
-                error: error.message 
+                error: error.message
             });
             this.closeConnection(connectionId);
             return false;
@@ -140,10 +140,10 @@ class SSEService {
             }
         }
 
-        logger.debug('SSE: Broadcast completed', { 
-            eventType, 
-            successCount, 
-            failCount 
+        logger.debug('SSE: Broadcast completed', {
+            eventType,
+            successCount,
+            failCount
         });
     }
 
@@ -182,10 +182,10 @@ class SSEService {
                 message: 'Ready to receive updates'
             });
         } catch (error) {
-            logger.error('SSE: Failed to subscribe to job', { 
-                connectionId, 
-                jobId, 
-                error: error.message 
+            logger.error('SSE: Failed to subscribe to job', {
+                connectionId,
+                jobId,
+                error: error.message
             });
             throw error;
         }
@@ -226,10 +226,10 @@ class SSEService {
                 message: 'Ready to receive updates'
             });
         } catch (error) {
-            logger.error('SSE: Failed to subscribe to queue', { 
-                connectionId, 
-                queueName, 
-                error: error.message 
+            logger.error('SSE: Failed to subscribe to queue', {
+                connectionId,
+                queueName,
+                error: error.message
             });
             throw error;
         }
@@ -257,10 +257,10 @@ class SSEService {
 
             logger.info('SSE: Unsubscribed from job', { connectionId, jobId });
         } catch (error) {
-            logger.error('SSE: Failed to unsubscribe from job', { 
-                connectionId, 
-                jobId, 
-                error: error.message 
+            logger.error('SSE: Failed to unsubscribe from job', {
+                connectionId,
+                jobId,
+                error: error.message
             });
         }
     }
@@ -287,10 +287,10 @@ class SSEService {
 
             logger.info('SSE: Unsubscribed from queue', { connectionId, queueName });
         } catch (error) {
-            logger.error('SSE: Failed to unsubscribe from queue', { 
-                connectionId, 
-                queueName, 
-                error: error.message 
+            logger.error('SSE: Failed to unsubscribe from queue', {
+                connectionId,
+                queueName,
+                error: error.message
             });
         }
     }
@@ -332,9 +332,9 @@ class SSEService {
 
             logger.info('SSE: Connection closed', { connectionId });
         } catch (error) {
-            logger.error('SSE: Error closing connection', { 
-                connectionId, 
-                error: error.message 
+            logger.error('SSE: Error closing connection', {
+                connectionId,
+                error: error.message
             });
         }
     }
@@ -343,8 +343,8 @@ class SSEService {
      * Close all connections
      */
     async closeAllConnections() {
-        logger.info('SSE: Closing all connections', { 
-            count: this.clients.size 
+        logger.info('SSE: Closing all connections', {
+            count: this.clients.size
         });
 
         const connectionIds = Array.from(this.clients.keys());
