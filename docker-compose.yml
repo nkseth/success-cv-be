@@ -1,0 +1,115 @@
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  Success-CV — Unified Docker Compose                               ║
+# ║                                                                    ║
+# ║  Services:                                                         ║
+# ║    scraper  — Python/FastAPI Indian job board scraper (port 8001) ║
+# ║    backend  — Node.js Express API server            (port 4000)   ║
+# ║    workers  — All 8 BullMQ background workers                     ║
+# ║                                                                    ║
+# ║  Redis is Azure Cache for Redis (managed) — not run in Docker.    ║
+# ║  Set REDIS_HOST / REDIS_PORT / REDIS_PASSWORD / REDIS_TLS in .env ║
+# ║                                                                    ║
+# ║  Start everything:  docker compose up --build                     ║
+# ║  API only:          docker compose up scraper backend              ║
+# ║  Workers only:      docker compose up scraper workers              ║
+# ║  Rebuild one:       docker compose up --build backend              ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+
+services:
+
+  # ── Python Scraper Microservice ───────────────────────────────────────
+  # FastAPI service that scrapes Indian job boards (Naukri, Internshala,
+  # LinkedIn India, Foundit, Shine) using Scrapling / Playwright.
+  # Internal-only — not exposed to the host by default.
+  scraper:
+    build:
+      context: ./scraper-service
+      dockerfile: Dockerfile
+    container_name: successcv-scraper
+    restart: unless-stopped
+    # Expose port to host only for local debugging — comment out in prod:
+    ports:
+      - "8001:8001"
+    environment:
+      - SCRAPER_API_KEY=${SCRAPER_SERVICE_SECRET:-successcv-scraper-secret-2024}
+      - HOST=0.0.0.0
+      - PORT=8001
+      - HEADLESS=true
+      - PROXY=${SCRAPER_PROXY:-}
+    shm_size: "1gb"
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: "1.5"
+    healthcheck:
+      test: ["CMD", "python3", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8001/api/v1/health')"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  # ── Backend API Server ────────────────────────────────────────────────
+  # Express.js REST API — connects to Azure PostgreSQL, Azure Redis,
+  # and the scraper service.
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: successcv-backend
+    restart: unless-stopped
+    ports:
+      - "${PORT:-4000}:4000"
+    env_file: .env
+    environment:
+      # Override .env values so containers talk to each other by service name.
+      # Redis vars are read from .env (Azure managed Redis):
+      - PORT=4000
+      - NODE_ENV=${NODE_ENV:-production}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_TLS=${REDIS_TLS:-true}
+      - SCRAPER_SERVICE_URL=http://scraper:8001
+    depends_on:
+      scraper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e",
+             "import('http').then(h=>h.get('http://localhost:4000/health',r=>{process.exit(r.statusCode===200?0:1)}))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+
+  # ── Workers ───────────────────────────────────────────────────────────
+  # All 8 BullMQ workers in a dedicated container built from
+  # Dockerfile.workers (separate image — does NOT start the API server).
+  #
+  # Workers included:
+  #   • resume-analysis   — AI resume scoring
+  #   • resume-rewrite    — AI resume rewriting
+  #   • email             — Brevo transactional email
+  #   • job-scraping      — Remote job board scraping
+  #   • job-matching      — Resume ↔ job vector matching
+  #   • manual-analysis   — Manual/triggered analysis
+  #   • career-roadmap    — Career roadmap generation
+  #   • detailed-roadmap  — Detailed roadmap generation
+  workers:
+    build:
+      context: .
+      dockerfile: Dockerfile.workers
+    container_name: successcv-workers
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_TLS=${REDIS_TLS:-true}
+      - SCRAPER_SERVICE_URL=http://scraper:8001
+    depends_on:
+      scraper:
+        condition: service_healthy

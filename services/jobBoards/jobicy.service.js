@@ -82,8 +82,8 @@ function normalizeJob(job) {
         remoteType: 'remote',
         employmentType: normalizeEmploymentType(job.jobType),
         experienceLevel,
-        salaryMin: job.salaryMin || job.annualSalaryMin || null,
-        salaryMax: job.salaryMax || job.annualSalaryMax || null,
+        salaryMin: job.salaryMin ?? job.annualSalaryMin ?? null,
+        salaryMax: job.salaryMax ?? job.annualSalaryMax ?? null,
         currency: job.salaryCurrency || 'USD',
         salaryPeriod: job.salaryPeriod || 'yearly',
         description: job.jobDescription || job.jobExcerpt || 'No description provided',
@@ -141,11 +141,13 @@ function deriveYearsFromLevel(level, bound) {
 }
 
 function buildSkills(industry) {
-    if (!industry) return null;
+    if (!industry) return { required: [], preferred: [], technical: [], soft: [] };
+    // industry can be a string or an array — flatten to avoid nested arrays
+    const industries = Array.isArray(industry) ? industry : [industry];
     return {
         required: [],
         preferred: [],
-        technical: [industry],
+        technical: industries,
         soft: []
     };
 }

@@ -147,10 +147,11 @@ export const getJobs = async (options = {}) => {
         if (skills) {
             const skillsArray = skills.split(',').map(s => s.trim().toLowerCase());
             // Use JSONB contains operator for PostgreSQL
+            // Each skill must match in either required or technical array
             skillsArray.forEach(skill => {
                 conditions.push(
-                    sql`${jobsTable.skillsRequired}::jsonb @> ${JSON.stringify({ required: [skill] })}::jsonb
-                    OR ${jobsTable.skillsRequired}::jsonb @> ${JSON.stringify({ technical: [skill] })}::jsonb`
+                    sql`(${jobsTable.skillsRequired}::jsonb @> ${JSON.stringify({ required: [skill] })}::jsonb
+                    OR ${jobsTable.skillsRequired}::jsonb @> ${JSON.stringify({ technical: [skill] })}::jsonb)`
                 );
             });
         }
@@ -320,24 +321,25 @@ export const getJobMatchByID = async (matchId, userId = null, userType = 'user')
     try {
         const validMatchID = validateInteger(matchId, "Match ID", { min: 1 });
 
-        let query = db.select()
-            .from(jobMatchesTable)
-            .where(eq(jobMatchesTable.id, validMatchID));
+        // Build all conditions in a single and() to avoid chained .where() overwriting
+        const conditions = [eq(jobMatchesTable.id, validMatchID)];
 
         // Add user ownership filter if userId provided
         if (userId) {
             const validUserID = validateInteger(userId, "User ID", { min: 1 });
             const isCandidate = userType === 'candidate';
-            const userConditions = [
-                eq(jobMatchesTable.userType, userType),
+            conditions.push(eq(jobMatchesTable.userType, userType));
+            conditions.push(
                 isCandidate
                     ? eq(jobMatchesTable.candidateID, validUserID)
                     : eq(jobMatchesTable.userID, validUserID)
-            ];
-            query = query.where(and(...userConditions));
+            );
         }
 
-        const [match] = await query.limit(1);
+        const [match] = await db.select()
+            .from(jobMatchesTable)
+            .where(and(...conditions))
+            .limit(1);
 
         return match || null;
     } catch (error) {

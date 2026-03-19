@@ -65,7 +65,7 @@ export async function addMatchJobsForUserJob(userId, analysisId, userType = 'use
         }
     };
 
-    const job = await queueService.addJob(queue, jobData, {
+    const job = await queueService.addJob(QUEUE_NAME, JOB_TYPES.MATCH_FOR_USER, jobData, {
         jobId: `match-${userId}-${analysisId}-${Date.now()}`,
         attempts: 3,
         backoff: {
@@ -120,7 +120,7 @@ export async function addRematchJobsForUserJob(userId, analysisId, userType = 'u
         }
     };
 
-    const job = await queueService.addJob(queue, jobData, {
+    const job = await queueService.addJob(QUEUE_NAME, JOB_TYPES.REMATCH_FOR_USER, jobData, {
         jobId: `rematch-${userId}-${analysisId}-${Date.now()}`,
         attempts: 3,
         backoff: {
@@ -170,7 +170,7 @@ export async function addBatchMatchJob(users, options = {}) {
         }
     };
 
-    const job = await queueService.addJob(queue, jobData, {
+    const job = await queueService.addJob(QUEUE_NAME, JOB_TYPES.BATCH_MATCH, jobData, {
         jobId: `batch-match-${Date.now()}`,
         attempts: 2,
         backoff: {

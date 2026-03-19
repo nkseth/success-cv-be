@@ -14,6 +14,7 @@ import { closeAllQueues } from "./queues/index.js";
 import pubSubService from "./services/pubsub.service.js";
 import sseService from "./services/sse.service.js";
 import { schedulePeriodicScraping, scheduleIndianScraping } from "./queues/job-scraping.queue.js";
+import { isScrapeServiceHealthy } from "./services/jobBoards/indianBoards.service.js";
 
 // Load environment variables
 dotenv.config();
@@ -238,8 +239,14 @@ async function initializeServices() {
         // Schedule periodic job scraping (global sources: RemoteOK, Remotive, etc.)
         await schedulePeriodicScraping();
 
-        // Schedule Indian job board scraping (Naukri, Internshala, LinkedIn India, Foundit, Shine)
-        await scheduleIndianScraping();
+        // Schedule Indian job board scraping only if the Python scraper service is reachable
+        const scraperHealthy = await isScrapeServiceHealthy();
+        if (scraperHealthy) {
+            await scheduleIndianScraping();
+            logger.info('Indian job board scraping scheduled — Python scraper service is reachable');
+        } else {
+            logger.warn('Skipping Indian job board scheduling — Python scraper service is not reachable at ' + (process.env.SCRAPER_SERVICE_URL || 'http://localhost:8001'));
+        }
 
         logger.info('All services initialized successfully');
     } catch (error) {

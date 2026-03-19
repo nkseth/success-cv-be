@@ -364,9 +364,9 @@ export const updateJobMatchController = asyncHandler(async (req, res, next) => {
 
     const updates = {};
     if (status !== undefined) updates.status = status;
-    if (saved !== undefined) updates.saved = saved;
+    if (saved !== undefined) updates.isSaved = saved;
     if (applied !== undefined) {
-        updates.applied = applied;
+        updates.isApplied = applied;
         if (applied) {
             updates.appliedAt = new Date();
         }

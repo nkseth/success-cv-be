@@ -6,6 +6,18 @@ import crypto from 'crypto';
 const getRedisClient = () => getCacheRedis();
 
 /**
+ * Get the keyPrefix from the Redis client config.
+ * ioredis auto-prepends keyPrefix to key-based commands (get, set, del),
+ * but NOT to pattern-based commands (keys, scan MATCH).
+ * We need to manually include the prefix in patterns and strip it
+ * when passing found keys back to key-based commands like del().
+ */
+function getKeyPrefix() {
+    const client = getRedisClient();
+    return client.options?.keyPrefix || '';
+}
+
+/**
  * Job Scraping Cache Service
  * 
  * Caches API responses to reduce external API calls and respect rate limits.
@@ -27,7 +39,13 @@ const SOURCE_TTL = {
     remoteok: 21600,      // 6 hours
     weworkremotely: 7200, // 2 hours
     himalayas: 14400,     // 4 hours
-    jobicy: 3600          // 1 hour
+    jobicy: 3600,         // 1 hour
+    indeed: 3600,         // 1 hour
+    naukri: 3600,         // 1 hour
+    internshala: 3600,    // 1 hour
+    'linkedin-india': 3600, // 1 hour
+    foundit: 3600,        // 1 hour
+    shine: 3600           // 1 hour
 };
 
 /**
@@ -145,21 +163,25 @@ export async function invalidateCache(source, options = null) {
             return deleted;
         } else {
             // Invalidate all cache entries for source
-            const pattern = `${CACHE_PREFIX}${source}:*`;
-            const keys = await redisClient.keys(pattern);
+            // Use raw KEYS command since ioredis keyPrefix is NOT applied to pattern commands
+            const prefix = getKeyPrefix();
+            const fullPattern = `${prefix}${CACHE_PREFIX}${source}:*`;
+            const foundKeys = await redisClient.call('KEYS', fullPattern);
+            let totalDeleted = 0;
             
-            if (keys.length === 0) {
-                logger.info('No cache entries to invalidate', { source, pattern });
-                return 0;
+            if (foundKeys.length > 0) {
+                // Strip the keyPrefix so that del() (which auto-adds prefix) works correctly
+                const strippedKeys = foundKeys.map(k => k.startsWith(prefix) ? k.slice(prefix.length) : k);
+                totalDeleted = await redisClient.del(...strippedKeys);
             }
             
-            const deleted = await redisClient.del(...keys);
             logger.info('Invalidated all cache entries for source', { 
                 source, 
-                pattern, 
-                deleted 
+                pattern: fullPattern, 
+                keysFound: foundKeys.length,
+                deleted: totalDeleted
             });
-            return deleted;
+            return totalDeleted;
         }
     } catch (error) {
         logger.error('Failed to invalidate cache', {
@@ -177,14 +199,16 @@ export async function invalidateCache(source, options = null) {
 export async function getCacheStats() {
     try {
         const redisClient = getRedisClient();
+        const prefix = getKeyPrefix();
         const stats = {};
         
         for (const source of Object.keys(SOURCE_TTL)) {
-            const pattern = `${CACHE_PREFIX}${source}:*`;
-            const keys = await redisClient.keys(pattern);
+            // Use raw KEYS since ioredis keyPrefix is NOT applied to pattern commands
+            const fullPattern = `${prefix}${CACHE_PREFIX}${source}:*`;
+            const foundKeys = await redisClient.call('KEYS', fullPattern);
             
             stats[source] = {
-                cachedEntries: keys.length,
+                cachedEntries: foundKeys.length,
                 ttl: SOURCE_TTL[source]
             };
         }
@@ -206,17 +230,25 @@ export async function getCacheStats() {
 export async function clearAllCache() {
     try {
         const redisClient = getRedisClient();
-        const pattern = `${CACHE_PREFIX}*`;
-        const keys = await redisClient.keys(pattern);
+        const prefix = getKeyPrefix();
+        // Use raw KEYS since ioredis keyPrefix is NOT applied to pattern commands
+        const fullPattern = `${prefix}${CACHE_PREFIX}*`;
+        const foundKeys = await redisClient.call('KEYS', fullPattern);
+        let totalDeleted = 0;
         
-        if (keys.length === 0) {
-            logger.info('No cache entries to clear');
-            return 0;
+        if (foundKeys.length > 0) {
+            // Strip the keyPrefix so that del() (which auto-adds prefix) works correctly
+            const prefix = getKeyPrefix();
+            const strippedKeys = foundKeys.map(k => k.startsWith(prefix) ? k.slice(prefix.length) : k);
+            totalDeleted = await redisClient.del(...strippedKeys);
         }
         
-        const deleted = await redisClient.del(...keys);
-        logger.warn('Cleared all job scraping cache', { deleted });
-        return deleted;
+        if (totalDeleted === 0) {
+            logger.info('No cache entries to clear');
+        } else {
+            logger.warn('Cleared all job scraping cache', { deleted: totalDeleted });
+        }
+        return totalDeleted;
     } catch (error) {
         logger.error('Failed to clear cache', {
             error: error.message

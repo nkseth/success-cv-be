@@ -219,8 +219,9 @@ function normalizeJob(job) {
     
     const description = descriptionParts.join('') || 'No description provided';
     
-    // Extract skills from tags - convert to array of strings for database
-    const skillsRequired = job.tags || [];
+    // Extract skills from tags - structure as { required, technical, preferred, soft } for consistency
+    const tags = job.tags || [];
+    const skillsRequired = { required: [...tags], technical: [...tags], preferred: [], soft: [] };
     
     // Determine experience level from tags or title
     const experienceLevel = determineExperienceLevel(job);

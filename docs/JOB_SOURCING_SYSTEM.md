@@ -1,182 +1,237 @@
 # Job Sourcing System - How It Works
 
+> **Last Updated**: 19 March 2026
+> **Status**: Production-ready
+
 ## Overview
 
-The Success CV platform automatically sources job listings from multiple external job boards and APIs. Jobs are scraped periodically, deduplicated, stored in the database, and then used for matching against user resumes.
+The Success CV platform automatically sources job listings from **11 external job boards and APIs** across two tiers:
+
+1. **6 International Remote Boards** — scraped directly by Node.js services (JSON APIs + RSS feeds)
+2. **5 Indian Job Portals** — scraped by a Python FastAPI microservice using Scrapling (headless browser)
+
+Jobs are scraped on per-source schedules, cached in Redis, protected by circuit breakers, deduplicated, stored in PostgreSQL, and then used for matching against user resumes.
 
 ---
 
 ## 📊 Architecture
 
 ```
-┌─────────────────┐
-│  External APIs  │
-│  & Job Boards   │
-└────────┬────────┘
-         │
-         ├──> RemoteOK API (Free JSON API)
-         ├──> Indeed RSS Feed (Free RSS)
-         ├──> Adzuna API (Planned - 5000 calls/month free)
-         ├──> StackOverflow Jobs (Planned - RSS)
-         └──> AngelList/Wellfound (Planned - Startup jobs)
-         │
-         ▼
-┌────────────────────────────┐
-│  Job Scraping Scheduler    │
-│  (BullMQ Queue + Worker)   │
-│  Runs every 6 hours        │
-└──────────┬─────────────────┘
-           │
-           ▼
-┌────────────────────────────┐
-│  Job Board Services        │
-│  - remoteok.service.js     │
-│  - indeed.service.js       │
-└──────────┬─────────────────┘
-           │
-           ▼
-┌────────────────────────────┐
-│  Job Normalization         │
-│  Converts to standard      │
-│  schema with deduplication │
-└──────────┬─────────────────┘
-           │
-           ▼
-┌────────────────────────────┐
-│  Database (jobs table)     │
-│  - Upsert by external_id   │
-│  - Mark stale jobs inactive│
-└──────────┬─────────────────┘
-           │
-           ▼
-┌────────────────────────────┐
-│  Job Matching System       │
-│  Matches users with jobs   │
-│  based on resume analysis  │
-└────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                          EXTERNAL JOB SOURCES                               │
+│                                                                              │
+│  ┌──────────┐ ┌──────────┐ ┌─────┐ ┌──────────┐ ┌───────┐ ┌──────┐         │
+│  │ RemoteOK │ │ Remotive │ │ WWR │ │Himalayas │ │Jobicy │ │Indeed│         │
+│  │  (JSON)  │ │  (RSS)   │ │(RSS)│ │  (JSON)  │ │(JSON) │ │(RSS) │         │
+│  └────┬─────┘ └────┬─────┘ └──┬──┘ └────┬─────┘ └───┬───┘ └──┬───┘         │
+│       │             │          │          │           │        │             │
+│  ┌────┴─────────────┴──────────┴──────────┴───────────┴────────┴───┐         │
+│  │              Node.js Scraper Services (Direct HTTP)             │         │
+│  │              services/jobBoards/*.service.js                    │         │
+│  └───────────────────────────┬─────────────────────────────────────┘         │
+│                              │                                               │
+│  ┌──────────┐ ┌──────────┐ ┌┴─────────┐ ┌─────────┐ ┌────────┐             │
+│  │  Naukri  │ │Internshala│ │ LinkedIn │ │ Foundit │ │ Shine  │             │
+│  │  (.com)  │ │          │ │  India   │ │  (.in)  │ │ (.com) │             │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬────┘ └───┬────┘             │
+│       │             │            │             │          │                  │
+│  ┌────┴─────────────┴────────────┴─────────────┴──────────┴───┐             │
+│  │       Python Scrapling Microservice (FastAPI + headless)    │             │
+│  │       POST /api/v1/scrape  →  StealthyFetcher / Fetcher    │             │
+│  └────────────────────────────┬────────────────────────────────┘             │
+│                               │                                              │
+└───────────────────────────────┼──────────────────────────────────────────────┘
+                                │
+                                ▼
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                    BullMQ JOB SCRAPING QUEUE (Redis)                          │
+│                                                                               │
+│  Job Types: SCRAPE_SOURCE | SCRAPE_ALL | SCRAPE_INDIAN_SOURCE | CLEANUP_STALE│
+│  Worker: concurrency=2, rate=10 jobs/min                                      │
+│  Retry: 3 attempts, exponential backoff (5s → 10s → 20s)                     │
+│                                                                               │
+│  ┌─────────────── Per-Source Cron Schedules ──────────────────┐               │
+│  │ Remotive:         Daily at midnight                        │               │
+│  │ RemoteOK:         Every 6 hours                            │               │
+│  │ WeWorkRemotely:   Every 2 hours                            │               │
+│  │ Himalayas:        Every 4 hours                            │               │
+│  │ Jobicy:           Hourly at :15                            │               │
+│  │ Naukri:           Every 4 hours                            │               │
+│  │ LinkedIn-India:   Every 3 hours                            │               │
+│  │ Internshala:      Every 6 hours                            │               │
+│  │ Foundit:          Every 6 hours                            │               │
+│  │ Shine:            Every 8 hours                            │               │
+│  │ Cleanup:          Daily at 3 AM                            │               │
+│  └────────────────────────────────────────────────────────────┘               │
+└───────────────────────────┬───────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌───────────────────────────────────────────────────────────────────────────────┐
+│              RESILIENCE LAYER (per source)                                    │
+│                                                                               │
+│  ┌─────────────────┐  ┌──────────────────┐  ┌──────────────────────────────┐ │
+│  │ Circuit Breaker  │  │   Redis Cache    │  │  Job Scraping Logs (DB)     │ │
+│  │ (opossum lib)    │  │ per-source TTL   │  │  source, status, counts,    │ │
+│  │                  │  │                  │  │  duration, errors           │ │
+│  │ States:          │  │ remotive: 24h    │  └──────────────────────────────┘ │
+│  │ CLOSED → normal  │  │ remoteok: 6h     │                                  │
+│  │ OPEN → fast fail │  │ wwr:      2h     │                                  │
+│  │ HALF_OPEN → test │  │ himalayas:4h     │                                  │
+│  │                  │  │ jobicy:   1h     │                                  │
+│  │ 50% error → trip │  │ indian:   1h     │                                  │
+│  │ 5min reset       │  │ (each)           │                                  │
+│  │ (10min for Naukri)│  │                  │                                  │
+│  └─────────────────┘  └──────────────────┘                                  │
+└───────────────────────────┬───────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                       UPSERT → PostgreSQL                                    │
+│                                                                               │
+│  Batch INSERT … ON CONFLICT (external_id, source) DO UPDATE                  │
+│  Single transaction, in-memory dedup by source                               │
+│  Tables: jobs, job_scraping_logs                                             │
+│  Cleanup: isActive=false after 30 days, hard-delete after 90 days            │
+└───────────────────────────┬───────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                      FILTRATION & MATCHING                                    │
+│                                                                               │
+│  GET /api/v1/jobs                  POST /api/v1/job-matches/generate         │
+│  Full-text, location, remote,      Skills 40%, Experience 30%,               │
+│  salary, skills (JSONB), posted    Education 20%, Location 10%,              │
+│  date, user preferences fallback   Preference boost up to +10               │
+│                                                                               │
+│  Tables: job_matches, user_job_preferences                                   │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## 🔄 How Job Scraping Works
 
-### 1. **Automatic Periodic Scraping**
+### 1. **Per-Source Scheduled Scraping**
 
-The system uses a **BullMQ job queue** with scheduled recurring jobs:
+Each source has its own **BullMQ cron schedule** optimised for data freshness vs. rate limits:
 
-- **Scrape All Sources**: Runs every **6 hours** (00:00, 06:00, 12:00, 18:00)
-- **Cleanup Stale Jobs**: Runs daily at **3:00 AM**
+| Source | Type | Interval | Reasoning |
+|--------|------|----------|-----------|
+| **Remotive** | RSS | Daily at midnight | Data has 24h delay |
+| **RemoteOK** | JSON API | Every 6 hours | Good freshness |
+| **WeWorkRemotely** | RSS | Every 2 hours | Frequent updates |
+| **Himalayas** | JSON API | Every 4 hours | Rate limited, max 20/req |
+| **Jobicy** | JSON API | Hourly at :15 | Recommends ≤1 req/hour |
+| **Naukri** | Browser scraper | Every 4 hours | Most important Indian board |
+| **LinkedIn India** | Guest API | Every 3 hours | Global companies, India |
+| **Internshala** | Browser scraper | Every 6 hours | Freshers + internships |
+| **Foundit** | Browser scraper | Every 6 hours | Mid-level roles |
+| **Shine** | Browser scraper | Every 8 hours | Verified companies |
+| **Cleanup** | DB maintenance | Daily at 3 AM | Deactivate stale jobs |
 
-```javascript
-// Schedule is set in: queues/job-scraping.queue.js
-schedulePeriodicScraping() {
-  // Scrape all sources every 6 hours
-  pattern: '0 */6 * * *'
-  
-  // Cleanup stale jobs daily at 3 AM
-  pattern: '0 3 * * *'
-}
-```
+Schedules are registered at startup via `schedulePeriodicScraping()` and `scheduleIndianScraping()` in `queues/job-scraping.queue.js`.
 
 ### 2. **Supported Job Sources**
 
-#### **RemoteOK** (Currently Active)
-- **Type**: Free JSON API
-- **URL**: `https://remoteok.com/api`
-- **Data**: Remote jobs with full details
-- **Features**: 
-  - No authentication required
-  - Rich job data (salary, skills, tags)
-  - ~500+ active remote jobs
-- **Implementation**: `services/jobBoards/remoteok.service.js`
+#### International Remote Boards (Node.js — Direct HTTP)
 
-#### **Indeed** (Currently Active)
-- **Type**: RSS Feed
-- **URL**: `https://www.indeed.com/rss?q={query}&l={location}`
-- **Data**: General jobs (limited info)
-- **Limitations**:
-  - Basic data only (no salary info)
-  - No structured skills data
-  - Rate limits apply
-- **Implementation**: `services/jobBoards/indeed.service.js`
+| Source | API / Endpoint | Data Quality | Notes |
+|--------|---------------|-------------|-------|
+| **RemoteOK** | `https://remoteok.com/api` (JSON) | ✅ Good — salary, tags, logos | No auth required |
+| **Remotive** | `https://remotive.com/remote-jobs/feed` (RSS) | ⚠️ 24h delay, basic data | Attribution required |
+| **WeWorkRemotely** | Multiple category RSS feeds | ⚠️ Basic data, no salary | Attribution required |
+| **Himalayas** | `https://himalayas.app/jobs/api` (JSON) | ✅ Good — seniority field | Max 20 per request |
+| **Jobicy** | `https://jobicy.com/api/v2/remote-jobs` (JSON) | ✅ Good — geo/industry filters | 6h data delay |
+| **Indeed** | Dynamic RSS feeds | ⚠️ Very limited data | Not scheduled by default |
 
-#### **Planned Sources** (Not Yet Implemented)
-- **Adzuna API**: 5000 free calls/month
-- **StackOverflow Jobs**: RSS feed
-- **AngelList/Wellfound**: Startup jobs
-- **LinkedIn**: If API access available
-- **GitHub Jobs**: If available
+#### Indian Job Boards (Python Scrapling Microservice)
+
+| Source | URL | Method | Circuit Breaker Timeout |
+|--------|-----|--------|------------------------|
+| **Naukri.com** | naukri.com | StealthyFetcher (headless) | 120s (2 min) |
+| **LinkedIn India** | linkedin.com (guest search) | Fetcher (HTTP) | 60s |
+| **Internshala** | internshala.com | StealthyFetcher (headless) | 60s |
+| **Foundit** | foundit.in (ex-Monster India) | StealthyFetcher (headless) | 60s |
+| **Shine** | shine.com | StealthyFetcher (headless) | 60s |
+
+The Indian boards are scraped by a separate Python FastAPI service (`scraper-service/`) that uses the [Scrapling](https://github.com/D4Vinci/Scrapling) library. The Node.js backend calls it via `POST /api/v1/scrape` through `indianBoards.service.js`.
 
 ---
 
-## 🛠️ Job Scraping Process
+## 🛠️ Scraping Pipeline — Step by Step
 
-### Step 1: Queue Job
-```javascript
-// Manually trigger scraping (for testing)
-import { addScrapeSourceJob } from './queues/job-scraping.queue.js';
+### Step 1: Cron Trigger
+BullMQ repeatable jobs fire on per-source schedules. Each source gets its own cron pattern.
 
-await addScrapeSourceJob({
-  source: 'remoteok',
-  options: { limit: 100, tags: ['javascript', 'react'] }
-});
+### Step 2: Worker Picks Up Job
+`job-scraping.worker.js` processes with:
+- **Concurrency**: 2 workers in parallel
+- **Rate limit**: Max 10 jobs per minute
+- **Retry**: 3 attempts, exponential backoff (5s → 10s → 20s)
+
+### Step 3: Cache Check
+```
+Cache hit? → Return cached result (skip scraping)
+Cache miss? → Continue to scrape
+```
+Per-source TTLs aligned with scrape intervals (e.g., RemoteOK cached for 6h, scraped every 6h).
+
+### Step 4: Circuit Breaker
+```
+Breaker CLOSED? → Execute scrape
+Breaker OPEN?   → Return { jobs: [], stats: { error: '...' } } immediately
+Breaker HALF_OPEN? → Try one request to test recovery
+```
+Each source has its own circuit breaker (library: `opossum`). Opens after 50% error rate in rolling window.
+
+### Step 5: Scrape External Source
+```
+International → Node.js HTTP client → External API/RSS
+Indian        → Node.js HTTP client → Python FastAPI → Headless browser → Job board
 ```
 
-### Step 2: Worker Processes Job
-```javascript
-// Worker runs in: queues/workers/job-scraping.worker.js
-
-1. Fetch jobs from external API
-2. Parse and normalize data
-3. Validate required fields
-4. Deduplicate by external_id + source
-5. Upsert jobs into database
-6. Log scraping results
-```
-
-### Step 3: Job Normalization
-Each source has different data formats. Jobs are normalized to a standard schema:
-
+### Step 6: Normalisation
+Each scraper normalises raw data into the standard job schema:
 ```javascript
 {
-  externalId: string,       // Unique ID from source
-  source: string,           // 'remoteok', 'indeed', etc.
-  title: string,
-  company: string,
-  location: string,
-  remoteType: enum,         // 'remote', 'hybrid', 'onsite'
-  employmentType: string,   // 'full-time', 'part-time', etc.
-  experienceLevel: string,  // 'entry', 'mid', 'senior'
-  salaryMin: number,
-  salaryMax: number,
-  description: string,
-  requirements: string[],
-  skillsRequired: string[],
-  benefits: string[],
-  applyUrl: string,
-  postedDate: timestamp,
-  expiresAt: timestamp,
-  isActive: boolean
+  externalId, source, title, company, companyLogo, location,
+  remoteType, employmentType, experienceLevel,
+  salaryMin, salaryMax, currency, salaryPeriod,
+  description, requirements, responsibilities, benefits,
+  skillsRequired: { required: [], technical: [], preferred: [] },
+  educationLevel, yearsExperienceMin, yearsExperienceMax,
+  url, applyUrl, postedDate, expiresAt,
+  isActive, rawData, meta
 }
 ```
 
-### Step 4: Deduplication & Upsert
-```javascript
-// In job-scraping.worker.js
+Indian board jobs are returned in snake_case by Python and normalised to camelCase by `indianBoards.service.js`.
 
-- Jobs are identified by: external_id + source
-- If job exists: UPDATE (refresh data, mark as active)
-- If job is new: INSERT
-- Prevents duplicate jobs from same source
+### Step 7: Cache Result
+Fresh results are cached in Redis with source-specific TTL.
+
+### Step 8: Upsert to Database
+```
+upsertJobs(jobs):
+  1. Query existing (externalId, source) pairs using parameterised inArray()
+  2. Filter in-memory by source (avoids SQL injection from composite tuple)
+  3. Calculate jobsNew vs jobsUpdated counts
+  4. Single batch INSERT ... ON CONFLICT DO UPDATE
+  5. Wrapped in DB transaction for atomicity
 ```
 
-### Step 5: Cleanup Stale Jobs
-```javascript
-// Runs daily at 3 AM
+### Step 9: Logging
+Every scrape run creates a `job_scraping_logs` entry:
+- Source, status (running → completed/failed)
+- jobsFound, jobsNew, jobsUpdated counts
+- Duration, error details if failed
+- Worker ID, request params
 
-- Jobs not seen in 30+ days → marked as isActive: false
-- Expired jobs (past expiresAt date) → marked inactive
-- Keeps database clean and relevant
+### Step 10: Cleanup (Daily at 3 AM)
+```
+cleanupStaleJobs():
+  1. Mark jobs inactive if lastScrapedAt > 30 days ago
+  2. Hard-delete inactive jobs older than 90 days (prevents unbounded growth)
 ```
 
 ---
@@ -185,26 +240,41 @@ Each source has different data formats. Jobs are normalized to a standard schema
 
 ```
 services/jobBoards/
-  ├── index.js              # Main aggregation service
-  ├── remoteok.service.js   # RemoteOK scraper
-  └── indeed.service.js     # Indeed RSS scraper
+  ├── index.js                  # Central aggregation — scrapeJobsFromSource(), scrapeAllSources()
+  ├── remoteok.service.js       # RemoteOK JSON API scraper
+  ├── remotive.service.js       # Remotive RSS scraper
+  ├── weworkremotely.service.js # We Work Remotely RSS scraper
+  ├── himalayas.service.js      # Himalayas JSON API scraper
+  ├── jobicy.service.js         # Jobicy JSON API scraper
+  ├── indeed.service.js         # Indeed RSS scraper (not scheduled)
+  ├── indianBoards.service.js   # HTTP client for Python microservice (Naukri etc.)
+  ├── circuit-breaker.service.js # Per-source circuit breakers (opossum)
+  └── cache.service.js          # Redis cache with per-source TTLs
+
+scraper-service/
+  ├── main.py                   # FastAPI app — all 5 Indian board scrapers
+  ├── requirements.txt          # scrapling, fastapi, uvicorn
+  ├── Dockerfile                # Production Docker image
+  ├── docker-compose.yml        # Dev/prod compose
+  └── README.md                 # Scraper service docs
 
 queues/
-  ├── job-scraping.queue.js # Queue definition & scheduling
+  ├── job-scraping.queue.js     # Queue definition, cron scheduling, helper functions
   └── workers/
-      └── job-scraping.worker.js # Worker that processes jobs
-
-drizzle/schema/
-  └── jobs.schema.js        # Database schema for jobs table
-
-models/
-  └── job.model.js          # Database queries for jobs
+      └── job-scraping.worker.js # Worker — scrape, upsert, cleanup
 
 controllers/
-  └── job.controller.js     # API endpoints for job browsing
+  └── job.controller.js         # API endpoints for job browsing + matching
+
+models/
+  └── job.model.js              # Database queries for jobs
 
 routes/v1/
-  └── job.route.js          # Job API routes
+  ├── job.route.js              # Job API routes (auth required)
+  └── health-scraping.route.js  # Health/monitoring endpoints (no auth)
+
+scripts/
+  └── test-scraping-system.js   # Comprehensive test script
 ```
 
 ---
@@ -212,31 +282,47 @@ routes/v1/
 ## 🚀 How to Trigger Job Scraping
 
 ### **Option 1: Wait for Scheduled Scraping**
-Jobs are automatically scraped every 6 hours. Just wait!
+Jobs are automatically scraped on per-source schedules. Just start the worker:
+```bash
+npm run worker:job-scraping
+```
 
 ### **Option 2: Manual Trigger via Code**
 ```javascript
-import { addScrapeAllSourcesJob } from './queues/job-scraping.queue.js';
+import { addScrapeSourceJob, addScrapeAllSourcesJob } from './queues/job-scraping.queue.js';
 
-// Scrape all sources
-await addScrapeAllSourcesJob({
-  globalOptions: { 
-    limit: 100 
-  }
-});
-
-// Or scrape specific source
-import { addScrapeSourceJob } from './queues/job-scraping.queue.js';
-
+// Scrape a specific source
 await addScrapeSourceJob({
   source: 'remoteok',
   options: { limit: 50, tags: ['javascript'] }
 });
+
+// Scrape all sources (remote in parallel + enqueues Indian boards)
+await addScrapeAllSourcesJob({
+  globalOptions: { limit: 100 }
+});
 ```
 
-### **Option 3: Manual Seed (For Testing)**
+### **Option 3: Quick Test Script**
 ```bash
-# Add sample jobs manually (8 jobs)
+# Test a single source (no queue/worker needed)
+node test-scraping.js remoteok 10
+
+# Comprehensive system test
+node scripts/test-scraping-system.js
+
+# Test only specific subsystems
+node scripts/test-scraping-system.js --sources    # Source scrapers only
+node scripts/test-scraping-system.js --indian     # Indian boards only
+node scripts/test-scraping-system.js --cache      # Cache tests
+node scripts/test-scraping-system.js --circuit    # Circuit breaker tests
+node scripts/test-scraping-system.js --queue      # Queue tests
+node scripts/test-scraping-system.js --health     # Health endpoints
+node scripts/test-scraping-system.js --source=remoteok  # Single source
+```
+
+### **Option 4: Sample Seed Data (For Testing)**
+```bash
 node drizzle/seeds/sample-jobs.seed.js
 ```
 
@@ -244,94 +330,70 @@ node drizzle/seeds/sample-jobs.seed.js
 
 ## 🔍 Monitoring Job Scraping
 
-### Check Scraping Logs
-```sql
-SELECT * FROM job_scraping_logs 
-ORDER BY started_at DESC 
-LIMIT 10;
-```
+### Health Endpoints (No Auth)
 
-Columns:
-- `source`: Which source was scraped
-- `status`: 'completed', 'failed', 'running'
-- `jobs_found`: Total jobs scraped from source
-- `jobs_new`: New jobs inserted
-- `jobs_updated`: Existing jobs updated
-- `duration`: Time taken (ms)
-- `error_message`: If failed
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/health/scraping` | Comprehensive health: per-source status, circuit breakers, cache, queue |
+| GET | `/api/v1/health/scraping/stats` | Per-source job counts and last scrape times |
+| GET | `/api/v1/health/scraping/logs` | Recent scraping log entries |
+| POST | `/api/v1/health/scraping/reset-circuit-breaker/:source` | Reset a tripped circuit breaker |
+
+### Check Scraping Logs (SQL)
+```sql
+SELECT source, status, jobs_found, jobs_new, jobs_updated, duration, error_message
+FROM job_scraping_logs
+ORDER BY started_at DESC
+LIMIT 20;
+```
 
 ### Check Active Jobs Count
 ```sql
-SELECT COUNT(*) FROM jobs WHERE is_active = true;
+SELECT source, COUNT(*) as count
+FROM jobs
+WHERE is_active = true
+GROUP BY source
+ORDER BY count DESC;
 ```
 
-### Check Jobs by Source
-```sql
-SELECT source, COUNT(*) as count 
-FROM jobs 
-WHERE is_active = true 
-GROUP BY source;
+### Check Circuit Breaker Status
+```bash
+curl http://localhost:3000/api/v1/health/scraping | jq '.data.circuitBreakers'
 ```
 
 ---
 
 ## 🧪 Testing the System
 
-### 1. Test Job Scraping System
+### Comprehensive Test Script
 ```bash
-# Make sure server is running
-npm run dev
+# Run ALL tests (sources, cache, circuit breakers, queue, health, schema validation)
+node scripts/test-scraping-system.js
 
-# In another terminal, test the API
-AUTH_TOKEN=your_token node scripts/test-job-system.js
+# Skip slow scrapers
+node scripts/test-scraping-system.js --fast
+
+# Test only remote sources
+node scripts/test-scraping-system.js --sources
+
+# Test only Indian boards (requires Python scraper service running)
+node scripts/test-scraping-system.js --indian
 ```
 
-This script will:
-- ✅ Browse all jobs (GET /api/v1/jobs)
-- ✅ Get specific job details
-- ✅ Test filtering (remote jobs)
-- ✅ Check job matches (if user has analyzed resume)
-- ✅ Check job preferences
+The test script validates:
+- ✅ Each source returns valid job objects
+- ✅ Job schema compliance (required fields, data types, enums)
+- ✅ No duplicate externalIds within results
+- ✅ Snake→camelCase normalisation for Indian boards
+- ✅ Circuit breaker states and operations (fire, reset)
+- ✅ Cache set/get/invalidate/miss/stats
+- ✅ Queue add/remove job operations
+- ✅ Health endpoint responses
+- ✅ Python scraper service reachability
 
-### 2. Manual Scraping Test
-```javascript
-// In Node.js REPL or script
-import jobBoardsService from './services/jobBoards/index.js';
-
-// Test RemoteOK
-const result = await jobBoardsService.scrapeJobsFromSource('remoteok', {
-  limit: 10,
-  tags: ['javascript']
-});
-
-console.log(`Found ${result.jobs.length} jobs`);
-console.log(result.stats);
-```
-
----
-
-## 📊 Job Data Flow
-
-```
-1. External API/RSS Feed
-   ↓
-2. Scraper Service (remoteok.service.js, indeed.service.js)
-   ↓
-3. Normalization (convert to standard format)
-   ↓
-4. Validation (check required fields)
-   ↓
-5. Worker (job-scraping.worker.js)
-   ↓
-6. Deduplication (check external_id + source)
-   ↓
-7. Database (jobs table)
-   ↓
-8. API (GET /api/v1/jobs)
-   ↓
-9. Job Matching (match with user resumes)
-   ↓
-10. User sees matches (GET /api/v1/job-matches)
+### Quick Single-Source Test
+```bash
+node test-scraping.js remoteok 10
 ```
 
 ---
@@ -339,23 +401,37 @@ console.log(result.stats);
 ## ⚙️ Configuration
 
 ### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_HOST` | `localhost` | Redis host for queues + cache |
+| `REDIS_PORT` | `6379` | Redis port |
+| `REDIS_TLS` | `false` | Enable TLS for Redis |
+| `JOB_SCRAPING_WORKER_CONCURRENCY` | `2` | Worker concurrency |
+| `SCRAPER_SERVICE_URL` | `http://localhost:8001` | Python scraper microservice URL |
+| `SCRAPER_SERVICE_SECRET` | *(empty)* | API key shared with Python service |
+| `JOB_MATCHING_ENABLED` | `true` | Feature flag for matching system |
+
+### Python Scraper Service Environment
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SCRAPER_API_KEY` | *(empty)* | Must match `SCRAPER_SERVICE_SECRET` |
+| `HOST` | `0.0.0.0` | Bind address |
+| `PORT` | `8001` | Bind port |
+| `HEADLESS` | `true` | Run browsers headless |
+| `PROXY` | *(none)* | HTTP/SOCKS5 proxy for anti-bot |
+
+### Starting the Python Scraper
 ```bash
-# Redis for BullMQ (job queue)
-REDIS_HOST=localhost
-REDIS_PORT=6379
-
-# Worker concurrency
-JOB_SCRAPING_WORKER_CONCURRENCY=2
-```
-
-### Scraping Frequency
-Edit in `queues/job-scraping.queue.js`:
-```javascript
-// Change from every 6 hours to every 12 hours
-pattern: '0 */12 * * *'
-
-// Or once per day at noon
-pattern: '0 12 * * *'
+cd scraper-service
+pip install -r requirements.txt
+python -m scrapling install   # Install browser binaries
+python main.py                # Dev mode
+# OR
+uvicorn main:app --host 0.0.0.0 --port 8001  # Production
+# OR
+docker compose up -d          # Docker (recommended)
 ```
 
 ---
@@ -363,83 +439,82 @@ pattern: '0 12 * * *'
 ## 🐛 Troubleshooting
 
 ### Problem: No jobs in database
-**Solutions:**
-1. Check if scraping worker is running:
-   ```bash
-   pm2 list
-   # Should see: job-scraping-worker
-   ```
+1. Check if the scraping worker is running: `npm run worker:job-scraping`
+2. Check Redis is running and accessible
+3. Check scraping logs: `SELECT * FROM job_scraping_logs WHERE status = 'failed' ORDER BY started_at DESC LIMIT 10;`
+4. Manually trigger: `node test-scraping.js remoteok 10`
+5. Use seed data: `node drizzle/seeds/sample-jobs.seed.js`
 
-2. Manually trigger scraping:
-   ```javascript
-   import { addScrapeAllSourcesJob } from './queues/job-scraping.queue.js';
-   await addScrapeAllSourcesJob();
-   ```
-
-3. Check scraping logs:
-   ```sql
-   SELECT * FROM job_scraping_logs WHERE status = 'failed';
-   ```
-
-4. Use sample seed data:
-   ```bash
-   node drizzle/seeds/sample-jobs.seed.js
-   ```
+### Problem: Indian board scraping fails
+1. Check Python service is running: `curl http://localhost:8001/api/v1/health`
+2. Check `SCRAPER_SERVICE_URL` and `SCRAPER_SERVICE_SECRET` match
+3. Check circuit breaker status: `curl http://localhost:3000/api/v1/health/scraping`
+4. Reset circuit breaker: `curl -X POST http://localhost:3000/api/v1/health/scraping/reset-circuit-breaker/naukri`
 
 ### Problem: Scraping fails with rate limit
-**Solutions:**
-- Add delays between requests
-- Use caching (store responses for 1 hour)
-- Reduce scraping frequency
-- Use API keys if available
+- Circuit breakers auto-trip after 50% error rate — wait for reset timeout
+- Check per-source scrape intervals aren't too aggressive
+- Use the cache (don't pass `skipCache: true` in production)
+- Consider adding a proxy (`PROXY` env var in Python service)
 
 ### Problem: Duplicate jobs
-**Solution:**
-- Check `external_id` uniqueness constraint
-- Verify deduplication logic in worker
-- Clean database: 
-  ```sql
-  DELETE FROM jobs WHERE id NOT IN (
-    SELECT MIN(id) FROM jobs GROUP BY external_id, source
-  );
-  ```
+- Jobs are deduplicated by `(external_id, source)` unique constraint
+- The batch upsert uses `ON CONFLICT DO UPDATE`
+- If duplicates appear: check that `externalId` is deterministic for each source
+
+### Problem: Circuit breaker stuck open
+```bash
+# Reset a specific breaker
+curl -X POST http://localhost:3000/api/v1/health/scraping/reset-circuit-breaker/remoteok
+
+# Check all breaker statuses
+curl http://localhost:3000/api/v1/health/scraping | jq '.data.circuitBreakers'
+```
 
 ---
 
-## 🎯 Future Enhancements
+## 📊 Data Flow Summary
 
-1. **Add More Sources**
-   - LinkedIn Jobs API
-   - Glassdoor
-   - Monster.com
-   - ZipRecruiter
-
-2. **Smart Scraping**
-   - Only scrape jobs matching user preferences
-   - Prioritize high-quality sources
-   - ML-based job quality filtering
-
-3. **Real-time Updates**
-   - WebSocket notifications for new jobs
-   - Email alerts for matching jobs
-   - Browser push notifications
-
-4. **Advanced Deduplication**
-   - Fuzzy matching for similar jobs
-   - Detect reposted jobs
-   - Merge duplicate company listings
+```
+1. Cron trigger (BullMQ repeatable job)
+   ↓
+2. Worker picks up job (concurrency=2, rate=10/min)
+   ↓
+3. Cache check (Redis, source-specific TTL)
+   ↓
+4. Circuit breaker gate (opossum, per-source)
+   ↓
+5. Scrape external source
+   ├── International → Node.js HTTP → API/RSS
+   └── Indian → Node.js HTTP → Python FastAPI → Headless browser → Job board
+   ↓
+6. Normalise to standard schema (camelCase)
+   ↓
+7. Cache fresh result (Redis)
+   ↓
+8. Batch UPSERT to PostgreSQL (transaction)
+   ↓
+9. Log to job_scraping_logs table
+   ↓
+10. Jobs available via GET /api/v1/jobs
+    ↓
+11. Job matching engine (BullMQ, separate worker)
+    ↓
+12. User sees matches via GET /api/v1/job-matches
+```
 
 ---
 
 ## 📝 Summary
 
 The job sourcing system:
-- ✅ **Automatically scrapes** jobs every 6 hours
-- ✅ **Supports multiple sources** (RemoteOK, Indeed, more coming)
-- ✅ **Deduplicates** jobs by external ID + source
-- ✅ **Cleans up stale** jobs daily
-- ✅ **Logs all operations** for monitoring
-- ✅ **Provides API** for browsing and filtering jobs
-- ✅ **Powers job matching** system for resume optimization
-
-You don't need to manually add jobs - they're automatically sourced and updated!
+- ✅ **11 sources** — 6 international remote + 5 Indian job boards
+- ✅ **Per-source cron schedules** — optimised for data freshness vs. rate limits
+- ✅ **Circuit breakers** — per-source fault isolation (opossum)
+- ✅ **Redis caching** — per-source TTLs to reduce API calls
+- ✅ **Batch UPSERT** — deduplicate by (externalId, source) in single transaction
+- ✅ **Python microservice** — Scrapling-based headless browser scraping for Indian boards
+- ✅ **Cleanup cron** — deactivate after 30 days, hard-delete after 90 days
+- ✅ **Health monitoring** — per-source status, circuit breakers, cache stats, queue stats
+- ✅ **Comprehensive test script** — `node scripts/test-scraping-system.js`
+- ✅ **Powers job matching** — weighted scoring (Skills 40%, Experience 30%, Education 20%, Location 10%)

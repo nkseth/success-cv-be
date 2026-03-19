@@ -140,9 +140,16 @@ function stripCdata(value) {
 function extractTitleCompany(title) {
     if (!title) return { jobTitle: '', company: '' };
     const parts = title.split(' - ');
+    if (parts.length > 1) {
+        const company = parts.pop().trim();
+        return {
+            jobTitle: parts.join(' - ').trim() || title,
+            company
+        };
+    }
     return {
-        jobTitle: parts[0]?.trim() || title,
-        company: parts[1]?.trim() || ''
+        jobTitle: title,
+        company: ''
     };
 }
 
@@ -175,7 +182,7 @@ function deriveYearsFromLevel(level, bound) {
 }
 
 function buildSkillsFromCategory(category) {
-    if (!category) return null;
+    if (!category) return { required: [], preferred: [], technical: [], soft: [] };
     return {
         required: [],
         preferred: [],

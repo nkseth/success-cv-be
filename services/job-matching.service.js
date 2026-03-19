@@ -38,7 +38,7 @@ export async function matchJobsForUser(userId, analysisId, userType = 'user', op
     const {
         minScore = 50,
         maxResults = 50,
-        replaceExisting = false
+        replaceExisting = true
     } = options;
 
     logger.info('Starting job matching for user', { 
@@ -120,7 +120,7 @@ export async function matchJobsForUser(userId, analysisId, userType = 'user', op
             if (matchScore.matchScore >= minScore) {
                 matches.push({
                     [userType === 'candidate' ? 'candidateID' : 'userID']: userId,
-                    [userType === 'candidate' ? 'candidate_analysisID' : 'analysisID']: analysisId,
+                    [userType === 'candidate' ? 'candidateAnalysisID' : 'analysisID']: analysisId,
                     userType,
                     jobID: job.id,
                     ...matchScore

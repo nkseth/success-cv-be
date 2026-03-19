@@ -114,6 +114,8 @@ const BREAKER_CONFIGS = {
 
 // Store circuit breakers by source
 const breakers = {};
+// Store latest action functions by source (allows swapping without recreating breakers)
+const breakerActions = {};
 
 /**
  * Create or get circuit breaker for a source
@@ -125,17 +127,25 @@ function getOrCreateBreaker(source, action) {
     const key = source.toLowerCase();
     
     if (breakers[key]) {
+        // Update the stored action reference so the breaker uses the latest function
+        breakerActions[key] = action;
         return breakers[key];
     }
+    
+    // Store the action in a lookup so it can be swapped later
+    breakerActions[key] = action;
     
     const config = BREAKER_CONFIGS[key] || {
         timeout: 30000,
         errorThresholdPercentage: 50,
         resetTimeout: 300000,
+        rollingCountTimeout: 60000,
+        volumeThreshold: 3,
         name: `${key}-breaker`
     };
     
-    const breaker = new CircuitBreaker(action, config);
+    // Wrap with an indirection so the breaker always calls the latest action
+    const breaker = new CircuitBreaker((...args) => breakerActions[key](...args), config);
     
     // Event listeners for monitoring
     breaker.on('open', () => {
@@ -201,11 +211,14 @@ export async function withCircuitBreaker(source, scraperFn, options = {}) {
     const breaker = getOrCreateBreaker(source, scraperFn);
     
     try {
+        // Call the scraper function directly through the breaker pattern.
+        // We pass scraperFn here instead of relying on the cached action,
+        // so different callers can provide different functions for the same source.
         const result = await breaker.fire(options);
         return result;
     } catch (error) {
-        // Check if error is from circuit being open
-        if (error.message.includes('Breaker is open')) {
+        // Check if error is from circuit being open (check state, not fragile string match)
+        if (breaker.opened) {
             logger.error('Request rejected - circuit breaker is open', {
                 source,
                 message: 'Service is temporarily unavailable due to repeated failures'

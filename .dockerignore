@@ -28,16 +28,16 @@ coverage
 .nyc_output
 
 # Documentation
-README.md
-docs/
-*.md
-
-# Docker
-Dockerfile
-.dockerignore
-README.*.md
 docs/
 
-# Docker
-Dockerfile
+# Docker (don't copy docker config into the image)
+docker-compose.yml
 .dockerignore
+
+# Scraper service has its own Dockerfile — exclude from backend image
+scraper-service/
+
+# Misc
+test-*.txt
+postman/
+AGENTS.md

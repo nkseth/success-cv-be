@@ -206,7 +206,7 @@ function buildSkills(categories, parentCategories) {
     (categories || []).forEach((c) => skills.add(c));
     (parentCategories || []).forEach((c) => skills.add(c));
 
-    if (skills.size === 0) return null;
+    if (skills.size === 0) return { required: [], preferred: [], technical: [], soft: [] };
 
     return {
         required: [],

@@ -1,0 +1,25 @@
+version: "3.9"
+
+services:
+  scraper-service:
+    build:
+      context: ./scraper-service
+      dockerfile: Dockerfile
+    container_name: success-cv-scraper
+    restart: unless-stopped
+    ports:
+      - "${SCRAPER_PORT:-8001}:8001"
+    environment:
+      - SCRAPER_API_KEY=${SCRAPER_SERVICE_SECRET:-}
+      - HOST=0.0.0.0
+      - PORT=8001
+      - HEADLESS=true
+      - PROXY=${SCRAPER_PROXY:-}
+    # Scrapling browsers need more shared memory
+    shm_size: "1gb"
+    # Limit resources so scrapers don't eat all RAM
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: "1.5"

@@ -1,5 +1,5 @@
 import { Worker } from 'bullmq';
-import queueService from '../../services/queue.service.js';
+import { bullMQConnection } from '../../config/redis.config.js';
 import logger from '../../middleware/logger.js';
 import { matchJobsForUser } from '../../services/job-matching.service.js';
 import { JOB_TYPES } from '../job-matching.queue.js';
@@ -8,8 +8,10 @@ import { JOB_MATCHING_ENABLED } from '../../config/featureFlags.js';
 const QUEUE_NAME = 'job-matching';
 
 if (!JOB_MATCHING_ENABLED) {
-    logger.warn('Job matching is disabled - worker will not start');
-    process.exit(0);
+    logger.warn('Job matching is disabled - worker is idle. Set JOB_MATCHING_ENABLED=true and restart to activate.');
+    // Keep process alive but idle so PM2/Docker doesn't restart it in a loop.
+    // The process will stay alive doing nothing until manually restarted with the flag enabled.
+    setInterval(() => {}, 60000);
 }
 
 /**
@@ -195,7 +197,7 @@ function createJobMatchingWorker() {
         QUEUE_NAME,
         processJobMatchingJob,
         {
-            connection: queueService.connection,
+            connection: bullMQConnection,
             concurrency: 5, // Process 5 matching jobs concurrently
             limiter: {
                 max: 20, // Max 20 jobs per duration

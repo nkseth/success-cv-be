@@ -138,13 +138,14 @@ function stripCdata(value) {
 function extractCompanyFromTitle(title) {
     if (!title) return null;
     const parts = title.split(' - ');
-    return parts.length > 1 ? parts[1].trim() : null;
+    return parts.length > 1 ? parts.pop().trim() : null;
 }
 
 function extractTitleFromTitle(title) {
     if (!title) return null;
     const parts = title.split(' - ');
-    return parts[0].trim();
+    if (parts.length > 1) parts.pop(); // Remove company (last part)
+    return parts.join(' - ').trim();
 }
 
 function determineEmploymentType(title = '', description = '') {
@@ -176,7 +177,7 @@ function deriveYearsFromLevel(level, bound) {
 }
 
 function buildSkillsFromCategory(category) {
-    if (!category) return null;
+    if (!category) return { required: [], preferred: [], technical: [], soft: [] };
     return {
         required: [],
         preferred: [],

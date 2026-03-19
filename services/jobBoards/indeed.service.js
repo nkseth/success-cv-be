@@ -62,12 +62,20 @@ export async function scrapeIndeed(options = {}) {
             trim: true
         });
         
-        if (!parsedFeed || !parsedFeed.rss || !parsedFeed.rss.channel || !parsedFeed.rss.channel.item) {
+        if (!parsedFeed || !parsedFeed.rss || !parsedFeed.rss.channel) {
             throw new Error('Invalid RSS format from Indeed');
         }
         
-        // Extract items
+        // Extract items — a valid feed with zero jobs has no <item> elements
         let items = parsedFeed.rss.channel.item;
+        
+        if (!items) {
+            logger.info('Indeed RSS returned zero jobs', { query, location });
+            return {
+                jobs: [],
+                stats: { totalFetched: 0, filtered: 0, skipped: 0, query, location }
+            };
+        }
         
         // Ensure items is an array (xml2js returns object for single item)
         if (!Array.isArray(items)) {
@@ -143,9 +151,10 @@ function isValidJob(item) {
  */
 function normalizeJob(item, searchQuery, searchLocation) {
     // Extract job details from title (format: "Job Title - Company")
+    // Use the last segment as company since titles can contain dashes
     const titleParts = item.title.split(' - ');
-    const jobTitle = titleParts[0] || item.title;
-    const company = titleParts[1] || 'Unknown Company';
+    const company = titleParts.length > 1 ? titleParts.pop().trim() : 'Unknown Company';
+    const jobTitle = titleParts.join(' - ').trim() || item.title;
     
     // Extract location from description (Indeed includes it in description)
     const location = extractLocation(item.description) || searchLocation;
@@ -263,12 +272,17 @@ function extractLocation(description) {
  * Extract skills from text using keyword matching
  */
 function extractSkillsFromText(text) {
+    // Skills that need word-boundary matching to avoid false positives
+    // (e.g. 'go' in 'google', 'ai' in 'training', 'r' in 'your')
+    const boundarySkills = [
+        'go', 'r', 'ai', 'c', 'sql', 'php', 'rust', 'swift', 'ruby', 'flask'
+    ];
     const techSkills = [
-        'javascript', 'typescript', 'python', 'java', 'c++', 'c#', 'ruby', 'php', 'go', 'golang', 'rust', 'swift', 'kotlin',
-        'react', 'angular', 'vue', 'node.js', 'express', 'django', 'flask', 'spring', 'asp.net',
+        'javascript', 'typescript', 'python', 'java', 'c++', 'c#', 'golang', 'kotlin',
+        'react', 'angular', 'vue', 'node.js', 'express', 'django', 'spring', 'asp.net',
         'aws', 'azure', 'gcp', 'docker', 'kubernetes', 'jenkins', 'git', 'ci/cd',
-        'sql', 'postgresql', 'mysql', 'mongodb', 'redis', 'elasticsearch',
-        'machine learning', 'ai', 'data science', 'deep learning', 'tensorflow', 'pytorch'
+        'postgresql', 'mysql', 'mongodb', 'redis', 'elasticsearch',
+        'machine learning', 'data science', 'deep learning', 'tensorflow', 'pytorch'
     ];
     
     const softSkills = [
@@ -278,13 +292,20 @@ function extractSkillsFromText(text) {
     
     const textLower = text.toLowerCase();
     
+    // Normal substring matching for multi-word / unambiguous skills
     const foundTech = techSkills.filter(skill => textLower.includes(skill));
+    // Word-boundary matching for short/ambiguous skills
+    const foundBoundary = boundarySkills.filter(skill => {
+        const regex = new RegExp(`\\b${skill.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+        return regex.test(text);
+    });
+    const allTech = [...foundTech, ...foundBoundary];
     const foundSoft = softSkills.filter(skill => textLower.includes(skill));
     
     return {
-        required: [...foundTech, ...foundSoft],
+        required: [...allTech, ...foundSoft],
         preferred: [],
-        technical: foundTech,
+        technical: allTech,
         soft: foundSoft
     };
 }

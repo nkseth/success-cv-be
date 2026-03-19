@@ -171,8 +171,11 @@ export const jobMatchesTable = pgTable("job_matches", {
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
-    // Ensure one match per user/job/analysis combination
-    uniqueIndex("job_matches_unique_idx").on(table.userType, table.jobID, table.analysisID),
+    // NOTE: The unique constraint for deduplication is managed via a raw SQL
+    // migration (see drizzle/0025_fix_job_matches_unique_idx.sql) because it
+    // uses COALESCE("analysisID", "candidate_analysisID") to handle candidates
+    // who use candidateAnalysisID (analysisID is NULL for them, and SQL treats
+    // NULL != NULL, defeating the unique constraint).
     
     // User lookups (separate indexes for B2C vs B2B)
     index("job_matches_user_idx").on(table.userID),
