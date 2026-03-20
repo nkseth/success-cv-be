@@ -238,7 +238,6 @@ export async function clearAllCache() {
         
         if (foundKeys.length > 0) {
             // Strip the keyPrefix so that del() (which auto-adds prefix) works correctly
-            const prefix = getKeyPrefix();
             const strippedKeys = foundKeys.map(k => k.startsWith(prefix) ? k.slice(prefix.length) : k);
             totalDeleted = await redisClient.del(...strippedKeys);
         }

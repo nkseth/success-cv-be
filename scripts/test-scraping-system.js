@@ -528,7 +528,12 @@ async function testCacheService() {
         }
 
         // Test: getCachedJobs — should return the data we just set
+        let ranGetCachedJobs = false;
+        let ranInvalidateCache = false;
+        let ranGetCacheStats = false;
+
         const cached = await cacheService.getCachedJobs('test-source', { limit: 5 });
+        ranGetCachedJobs = true;
         logResult(
             'getCachedJobs() returns cached data',
             cached && cached.jobs && cached.jobs.length === 1,
@@ -545,6 +550,7 @@ async function testCacheService() {
 
         // Test: invalidateCache
         const invalidated = await cacheService.invalidateCache('test-source');
+        ranInvalidateCache = true;
         logResult(
             'invalidateCache() clears cache entries',
             invalidated >= 1,
@@ -561,6 +567,7 @@ async function testCacheService() {
 
         // Test: getCacheStats
         const stats = await cacheService.getCacheStats();
+        ranGetCacheStats = true;
         logResult(
             'getCacheStats() returns stats object',
             typeof stats === 'object',
@@ -568,9 +575,13 @@ async function testCacheService() {
         );
     } catch (error) {
         logResult('Cache service initialization', false, error.message);
-        if (!cacheAvailable) {
+        if (!cacheAvailable && !ranGetCachedJobs) {
             logResult('getCachedJobs()', 'skip', 'Redis unavailable');
+        }
+        if (!cacheAvailable && !ranInvalidateCache) {
             logResult('invalidateCache()', 'skip', 'Redis unavailable');
+        }
+        if (!cacheAvailable && !ranGetCacheStats) {
             logResult('getCacheStats()', 'skip', 'Redis unavailable');
         }
     }
@@ -872,15 +883,26 @@ async function testSnakeToCamelNormalisation() {
 async function main() {
     const flags = parseArgs();
 
+    // Compute a content width that fits the longest value without breaking the box.
+    const modeStr = flags.all ? 'ALL TESTS' : Object.keys(flags).join(', ');
+    const contentWidth = Math.max(
+        45,
+        BASE_URL.length,
+        SCRAPER_SERVICE_URL.length,
+        modeStr.length
+    );
+    const pad = (s) => s.length > contentWidth ? s.slice(0, contentWidth - 3) + '...' : s.padEnd(contentWidth);
+    const border = '═'.repeat(contentWidth + 17);
+
     console.log('\n');
-    console.log('╔══════════════════════════════════════════════════════════════╗');
-    console.log('║     🧪  Job Scraping System — Comprehensive Test Suite     ║');
-    console.log('╠══════════════════════════════════════════════════════════════╣');
-    console.log(`║  Date:      ${new Date().toISOString().slice(0, 19)}                    ║`);
-    console.log(`║  Base URL:  ${BASE_URL.padEnd(45)}║`);
-    console.log(`║  Scraper:   ${SCRAPER_SERVICE_URL.padEnd(45)}║`);
-    console.log(`║  Mode:      ${(flags.all ? 'ALL TESTS' : Object.keys(flags).join(', ')).padEnd(45)}║`);
-    console.log('╚══════════════════════════════════════════════════════════════╝');
+    console.log(`╔${border}╗`);
+    console.log(`║     🧪  Job Scraping System — Comprehensive Test Suite     ║`);
+    console.log(`╠${border}╣`);
+    console.log(`║  Date:      ${pad(new Date().toISOString().slice(0, 19))}║`);
+    console.log(`║  Base URL:  ${pad(BASE_URL)}║`);
+    console.log(`║  Scraper:   ${pad(SCRAPER_SERVICE_URL)}║`);
+    console.log(`║  Mode:      ${pad(modeStr)}║`);
+    console.log(`╚${border}╝`);
 
     const start = Date.now();
 

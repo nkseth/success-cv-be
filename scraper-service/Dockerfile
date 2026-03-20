@@ -14,15 +14,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxshmfence1 \
     && rm -rf /var/lib/apt/lists/*
 
+# Create a dedicated non-root user for the scraper
+RUN groupadd --system scraper && useradd --system --gid scraper --no-create-home scraper
+
 WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Install Scrapling's browser dependencies (Playwright browsers & Camoufox)
+# Must run as root before switching user
 RUN scrapling install
 
 COPY . .
+
+# Hand ownership of the app directory to the non-root user
+RUN chown -R scraper:scraper /app
+
+# Switch to non-root user before starting the server
+USER scraper
 
 EXPOSE 8001
 

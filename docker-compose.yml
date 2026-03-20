@@ -31,7 +31,7 @@ services:
     ports:
       - "8001:8001"
     environment:
-      - SCRAPER_API_KEY=${SCRAPER_SERVICE_SECRET:-successcv-scraper-secret-2024}
+      - "SCRAPER_API_KEY=${SCRAPER_SERVICE_SECRET:?SCRAPER_SERVICE_SECRET must be set - generate with: openssl rand -hex 32}"
       - HOST=0.0.0.0
       - PORT=8001
       - HEADLESS=true

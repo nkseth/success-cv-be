@@ -239,7 +239,9 @@ function createJobMatchingWorker() {
     return worker;
 }
 
-// Create and export worker
-const jobMatchingWorker = createJobMatchingWorker();
+// Create and export worker — only when job matching is enabled.
+// When disabled the idle setInterval above keeps the process alive without
+// connecting to Redis or creating a BullMQ Worker.
+const jobMatchingWorker = JOB_MATCHING_ENABLED ? createJobMatchingWorker() : null;
 
 export default jobMatchingWorker;

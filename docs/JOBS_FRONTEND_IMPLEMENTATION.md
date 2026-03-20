@@ -872,7 +872,7 @@ export default function JobMatchesPage() {
 ```typescript
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -907,6 +907,9 @@ export function JobMatchesDashboard() {
   const [matches, setMatches] = useState<JobMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [regenerating, setRegenerating] = useState(false);
+  // Holds the cleanup function for any active polling interval so it can be
+  // cleared on component unmount.
+  const cleanupRef = useRef<(() => void) | null>(null);
   const [pagination, setPagination] = useState({
     page: 1,
     totalItems: 0,
@@ -953,6 +956,9 @@ export function JobMatchesDashboard() {
     loadMatches();
   }, [loadMatches]);
 
+  // Clear any active polling interval when the component unmounts.
+  useEffect(() => () => { cleanupRef.current?.(); }, []);
+
   const handleGenerate = async () => {
     setRegenerating(true);
     try {
@@ -969,12 +975,22 @@ export function JobMatchesDashboard() {
         const res = await fetchJobMatches({ page: 1, limit: 1 });
         if ((res?.data?.matches?.length ?? 0) > 0) {
           clearInterval(poll);
+          cleanupRef.current = null;
           loadMatches();
         }
       }, 5000);
 
       // Stop polling after 2 minutes
-      setTimeout(() => clearInterval(poll), 120000);
+      const timeout = setTimeout(() => {
+        clearInterval(poll);
+        cleanupRef.current = null;
+      }, 120000);
+
+      // Store cleanup so unmount can cancel both the interval and the timeout
+      cleanupRef.current = () => {
+        clearInterval(poll);
+        clearTimeout(timeout);
+      };
     } catch (error: any) {
       console.error('Failed to generate matches:', error);
       toast.error(error.message || 'Failed to generate matches. Make sure you have a completed resume analysis.');

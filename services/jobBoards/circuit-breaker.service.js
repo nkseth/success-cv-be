@@ -114,26 +114,20 @@ const BREAKER_CONFIGS = {
 
 // Store circuit breakers by source
 const breakers = {};
-// Store latest action functions by source (allows swapping without recreating breakers)
-const breakerActions = {};
 
 /**
- * Create or get circuit breaker for a source
+ * Create or get circuit breaker for a source.
+ * The breaker action accepts { fn, opts } so each call binds its own scraperFn,
+ * eliminating the shared-mutable-map race condition.
  * @param {string} source - Source name
- * @param {Function} action - Function to wrap with circuit breaker
  * @returns {CircuitBreaker} Circuit breaker instance
  */
-function getOrCreateBreaker(source, action) {
+function getOrCreateBreaker(source) {
     const key = source.toLowerCase();
     
     if (breakers[key]) {
-        // Update the stored action reference so the breaker uses the latest function
-        breakerActions[key] = action;
         return breakers[key];
     }
-    
-    // Store the action in a lookup so it can be swapped later
-    breakerActions[key] = action;
     
     const config = BREAKER_CONFIGS[key] || {
         timeout: 30000,
@@ -144,8 +138,10 @@ function getOrCreateBreaker(source, action) {
         name: `${key}-breaker`
     };
     
-    // Wrap with an indirection so the breaker always calls the latest action
-    const breaker = new CircuitBreaker((...args) => breakerActions[key](...args), config);
+    // The breaker action receives { fn, opts } — fn is the caller's scraperFn
+    // bound at fire()-time, so concurrent calls for the same source never
+    // overwrite each other's function reference.
+    const breaker = new CircuitBreaker(({ fn, opts }) => fn(opts), config);
     
     // Event listeners for monitoring
     breaker.on('open', () => {
@@ -208,13 +204,12 @@ function getOrCreateBreaker(source, action) {
  * @returns {Promise<Object>} Scraper result
  */
 export async function withCircuitBreaker(source, scraperFn, options = {}) {
-    const breaker = getOrCreateBreaker(source, scraperFn);
+    const breaker = getOrCreateBreaker(source);
     
     try {
-        // Call the scraper function directly through the breaker pattern.
-        // We pass scraperFn here instead of relying on the cached action,
-        // so different callers can provide different functions for the same source.
-        const result = await breaker.fire(options);
+        // Pass scraperFn bound to this specific call so concurrent calls for the
+        // same source each use their own function reference.
+        const result = await breaker.fire({ fn: scraperFn, opts: options });
         return result;
     } catch (error) {
         // Check if error is from circuit being open (check state, not fragile string match)

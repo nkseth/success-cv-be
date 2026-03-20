@@ -374,7 +374,7 @@ When resume analysis completes, `triggerMatchingAfterAnalysis()` is called from 
 
 ### `job_matches` Table
 - Stores pre-computed matches per user+job+analysis
-- **Unique constraint**: `(user_type, jobID, analysisID)` — one match per combo
+- **Unique constraint**: `(user_type, jobID, analysisID)` — ⚠️ **[BUG-004 CRITICAL]** This constraint is INCORRECT for candidate users: `analysisID` is NULL for candidates (they use `candidate_analysisID`), so all candidate matches for the same job collapse to a single `(candidate, jobID, NULL)` tuple, causing silent data loss via `onConflictDoNothing()`. See the BUG-004 entry in Section 12 for full details and the fix in `drizzle/0018_fix_job_matches_unique_idx.sql`.
 - **Indexes**: userID, candidateID, jobID, analysisID, matchScore, status, saved, applied
 
 ### `job_scraping_logs` Table
@@ -484,7 +484,8 @@ When resume analysis completes, `triggerMatchingAfterAnalysis()` is called from 
 
 #### BUG-006: `SCRAPE_ALL` double-processes remote sources
 **File**: `queues/workers/job-scraping.worker.js` (lines ~137-188)  
-**Issue**: `scrapeAllSources()` calls `jobBoardsService.scrapeAllSources()` which scrapes all 5 remote sources in parallel. Then it ALSO enqueues 5 separate `SCRAPE_SOURCE` jobs for Indian boards. But the **remote sources are already on their own recurring cron schedules**. If `SCRAPE_ALL` is ever triggered (e.g., manually), it scrapes remote sources twice — once immediately and once via cron — causing duplicate API calls and potential rate-limit violations.  
+**Issue**: `scrapeAllSources()` calls `jobBoardsService.scrapeAllSources()` which scrapes all **6** remote sources (RemoteOK, Remotive, WeWorkRemotely, Himalayas, Jobicy, Indeed) in parallel. Then it ALSO enqueues 5 separate `SCRAPE_SOURCE` jobs for Indian boards. But the **remote sources are already on their own recurring cron schedules**. If `SCRAPE_ALL` is ever triggered (e.g., manually), it scrapes remote sources twice — once immediately and once via cron — causing duplicate API calls and potential rate-limit violations.  
+**Fix**: `scrapeAllSources()` / `jobBoardsService.scrapeAllSources()` should return aggregated results directly without re-enqueuing individual `SCRAPE_SOURCE` jobs for sources that already have their own cron schedules. Only enqueue `SCRAPE_SOURCE` jobs for sources that are NOT on independent cron schedules.  
 **Impact**: Unnecessary load on external APIs, potential IP bans.
 
 #### BUG-007: No salary currency normalisation

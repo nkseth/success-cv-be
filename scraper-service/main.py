@@ -17,7 +17,9 @@ Endpoint contract (consumed by Node.js indianBoards.service.js):
 
 from __future__ import annotations
 
+import asyncio
 import os
+import secrets
 import time
 import hashlib
 import logging
@@ -27,7 +29,7 @@ from typing import Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 load_dotenv()
 
@@ -35,6 +37,9 @@ load_dotenv()
 API_KEY = os.getenv("SCRAPER_API_KEY", "")
 HEADLESS = os.getenv("HEADLESS", "true").lower() == "true"
 PROXY = os.getenv("PROXY", None)
+# LinkedIn scraping is disabled by default — set ENABLE_LINKEDIN_SCRAPING=true
+# only after attaching documented proof of authorisation (see README compliance notice).
+ENABLE_LINKEDIN_SCRAPING = os.getenv("ENABLE_LINKEDIN_SCRAPING", "false").lower() == "true"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("scraper-service")
@@ -46,7 +51,7 @@ app = FastAPI(title="Indian Job Boards Scraper", version="1.0.0")
 class ScrapeOptions(BaseModel):
     keywords: Optional[list[str]] = None
     locations: Optional[list[str]] = None
-    limit: int = 50
+    limit: int = Field(default=50, ge=1, le=500)
     include_internships: Optional[bool] = None
     include_jobs: Optional[bool] = None
 
@@ -64,7 +69,8 @@ async def check_api_key(request: Request, call_next):
 
     if API_KEY:
         provided = request.headers.get("X-API-Key", "")
-        if provided != API_KEY:
+        # Use constant-time comparison to prevent timing-attack key enumeration.
+        if not provided or not secrets.compare_digest(API_KEY, provided):
             return JSONResponse(status_code=401, content={"success": False, "error": "Invalid API key"})
 
     return await call_next(request)
@@ -92,6 +98,16 @@ async def scrape(req: ScrapeRequest):
 
     if source not in SCRAPERS:
         raise HTTPException(status_code=400, detail=f"Unsupported source: {source}")
+
+    # LinkedIn scraping requires explicit opt-in via ENABLE_LINKEDIN_SCRAPING=true.
+    if source == "linkedin-india" and not ENABLE_LINKEDIN_SCRAPING:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "LinkedIn scraping is disabled. Set ENABLE_LINKEDIN_SCRAPING=true only after "
+                "attaching documented proof of authorisation (see README compliance notice)."
+            ),
+        )
 
     start = time.time()
     try:
@@ -338,8 +354,8 @@ async def scrape_naukri(options: ScrapeOptions) -> list[dict]:
                             "education_level": None,
                             "years_experience_min": exp_min,
                             "years_experience_max": exp_max,
-                            "url": job_url if job_url.startswith("http") else f"https://www.naukri.com{job_url}",
-                            "apply_url": job_url if job_url.startswith("http") else f"https://www.naukri.com{job_url}",
+                            "url": (job_url if job_url.startswith("http") else f"https://www.naukri.com{job_url}") if job_url else None,
+                            "apply_url": (job_url if job_url.startswith("http") else f"https://www.naukri.com{job_url}") if job_url else None,
                             "posted_date": None,
                             "expires_at": None,
                             "raw_data": None,
@@ -500,7 +516,8 @@ async def scrape_linkedin_india(options: ScrapeOptions) -> list[dict]:
 
             logger.info(f"[linkedin-india] Fetching {url}")
             try:
-                page = Fetcher.get(
+                page = await asyncio.to_thread(
+                    Fetcher.get,
                     url,
                     impersonate="chrome",
                     stealthy_headers=True,

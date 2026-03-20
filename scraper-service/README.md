@@ -12,6 +12,14 @@ Python FastAPI microservice that scrapes 5 Indian job boards using [Scrapling](h
 | **Foundit** | foundit.in | StealthyFetcher (headless) | Every 6 hours |
 | **Shine** | shine.com | StealthyFetcher (headless) | Every 8 hours |
 
+> **⚠️ Legal / Compliance — LinkedIn**
+>
+> Automated scraping of LinkedIn may violate their [User Agreement](https://www.linkedin.com/legal/user-agreement) and the *hiQ Labs v. LinkedIn* injunction history.  
+> **LinkedIn scraping is DISABLED by default.** To enable it you must:
+> 1. Set `ENABLE_LINKEDIN_SCRAPING=true` in your environment (the scraper will reject requests to the `linkedin-india` source if this flag is absent or `false`).
+> 2. Attach documented proof of authorisation (e.g. a LinkedIn Partner Agreement) to this repository before deploying to production.
+> 3. Review applicable law in your jurisdiction before enabling.
+
 ## Quick Start
 
 ### 1. Install dependencies
@@ -130,11 +138,12 @@ Content-Type: application/json
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SCRAPER_API_KEY` | *(empty = open)* | Must match `SCRAPER_SERVICE_SECRET` in Node.js |
+| `SCRAPER_API_KEY` | *(empty = **open/unauthenticated**)* | Must match `SCRAPER_SERVICE_SECRET` in Node.js. **Leaving this empty disables authentication entirely — any caller can reach all scrape endpoints without a key. Never run in production with an empty value.** Set to a strong random secret (`openssl rand -hex 32`) and rotate regularly. |
 | `HOST` | `0.0.0.0` | Bind address |
 | `PORT` | `8001` | Bind port |
 | `HEADLESS` | `true` | Run browsers in headless mode |
 | `PROXY` | *(none)* | HTTP/SOCKS5 proxy for anti-bot bypass |
+| `ENABLE_LINKEDIN_SCRAPING` | `false` | Set `true` only after attaching proof of LinkedIn authorisation (see compliance notice above) |
 
 ## Adapting Scrapers
 

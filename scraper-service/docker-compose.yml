@@ -3,14 +3,14 @@ version: "3.9"
 services:
   scraper-service:
     build:
-      context: ./scraper-service
+      context: .
       dockerfile: Dockerfile
     container_name: success-cv-scraper
     restart: unless-stopped
     ports:
       - "${SCRAPER_PORT:-8001}:8001"
     environment:
-      - SCRAPER_API_KEY=${SCRAPER_SERVICE_SECRET:-}
+      - "SCRAPER_API_KEY=${SCRAPER_SERVICE_SECRET:?SCRAPER_SERVICE_SECRET must be set - generate with: openssl rand -hex 32}"
       - HOST=0.0.0.0
       - PORT=8001
       - HEADLESS=true
